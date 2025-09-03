@@ -91,10 +91,10 @@ class Hua4GMon:
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(12, 7))
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=40)
-        self.ax.set_xlabel("Время (сек)", fontsize=10)
-        self.ax.set_ylabel("Значение", fontsize=10)
+        self.fig, self.ax = plt.subplots(figsize=(14, 8))
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=50)
+        self.ax.set_xlabel("Время (сек)", fontsize=12, labelpad=15)
+        self.ax.set_ylabel("Значение", fontsize=12, labelpad=15)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.param_ranges = {'rsrp': (-120, -50), 'rssi': (-120, -50), 'rsrq': (-20, 0), 'sinr': (-5, 30)}
@@ -103,10 +103,11 @@ class Hua4GMon:
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.pack(fill=tk.BOTH, expand=True)
-        canvas_widget.configure(width=700, height=700)
+        canvas_widget.configure(width=700, height=750)
         canvas_widget.pack_propagate(0)
         self.root.update_idletasks()
         self.canvas.draw()
+        self.ax.figure.canvas.draw_idle()  # Принудительное обновление
         self.update_graph_initial()
 
         self.times = []
@@ -314,15 +315,15 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=40)
-                    self.ax.set_xlabel("Время (сек)", fontsize=10)
-                    self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=50)
+                    self.ax.set_xlabel("Время (сек)", fontsize=12, labelpad=15)
+                    self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=12, labelpad=15)
                     self.ax.grid(True)
                     self.ax.set_xlim(0, max(10, max(self.times) + 1))
                     self.ax.set_ylim(*self.param_ranges[param])
                     self.fig.tight_layout()
                     self.canvas.draw()
-                    self.ax.figure.canvas.flush_events()  # Принудительное обновление
+                    self.ax.figure.canvas.draw_idle()  # Принудительное обновление
                 except ValueError:
                     pass
 
@@ -330,16 +331,16 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.ax.clear()
         self.ax.plot([], [], color='blue')
-        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=40)
-        self.ax.set_xlabel("Время (сек)", fontsize=10)
-        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=50)
+        self.ax.set_xlabel("Время (сек)", fontsize=12, labelpad=15)
+        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=12, labelpad=15)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(*self.param_ranges[param])
         self.ax.autoscale_view()
         self.fig.tight_layout()
         self.canvas.draw()
-        self.ax.figure.canvas.flush_events()  # Принудительное обновление
+        self.ax.figure.canvas.draw_idle()  # Принудительное обновление
 
     def is_better(self, current, peak, param):
         try:
@@ -362,15 +363,15 @@ class Hua4GMon:
         self.values = {}
         param = self.graph_param.get()
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=40)
-        self.ax.set_xlabel("Время (сек)", fontsize=10)
-        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=50)
+        self.ax.set_xlabel("Время (сек)", fontsize=12, labelpad=15)
+        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=12, labelpad=15)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(*self.param_ranges[param])
         self.fig.tight_layout()
         self.canvas.draw()
-        self.ax.figure.canvas.flush_events()  # Принудительное обновление
+        self.ax.figure.canvas.draw_idle()  # Принудительное обновление
 
     def on_closing(self):
         self.connected = False
