@@ -14,7 +14,7 @@ class Hua4GMon:
         self.root = root
         self.root.title("Huawei 4G Monitor")
         self.root.configure(bg='white')
-        self.root.geometry("800x700")  # Увеличенная высота для графика
+        self.root.geometry("800x700")  # Увеличенная высота
 
         self.config = configparser.ConfigParser()
         self.config_file = 'config.ini'
@@ -81,25 +81,26 @@ class Hua4GMon:
         self.save_log_button.pack(side=tk.LEFT, padx=5)
 
         # Выбор графика
-        tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).grid(row=4, column=0, sticky='ew')
+        tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).grid(row=4, column=0, sticky='w', padx=10)
         self.graph_param = tk.StringVar(value='rsrp')
-        self.graph_combo = ttk.Combobox(root, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12))
-        self.graph_combo.grid(row=5, column=0, sticky='ew')
+        self.graph_combo = ttk.Combobox(root, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12), width=20)  # Ограниченная ширина
+        self.graph_combo.grid(row=5, column=0, sticky='w', padx=10, pady=(0, 10))  # Отступ перед canvas
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
         self.fig, self.ax = plt.subplots(figsize=(7, 4))
-        self.ax.set_title("Уровень сигнала", fontsize=12)
-        self.ax.set_xlabel("Время (сек)", fontsize=10)  # Уточнение единиц
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=15)  # Увеличен отступ заголовка
+        self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
+        self.ax.set_xlim(0, 10)  # Начальный диапазон для видимости меток
         self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.grid(row=6, column=0, sticky='nsew')
-        canvas_widget.configure(width=700, height=400)  # Увеличенная высота
+        canvas_widget.configure(width=700, height=450)  # Увеличенная высота для меток
         self.root.update_idletasks()  # Пересчёт компоновки
-        self.canvas.draw()  # Отрисовка при открытии
+        self.canvas.draw()
 
         self.times = []
         self.values = {}
@@ -108,7 +109,7 @@ class Hua4GMon:
         self.client = None
         self.connection = None
         self.last_data = {}
-        self.start_time = None  # Для относительного времени
+        self.start_time = None
 
     def load_config(self):
         try:
@@ -158,7 +159,7 @@ class Hua4GMon:
             self.status_label.config(text="Статус: Подключено", fg='green')
             self.save_config()
             self.update_params()
-            self.start_time = time.time()  # Старт относительного времени
+            self.start_time = time.time()
             self.reset_graph()
             threading.Thread(target=self.monitor_loop, daemon=True).start()
             threading.Thread(target=self.keep_alive_loop, daemon=True).start()
@@ -192,7 +193,7 @@ class Hua4GMon:
             self.client = Client(self.connection)
             self.connected = True
             self.status_label.config(text="Статус: Подключено", fg='green')
-            self.start_time = time.time()  # Рестарт времени
+            self.start_time = time.time()
         except Exception:
             self.status_label.config(text="Статус: Ошибка, повторная попытка...", fg='red')
             self.root.after(5000, self.reconnect)
@@ -300,7 +301,7 @@ class Hua4GMon:
                     val = float(''.join(c for c in str(val_str) if c.isdigit() or c in ['-', '.']))
                     if param not in self.values:
                         self.values[param] = []
-                    relative_time = time.time() - self.start_time  # Относительное время в секундах
+                    relative_time = time.time() - self.start_time
                     self.times.append(relative_time)
                     self.values[param].append(val)
                     if len(self.times) > 100:
@@ -308,10 +309,11 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=15)
                     self.ax.set_xlabel("Время (сек)", fontsize=10)
                     self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
                     self.ax.grid(True)
+                    self.ax.set_xlim(0, max(10, max(self.times) + 1))  # Динамический диапазон
                     self.fig.tight_layout()
                     self.canvas.draw()
                 except ValueError:
@@ -337,10 +339,11 @@ class Hua4GMon:
         self.times = []
         self.values = {}
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=12)
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=15)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
+        self.ax.set_xlim(0, 10)
         self.fig.tight_layout()
         self.canvas.draw()
 
