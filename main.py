@@ -47,11 +47,18 @@ class Hua4GMon:
         self.password_entry.insert(0, self.config.get('Settings', 'password', fallback=''))
         self.password_entry.pack()
 
-        self.remember_var = tk.BooleanVar(value=bool(self.config.get('Settings', 'remember', fallback=False)))
-        tk.Checkbutton(input_frame, text="Запомнить данные", variable=self.remember_var, bg='white', font=("Arial", 10)).pack()
+        # Убрал чекбокс "Запомнить данные", так как сохранение пароля требует файл
+        # self.remember_var = tk.BooleanVar(value=bool(self.config.get('Settings', 'remember', fallback=False)))
+        # tk.Checkbutton(input_frame, text="Запомнить данные", variable=self.remember_var, bg='white', font=("Arial", 10)).pack()
 
-        self.connect_button = ttk.Button(input_frame, text="Connect", command=self.connect, style="TButton")
+        self.connect_button = ttk.Button(input_frame, text="Connect", command=self.start_connect, style="TButton")
         self.connect_button.pack(pady=5)
+
+        # Индикатор подключения
+        self.progress = ttk.Progressbar(input_frame, mode='indeterminate', length=100)
+        self.progress.pack(pady=5)
+        self.progress_label = tk.Label(input_frame, text="", bg='white', font=("Arial", 10))
+        self.progress_label.pack()
 
         # Выбор частоты обновления
         tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 12)).pack()
@@ -75,12 +82,10 @@ class Hua4GMon:
         # Кнопки управления
         button_frame = tk.Frame(root, bg='white', pady=5)
         button_frame.grid(row=3, column=0, sticky='ew')
-        button_frame.columnconfigure(0, weight=1)
-        button_frame.columnconfigure(2, weight=1)
         self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton")
-        self.reset_button.grid(row=0, column=1, padx=5)
+        self.reset_button.pack(side=tk.LEFT, padx=5, expand=True)
         self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton")
-        self.save_log_button.grid(row=0, column=2, padx=5)
+        self.save_log_button.pack(side=tk.LEFT, padx=5, expand=True)
 
         # Выбор графика
         tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).grid(row=4, column=0, sticky='', padx=10)
@@ -91,8 +96,8 @@ class Hua4GMon:
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(8, 4.5))
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=20)
+        self.fig, self.ax = plt.subplots(figsize=(8.5, 5))
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=25)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
@@ -102,7 +107,7 @@ class Hua4GMon:
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.grid(row=6, column=0, sticky='nsew')
-        canvas_widget.configure(width=700, height=500)
+        canvas_widget.configure(width=700, height=550)
         self.root.update_idletasks()
         self.canvas.draw()
         self.update_graph_initial()
@@ -123,22 +128,10 @@ class Hua4GMon:
             pass
 
     def save_config(self):
-        if self.remember_var.get():
-            if not self.config.has_section('Settings'):
-                self.config.add_section('Settings')
-            self.config.set('Settings', 'ip', self.ip_entry.get())
-            self.config.set('Settings', 'password', self.password_entry.get())
-            self.config.set('Settings', 'remember', 'True')
-            with open(self.config_file, 'w') as f:
-                self.config.write(f)
-        else:
-            try:
-                import os
-                os.remove(self.config_file)
-            except:
-                pass
+        # Сохранение отключено, так как portable-формат не позволяет сохранять файл
+        pass
 
-    def connect(self):
+    def start_connect(self):
         if self.connected:
             self.connected = False
             self.connect_button.config(text="Connect")
@@ -149,8 +142,16 @@ class Hua4GMon:
             self.client = None
             self.connection = None
             self.start_time = None
+            self.progress.stop()
+            self.progress_label.config(text="")
             return
 
+        self.progress.start(10)  # Запуск анимации
+        self.progress_label.config(text="Подключение...")
+        self.connect_button.config(state='disabled')
+        threading.Thread(target=self.connect_thread, daemon=True).start()
+
+    def connect_thread(self):
         ip = self.ip_entry.get()
         password = self.password_entry.get()
         url = f"http://admin:{password}@{ip}/"
@@ -160,16 +161,19 @@ class Hua4GMon:
             self.client = Client(self.connection)
             self.fetch_data()
             self.connected = True
-            self.connect_button.config(text="Disconnect")
-            self.status_label.config(text="Статус: Подключено", fg='green')
-            self.save_config()
-            self.update_params()
+            self.root.after(0, lambda: self.connect_button.config(text="Disconnect"))
+            self.root.after(0, lambda: self.status_label.config(text="Статус: Подключено", fg='green'))
+            self.root.after(0, self.update_params)
             self.start_time = time.time()
             self.reset_graph()
             threading.Thread(target=self.monitor_loop, daemon=True).start()
             threading.Thread(target=self.keep_alive_loop, daemon=True).start()
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось подключиться: {str(e)}")
+            self.root.after(0, lambda: messagebox.showerror("Ошибка", f"Не удалось подключиться: {str(e)}"))
+        finally:
+            self.root.after(0, self.progress.stop)
+            self.root.after(0, self.progress_label.config(text=""))
+            self.root.after(0, lambda: self.connect_button.config(state='normal'))
 
     def fetch_data(self):
         if not self.connected or not self.client:
@@ -314,7 +318,7 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=20)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=25)
                     self.ax.set_xlabel("Время (сек)", fontsize=10)
                     self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
                     self.ax.grid(True)
@@ -329,12 +333,13 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.ax.clear()
         self.ax.plot([], [], color='blue')
-        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=20)
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=25)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(-100, 0)
+        self.ax.autoscale_view()
         self.fig.tight_layout()
         self.ax.figure.canvas.draw()
 
@@ -358,9 +363,9 @@ class Hua4GMon:
         self.times = []
         self.values = {}
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=20)
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=25)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
-        self.ax.set_ylabel("Значение", fontsize=10)
+        self.ax.set_ylabel(f"Значение ({self.get_unit(self.graph_param.get())})", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(-100, 0)
@@ -383,6 +388,15 @@ class Hua4GMon:
                 self.root.after(0, lambda: messagebox.showerror("Ошибка", str(e)))
                 self.connected = False
                 self.update_params(default=True)
+
+    def keep_alive_loop(self):
+        while self.connected:
+            try:
+                if self.client:
+                    self.client.device.information()
+            except Exception:
+                self.reconnect()
+            time.sleep(30)
 
 if __name__ == "__main__":
     root = tk.Tk()
