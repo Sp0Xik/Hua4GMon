@@ -78,9 +78,9 @@ class Hua4GMon:
         button_frame.columnconfigure(0, weight=1)
         button_frame.columnconfigure(2, weight=1)
         self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton")
-        self.reset_button.grid(row=0, column=1, sticky='center')
+        self.reset_button.grid(row=0, column=1, padx=5)
         self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton")
-        self.save_log_button.grid(row=0, column=2, sticky='center', padx=5)
+        self.save_log_button.grid(row=0, column=2, padx=5)
 
         # Выбор графика
         tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).grid(row=4, column=0, sticky='', padx=10)
@@ -97,7 +97,7 @@ class Hua4GMon:
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
-        self.ax.set_ylim(-100, 0)  # Начальный диапазон для RSRP
+        self.ax.set_ylim(-100, 0)
         self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
@@ -319,7 +319,7 @@ class Hua4GMon:
                     self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
                     self.ax.grid(True)
                     self.ax.set_xlim(0, max(10, max(self.times) + 1))
-                    self.ax.set_ylim(-100, 0)  # Динамический диапазон для RSRP
+                    self.ax.set_ylim(-100, 0)
                     self.fig.tight_layout()
                     self.canvas.draw()
                 except ValueError:
@@ -336,7 +336,7 @@ class Hua4GMon:
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(-100, 0)
         self.fig.tight_layout()
-        self.ax.figure.canvas.draw()  # Принудительное обновление
+        self.ax.figure.canvas.draw()
 
     def is_better(self, current, peak, param):
         try:
