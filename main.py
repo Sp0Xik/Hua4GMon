@@ -5,7 +5,7 @@ import time
 import configparser
 from huawei_lte_api.Client import Client
 from huawei_lte_api.Connection import Connection
-from huawei_lte_api.exceptions import LoginError, ResponseError
+from huawei_lte_api.exceptions import HuaweiLteApiException
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
@@ -19,6 +19,9 @@ class Hua4GMon:
         self.config = configparser.ConfigParser()
         self.config_file = 'config.ini'
         self.load_config()
+
+        # Обработчик закрытия окна
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # Поля ввода
         tk.Label(root, text="IP роутера:", bg='white').pack()
@@ -124,7 +127,7 @@ class Hua4GMon:
             self.reset_graph()
             threading.Thread(target=self.monitor_loop, daemon=True).start()
             threading.Thread(target=self.keep_alive_loop, daemon=True).start()
-        except Exception as e:
+        except HuaweiLteApiException as e:
             messagebox.showerror("Ошибка", f"Не удалось подключиться: {str(e)}")
 
     def fetch_data(self):
@@ -137,7 +140,7 @@ class Hua4GMon:
             data = {**signal, **status, **plmn}
             self.last_data = data  # Сохраняем последние данные
             return data
-        except (LoginError, ResponseError):
+        except HuaweiLteApiException:
             self.reconnect()
             return self.last_data
 
@@ -154,7 +157,7 @@ class Hua4GMon:
             self.client = Client(self.connection)
             self.connected = True
             self.status_label.config(text="Статус: Подключено")
-        except Exception:
+        except HuaweiLteApiException:
             self.status_label.config(text="Статус: Ошибка, повторная попытка...")
             self.root.after(5000, self.reconnect)  # Пробуем снова через 5 сек
 
@@ -163,7 +166,7 @@ class Hua4GMon:
             try:
                 if self.client:
                     self.client.device.information()  # Лёгкий запрос для keep-alive
-            except (LoginError, ResponseError):
+            except HuaweiLteApiException:
                 self.reconnect()
             time.sleep(30)  # Каждые 30 сек
 
@@ -243,6 +246,13 @@ class Hua4GMon:
         self.ax.set_xlabel("Время")
         self.ax.set_ylabel("Значение")
         self.canvas.draw()
+
+    def on_closing(self):
+        self.connected = False
+        self.client = None
+        self.connection = None
+        plt.close(self.fig)  # Закрываем matplotlib
+        self.root.destroy()  # Завершаем Tkinter
 
     def monitor_loop(self):
         while self.connected:
