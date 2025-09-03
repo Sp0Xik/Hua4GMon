@@ -77,11 +77,11 @@ class Hua4GMon:
 
         # Кнопки управления
         button_frame = tk.Frame(root, bg='white', pady=5)
-        button_frame.grid(row=3, column=0, sticky='nsew')
-        self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton", width=15)
-        self.reset_button.pack(side=tk.LEFT, padx=5, expand=True)
-        self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton", width=15)
-        self.save_log_button.pack(side=tk.LEFT, padx=5, expand=True)
+        button_frame.grid(row=3, column=0)
+        self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton")
+        self.reset_button.pack(side=tk.LEFT, padx=5)
+        self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton")
+        self.save_log_button.pack(side=tk.LEFT, padx=5)
 
         # Выбор графика
         tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).grid(row=4, column=0, sticky='', padx=10)
@@ -92,18 +92,19 @@ class Hua4GMon:
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(9, 5.5))
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=30)
+        self.fig, self.ax = plt.subplots(figsize=(10, 6))
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=35)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
-        self.ax.set_ylim(-120, -50)
+        self.param_ranges = {'rsrp': (-120, -50), 'rssi': (-120, -50), 'rsrq': (-20, 0), 'sinr': (-5, 30)}
+        self.ax.set_ylim(*self.param_ranges['rsrp'])
         self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.grid(row=6, column=0, sticky='nsew')
-        canvas_widget.configure(width=700, height=600)
+        canvas_widget.configure(width=700, height=650)
         canvas_widget.pack_propagate(0)
         self.root.update_idletasks()
         self.canvas.draw()
@@ -314,12 +315,12 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=30)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=35)
                     self.ax.set_xlabel("Время (сек)", fontsize=10)
                     self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
                     self.ax.grid(True)
                     self.ax.set_xlim(0, max(10, max(self.times) + 1))
-                    self.ax.set_ylim(-120, -50)
+                    self.ax.set_ylim(*self.param_ranges[param])
                     self.fig.tight_layout()
                     self.canvas.draw()
                 except ValueError:
@@ -329,15 +330,15 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.ax.clear()
         self.ax.plot([], [], color='blue')
-        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=30)
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=35)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
-        self.ax.set_ylim(-120, -50)
+        self.ax.set_ylim(*self.param_ranges[param])
         self.ax.autoscale_view()
         self.fig.tight_layout()
-        self.ax.figure.canvas.draw()
+        self.canvas.draw()
 
     def is_better(self, current, peak, param):
         try:
@@ -358,13 +359,14 @@ class Hua4GMon:
     def reset_graph(self, event=None):
         self.times = []
         self.values = {}
+        param = self.graph_param.get()
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=30)
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=35)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
-        self.ax.set_ylabel(f"Значение ({self.get_unit(self.graph_param.get())})", fontsize=10)
+        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
-        self.ax.set_ylim(-120, -50)
+        self.ax.set_ylim(*self.param_ranges[param])
         self.fig.tight_layout()
         self.canvas.draw()
 
