@@ -47,10 +47,6 @@ class Hua4GMon:
         self.password_entry.insert(0, self.config.get('Settings', 'password', fallback=''))
         self.password_entry.pack()
 
-        # Убрал чекбокс "Запомнить данные", так как сохранение пароля требует файл
-        # self.remember_var = tk.BooleanVar(value=bool(self.config.get('Settings', 'remember', fallback=False)))
-        # tk.Checkbutton(input_frame, text="Запомнить данные", variable=self.remember_var, bg='white', font=("Arial", 10)).pack()
-
         self.connect_button = ttk.Button(input_frame, text="Connect", command=self.start_connect, style="TButton")
         self.connect_button.pack(pady=5)
 
@@ -81,10 +77,10 @@ class Hua4GMon:
 
         # Кнопки управления
         button_frame = tk.Frame(root, bg='white', pady=5)
-        button_frame.grid(row=3, column=0, sticky='ew')
-        self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton")
+        button_frame.grid(row=3, column=0, sticky='nsew')
+        self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton", width=15)
         self.reset_button.pack(side=tk.LEFT, padx=5, expand=True)
-        self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton")
+        self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton", width=15)
         self.save_log_button.pack(side=tk.LEFT, padx=5, expand=True)
 
         # Выбор графика
@@ -96,18 +92,19 @@ class Hua4GMon:
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(8.5, 5))
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=25)
+        self.fig, self.ax = plt.subplots(figsize=(9, 5.5))
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=30)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
-        self.ax.set_ylim(-100, 0)
+        self.ax.set_ylim(-120, -50)
         self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.grid(row=6, column=0, sticky='nsew')
-        canvas_widget.configure(width=700, height=550)
+        canvas_widget.configure(width=700, height=600)
+        canvas_widget.pack_propagate(0)
         self.root.update_idletasks()
         self.canvas.draw()
         self.update_graph_initial()
@@ -128,7 +125,6 @@ class Hua4GMon:
             pass
 
     def save_config(self):
-        # Сохранение отключено, так как portable-формат не позволяет сохранять файл
         pass
 
     def start_connect(self):
@@ -146,7 +142,7 @@ class Hua4GMon:
             self.progress_label.config(text="")
             return
 
-        self.progress.start(10)  # Запуск анимации
+        self.progress.start(10)
         self.progress_label.config(text="Подключение...")
         self.connect_button.config(state='disabled')
         threading.Thread(target=self.connect_thread, daemon=True).start()
@@ -318,12 +314,12 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=25)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=30)
                     self.ax.set_xlabel("Время (сек)", fontsize=10)
                     self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
                     self.ax.grid(True)
                     self.ax.set_xlim(0, max(10, max(self.times) + 1))
-                    self.ax.set_ylim(-100, 0)
+                    self.ax.set_ylim(-120, -50)
                     self.fig.tight_layout()
                     self.canvas.draw()
                 except ValueError:
@@ -333,12 +329,12 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.ax.clear()
         self.ax.plot([], [], color='blue')
-        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=25)
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=30)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
-        self.ax.set_ylim(-100, 0)
+        self.ax.set_ylim(-120, -50)
         self.ax.autoscale_view()
         self.fig.tight_layout()
         self.ax.figure.canvas.draw()
@@ -363,12 +359,12 @@ class Hua4GMon:
         self.times = []
         self.values = {}
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=25)
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=30)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel(f"Значение ({self.get_unit(self.graph_param.get())})", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
-        self.ax.set_ylim(-100, 0)
+        self.ax.set_ylim(-120, -50)
         self.fig.tight_layout()
         self.canvas.draw()
 
