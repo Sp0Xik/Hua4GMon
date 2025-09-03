@@ -75,34 +75,37 @@ class Hua4GMon:
         # Кнопки управления
         button_frame = tk.Frame(root, bg='white', pady=5)
         button_frame.grid(row=3, column=0, sticky='ew')
+        button_frame.columnconfigure(0, weight=1)
+        button_frame.columnconfigure(2, weight=1)
         self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton")
-        self.reset_button.pack(side=tk.LEFT, padx=5)
+        self.reset_button.grid(row=0, column=1, sticky='center')
         self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton")
-        self.save_log_button.pack(side=tk.LEFT, padx=5)
+        self.save_log_button.grid(row=0, column=2, sticky='center', padx=5)
 
         # Выбор графика
-        tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).grid(row=4, column=0, sticky='w', padx=10)
+        tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).grid(row=4, column=0, sticky='', padx=10)
         self.graph_param = tk.StringVar(value='rsrp')
         self.graph_combo = ttk.Combobox(root, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12), width=20, state='readonly')
-        self.graph_combo.grid(row=5, column=0, sticky='', padx=10, pady=(0, 10))  # Убрано sticky='ew', центрирование
-        self.graph_combo.bind("<1>", lambda event: self.graph_combo.event_generate("<Down>"))  # Открытие списка по клику
+        self.graph_combo.grid(row=5, column=0, sticky='', padx=10, pady=(0, 10))
+        self.graph_combo.bind("<1>", lambda event: self.graph_combo.event_generate("<Down>"))
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(7, 4))
+        self.fig, self.ax = plt.subplots(figsize=(8, 4.5))
         self.ax.set_title("Уровень сигнала", fontsize=12, pad=20)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
+        self.ax.set_ylim(-100, 0)  # Начальный диапазон для RSRP
         self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.grid(row=6, column=0, sticky='nsew')
-        canvas_widget.configure(width=700, height=450)
+        canvas_widget.configure(width=700, height=500)
         self.root.update_idletasks()
         self.canvas.draw()
-        self.update_graph_initial()  # Инициализация графика с метками
+        self.update_graph_initial()
 
         self.times = []
         self.values = {}
@@ -316,6 +319,7 @@ class Hua4GMon:
                     self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
                     self.ax.grid(True)
                     self.ax.set_xlim(0, max(10, max(self.times) + 1))
+                    self.ax.set_ylim(-100, 0)  # Динамический диапазон для RSRP
                     self.fig.tight_layout()
                     self.canvas.draw()
                 except ValueError:
@@ -324,14 +328,15 @@ class Hua4GMon:
     def update_graph_initial(self):
         param = self.graph_param.get()
         self.ax.clear()
-        self.ax.plot([], [], color='blue')  # Пустой график для инициализации
+        self.ax.plot([], [], color='blue')
         self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=20)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
+        self.ax.set_ylim(-100, 0)
         self.fig.tight_layout()
-        self.canvas.draw()
+        self.ax.figure.canvas.draw()  # Принудительное обновление
 
     def is_better(self, current, peak, param):
         try:
@@ -358,6 +363,7 @@ class Hua4GMon:
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
+        self.ax.set_ylim(-100, 0)
         self.fig.tight_layout()
         self.canvas.draw()
 
