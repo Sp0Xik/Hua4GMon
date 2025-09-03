@@ -29,13 +29,12 @@ class Hua4GMon:
         style.map("TButton", background=[('active', '#4CAF50')])
 
         # Grid компоновка
-        self.root.rowconfigure(3, weight=1)
         self.root.rowconfigure(6, weight=1)
         self.root.columnconfigure(0, weight=1)
 
         # Контейнер для ввода
         input_frame = tk.Frame(root, bg='white', padx=10, pady=10)
-        input_frame.grid(row=0, column=0, sticky='ew')
+        input_frame.pack(fill=tk.X)
 
         tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).pack()
         self.ip_entry = tk.Entry(input_frame, font=("Arial", 12))
@@ -64,11 +63,11 @@ class Hua4GMon:
 
         # Статус подключения
         self.status_label = tk.Label(root, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 12, "bold"))
-        self.status_label.grid(row=1, column=0, sticky='ew')
+        self.status_label.pack(fill=tk.X)
 
         # Контейнер для параметров (две колонки)
         self.params_frame = tk.Frame(root, bg='white', padx=10, pady=10)
-        self.params_frame.grid(row=2, column=0, sticky='nsew')
+        self.params_frame.pack(fill=tk.X)
         self.param_labels = {}
         self.dynamic_params = ['rssi', 'rsrp', 'rsrq', 'sinr']
         self.static_params = ['cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn']
@@ -77,23 +76,23 @@ class Hua4GMon:
 
         # Кнопки управления
         button_frame = tk.Frame(root, bg='white', pady=5)
-        button_frame.grid(row=3, column=0)
-        self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton")
-        self.reset_button.pack(side=tk.LEFT, padx=5)
-        self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton")
-        self.save_log_button.pack(side=tk.LEFT, padx=5)
+        button_frame.pack()
+        self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton", width=15)
+        self.reset_button.pack(side=tk.LEFT, padx=10)
+        self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton", width=15)
+        self.save_log_button.pack(side=tk.LEFT, padx=10)
 
         # Выбор графика
-        tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).grid(row=4, column=0, sticky='', padx=10)
+        tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).pack()
         self.graph_param = tk.StringVar(value='rsrp')
         self.graph_combo = ttk.Combobox(root, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12), width=20, state='readonly')
-        self.graph_combo.grid(row=5, column=0, sticky='', padx=10, pady=(0, 10))
+        self.graph_combo.pack(pady=(0, 10))
         self.graph_combo.bind("<1>", lambda event: self.graph_combo.event_generate("<Down>"))
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(10, 6))
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=35)
+        self.fig, self.ax = plt.subplots(figsize=(12, 7))
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=40)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
@@ -103,8 +102,8 @@ class Hua4GMon:
         self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.grid(row=6, column=0, sticky='nsew')
-        canvas_widget.configure(width=700, height=650)
+        canvas_widget.pack(fill=tk.BOTH, expand=True)
+        canvas_widget.configure(width=700, height=700)
         canvas_widget.pack_propagate(0)
         self.root.update_idletasks()
         self.canvas.draw()
@@ -315,7 +314,7 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=35)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=40)
                     self.ax.set_xlabel("Время (сек)", fontsize=10)
                     self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
                     self.ax.grid(True)
@@ -323,6 +322,7 @@ class Hua4GMon:
                     self.ax.set_ylim(*self.param_ranges[param])
                     self.fig.tight_layout()
                     self.canvas.draw()
+                    self.ax.figure.canvas.flush_events()  # Принудительное обновление
                 except ValueError:
                     pass
 
@@ -330,7 +330,7 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.ax.clear()
         self.ax.plot([], [], color='blue')
-        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=35)
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=40)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
         self.ax.grid(True)
@@ -339,6 +339,7 @@ class Hua4GMon:
         self.ax.autoscale_view()
         self.fig.tight_layout()
         self.canvas.draw()
+        self.ax.figure.canvas.flush_events()  # Принудительное обновление
 
     def is_better(self, current, peak, param):
         try:
@@ -361,7 +362,7 @@ class Hua4GMon:
         self.values = {}
         param = self.graph_param.get()
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=35)
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=40)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
         self.ax.grid(True)
@@ -369,6 +370,7 @@ class Hua4GMon:
         self.ax.set_ylim(*self.param_ranges[param])
         self.fig.tight_layout()
         self.canvas.draw()
+        self.ax.figure.canvas.flush_events()  # Принудительное обновление
 
     def on_closing(self):
         self.connected = False
