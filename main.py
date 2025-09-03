@@ -83,7 +83,7 @@ class Hua4GMon:
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(7, 4))
+        self.fig, self.ax = plt.subplots(figsize=(7, 3.5))
         self.ax.set_title("Уровень сигнала", fontsize=12)
         self.ax.set_xlabel("Время", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
@@ -92,11 +92,12 @@ class Hua4GMon:
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        canvas_widget.configure(width=700, height=350)  # Увеличенные размеры для видимости
+        canvas_widget.configure(width=700, height=350)
         self.canvas.draw()  # Отрисовка графика при открытии
+        self.root.after(100, self.update_graph_initial)  # Принудительное обновление компоновки
 
-        self.times = []
-        self.values = {}
+        self.times = [time.time()]  # Начальные данные для графика
+        self.values = {param: [0] for param in self.dynamic_params}  # Начальные значения
         self.peak_values = {}
         self.connected = False
         self.client = None
@@ -199,13 +200,13 @@ class Hua4GMon:
     def init_params(self):
         left_frame = tk.Frame(self.params_frame, bg='white')
         right_frame = tk.Frame(self.params_frame, bg='white')
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=15)  # Увеличенный отступ
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=15)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=15)
         for i, param in enumerate(self.params):
             frame = left_frame if i % 2 == 0 else right_frame
             text = f"{param.upper()}: -" if param in self.static_params else f"{param.upper()}: - (пик: -)"
-            label = tk.Label(frame, text=text, bg='white', fg='blue', font=("Arial", 12, "bold"), anchor='w', wraplength=300)  # Перенос длинных строк
-            label.pack(fill=tk.X, pady=2)  # Заполнение по X для равномерности
+            label = tk.Label(frame, text=text, bg='white', fg='blue', font=("Arial", 12, "bold"), anchor='w', wraplength=300)
+            label.pack(fill=tk.X, pady=2)
             self.param_labels[param] = label
 
     def get_param_color(self, param, value):
@@ -298,6 +299,18 @@ class Hua4GMon:
                     self.canvas.draw()
                 except ValueError:
                     pass
+
+    def update_graph_initial(self):
+        # Начальное обновление графика с пустыми данными
+        param = self.graph_param.get()
+        self.ax.clear()
+        self.ax.plot(self.times, self.values[param], color='blue')
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12)
+        self.ax.set_xlabel("Время", fontsize=10)
+        self.ax.set_ylabel("Значение", fontsize=10)
+        self.ax.grid(True)
+        self.fig.tight_layout()
+        self.canvas.draw()
 
     def is_better(self, current, peak, param):
         try:
