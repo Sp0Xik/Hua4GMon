@@ -92,7 +92,8 @@ class Hua4GMon:
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        canvas_widget.configure(height=300)
+        canvas_widget.configure(width=700, height=350)  # Увеличенные размеры для видимости
+        self.canvas.draw()  # Отрисовка графика при открытии
 
         self.times = []
         self.values = {}
@@ -198,13 +199,13 @@ class Hua4GMon:
     def init_params(self):
         left_frame = tk.Frame(self.params_frame, bg='white')
         right_frame = tk.Frame(self.params_frame, bg='white')
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=10)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=10)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=15)  # Увеличенный отступ
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=15)
         for i, param in enumerate(self.params):
             frame = left_frame if i % 2 == 0 else right_frame
             text = f"{param.upper()}: -" if param in self.static_params else f"{param.upper()}: - (пик: -)"
-            label = tk.Label(frame, text=text, bg='white', fg='blue', font=("Arial", 12, "bold"))
-            label.pack(anchor='w')
+            label = tk.Label(frame, text=text, bg='white', fg='blue', font=("Arial", 12, "bold"), anchor='w', wraplength=300)  # Перенос длинных строк
+            label.pack(fill=tk.X, pady=2)  # Заполнение по X для равномерности
             self.param_labels[param] = label
 
     def get_param_color(self, param, value):
