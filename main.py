@@ -5,7 +5,6 @@ import time
 import configparser
 from huawei_lte_api.Client import Client
 from huawei_lte_api.Connection import Connection
-from huawei_lte_api.exceptions import HuaweiLteApiException
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
@@ -127,7 +126,7 @@ class Hua4GMon:
             self.reset_graph()
             threading.Thread(target=self.monitor_loop, daemon=True).start()
             threading.Thread(target=self.keep_alive_loop, daemon=True).start()
-        except HuaweiLteApiException as e:
+        except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось подключиться: {str(e)}")
 
     def fetch_data(self):
@@ -140,7 +139,7 @@ class Hua4GMon:
             data = {**signal, **status, **plmn}
             self.last_data = data  # Сохраняем последние данные
             return data
-        except HuaweiLteApiException:
+        except Exception:
             self.reconnect()
             return self.last_data
 
@@ -157,7 +156,7 @@ class Hua4GMon:
             self.client = Client(self.connection)
             self.connected = True
             self.status_label.config(text="Статус: Подключено")
-        except HuaweiLteApiException:
+        except Exception:
             self.status_label.config(text="Статус: Ошибка, повторная попытка...")
             self.root.after(5000, self.reconnect)  # Пробуем снова через 5 сек
 
@@ -166,7 +165,7 @@ class Hua4GMon:
             try:
                 if self.client:
                     self.client.device.information()  # Лёгкий запрос для keep-alive
-            except HuaweiLteApiException:
+            except Exception:
                 self.reconnect()
             time.sleep(30)  # Каждые 30 сек
 
