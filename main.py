@@ -62,6 +62,9 @@ class Hua4GMon:
         self.params_frame = tk.Frame(root, bg='white', padx=10, pady=10)
         self.params_frame.pack(fill=tk.BOTH)
         self.param_labels = {}
+        self.dynamic_params = ['rssi', 'rsrp', 'rsrq', 'sinr']  # Динамические параметры с пиками
+        self.static_params = ['cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn']  # Статические без пиков
+        self.params = self.dynamic_params + self.static_params
         self.init_params()
 
         # Кнопки управления
@@ -75,19 +78,21 @@ class Hua4GMon:
         # Выбор графика
         tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).pack()
         self.graph_param = tk.StringVar(value='rsrp')
-        self.graph_combo = ttk.Combobox(root, textvariable=self.graph_param, values=['rsrp', 'rssi', 'sinr', 'rsrq'], font=("Arial", 12))
+        self.graph_combo = ttk.Combobox(root, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12))
         self.graph_combo.pack()
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(6, 3))
+        self.fig, self.ax = plt.subplots(figsize=(7, 4))  # Увеличенный размер графика
         self.ax.set_title("Уровень сигнала", fontsize=12)
         self.ax.set_xlabel("Время", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
         self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        canvas_widget = self.canvas.get_tk_widget()
+        canvas_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        canvas_widget.configure(height=300)  # Минимальная высота для видимости
 
         self.times = []
         self.values = {}
@@ -191,14 +196,14 @@ class Hua4GMon:
             time.sleep(30)
 
     def init_params(self):
-        self.params = ['rssi', 'rsrp', 'rsrq', 'sinr', 'cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn']
         left_frame = tk.Frame(self.params_frame, bg='white')
         right_frame = tk.Frame(self.params_frame, bg='white')
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=10)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=10)
         for i, param in enumerate(self.params):
             frame = left_frame if i % 2 == 0 else right_frame
-            label = tk.Label(frame, text=f"{param.upper()}: - (пик: -)", bg='white', fg='blue', font=("Arial", 12, "bold"))
+            text = f"{param.upper()}: -" if param in self.static_params else f"{param.upper()}: - (пик: -)"
+            label = tk.Label(frame, text=text, bg='white', fg='blue', font=("Arial", 12, "bold"))
             label.pack(anchor='w')
             self.param_labels[param] = label
 
@@ -227,8 +232,11 @@ class Hua4GMon:
                 f.write("Параметры:\n")
                 for param in self.params:
                     current = self.last_data.get(param, '-')
-                    peak = self.peak_values.get(param, '-')
-                    f.write(f"{param.upper()}: {current} (пик: {peak})\n")
+                    if param in self.dynamic_params:
+                        peak = self.peak_values.get(param, '-')
+                        f.write(f"{param.upper()}: {current} (пик: {peak})\n")
+                    else:
+                        f.write(f"{param.upper()}: {current}\n")
             messagebox.showinfo("Успех", f"Лог сохранён в {filename}")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось сохранить лог: {str(e)}")
@@ -236,28 +244,34 @@ class Hua4GMon:
     def update_params(self, default=False):
         if default:
             data = {param: '-' for param in self.params}
-            self.peak_values = {param: '-' for param in self.params}
+            self.peak_values = {param: '-' for param in self.dynamic_params}
         else:
             data = self.fetch_data()
-            for param in self.params:
+            for param in self.dynamic_params:
                 if param in data:
                     current = data[param]
                     peak = self.peak_values.get(param, '-')
                     if peak == '-' or self.is_better(current, peak, param):
                         self.peak_values[param] = current
                         peak = current
-                        # Подсветка пика зелёным на 2 сек
                         self.param_labels[param].config(fg='green')
-                        self.root.after(2000, lambda p=param: self.param_labels[p].config(fg='blue' if self.last_data.get(p, '-') != '-' else 'black'))
+                        self.root.after(2000, lambda p=param: self.param_labels[p].config(fg=self.get_param_color(p, self.last_data.get(p, '-')))
                 else:
                     current = '-'
                     peak = self.peak_values.get(param, '-')
+            for param in self.static_params:
+                current = data.get(param, '-')
 
         for param in self.params:
             current = data.get(param, '-')
-            peak = self.peak_values.get(param, '-')
-            color = self.get_param_color(param, current)
-            self.param_labels[param].config(text=f"{param.upper()}: {current} (пик: {peak})", fg=color if current != '-' else 'black')
+            if param in self.dynamic_params:
+                peak = self.peak_values.get(param, '-')
+                text = f"{param.upper()}: {current} (пик: {peak})"
+                color = self.get_param_color(param, current)
+            else:
+                text = f"{param.upper()}: {current}"
+                color = 'black'
+            self.param_labels[param].config(text=text, fg=color if current != '-' else 'black')
 
         # Обновить график
         if not default:
@@ -297,7 +311,7 @@ class Hua4GMon:
             return False
 
     def reset_peaks(self):
-        self.peak_values = {param: '-' for param in self.params}
+        self.peak_values = {param: '-' for param in self.dynamic_params}
         self.update_params()
 
     def reset_graph(self, event=None):
