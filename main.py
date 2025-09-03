@@ -14,7 +14,7 @@ class Hua4GMon:
         self.root = root
         self.root.title("Huawei 4G Monitor")
         self.root.configure(bg='white')
-        self.root.geometry("800x700")  # Увеличенная высота
+        self.root.geometry("800x700")
 
         self.config = configparser.ConfigParser()
         self.config_file = 'config.ini'
@@ -29,8 +29,8 @@ class Hua4GMon:
         style.map("TButton", background=[('active', '#4CAF50')])
 
         # Grid компоновка
-        self.root.rowconfigure(3, weight=1)  # Расширение для params_frame
-        self.root.rowconfigure(6, weight=1)  # Расширение для canvas
+        self.root.rowconfigure(3, weight=1)
+        self.root.rowconfigure(6, weight=1)
         self.root.columnconfigure(0, weight=1)
 
         # Контейнер для ввода
@@ -83,24 +83,26 @@ class Hua4GMon:
         # Выбор графика
         tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).grid(row=4, column=0, sticky='w', padx=10)
         self.graph_param = tk.StringVar(value='rsrp')
-        self.graph_combo = ttk.Combobox(root, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12), width=20)  # Ограниченная ширина
-        self.graph_combo.grid(row=5, column=0, sticky='w', padx=10, pady=(0, 10))  # Отступ перед canvas
+        self.graph_combo = ttk.Combobox(root, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12), width=20, state='readonly')
+        self.graph_combo.grid(row=5, column=0, sticky='', padx=10, pady=(0, 10))  # Убрано sticky='ew', центрирование
+        self.graph_combo.bind("<1>", lambda event: self.graph_combo.event_generate("<Down>"))  # Открытие списка по клику
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
         self.fig, self.ax = plt.subplots(figsize=(7, 4))
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=15)  # Увеличен отступ заголовка
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=20)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
-        self.ax.set_xlim(0, 10)  # Начальный диапазон для видимости меток
+        self.ax.set_xlim(0, 10)
         self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.grid(row=6, column=0, sticky='nsew')
-        canvas_widget.configure(width=700, height=450)  # Увеличенная высота для меток
-        self.root.update_idletasks()  # Пересчёт компоновки
+        canvas_widget.configure(width=700, height=450)
+        self.root.update_idletasks()
         self.canvas.draw()
+        self.update_graph_initial()  # Инициализация графика с метками
 
         self.times = []
         self.values = {}
@@ -309,15 +311,27 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=15)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=20)
                     self.ax.set_xlabel("Время (сек)", fontsize=10)
                     self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
                     self.ax.grid(True)
-                    self.ax.set_xlim(0, max(10, max(self.times) + 1))  # Динамический диапазон
+                    self.ax.set_xlim(0, max(10, max(self.times) + 1))
                     self.fig.tight_layout()
                     self.canvas.draw()
                 except ValueError:
                     pass
+
+    def update_graph_initial(self):
+        param = self.graph_param.get()
+        self.ax.clear()
+        self.ax.plot([], [], color='blue')  # Пустой график для инициализации
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=20)
+        self.ax.set_xlabel("Время (сек)", fontsize=10)
+        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10)
+        self.ax.grid(True)
+        self.ax.set_xlim(0, 10)
+        self.fig.tight_layout()
+        self.canvas.draw()
 
     def is_better(self, current, peak, param):
         try:
@@ -339,7 +353,7 @@ class Hua4GMon:
         self.times = []
         self.values = {}
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=15)
+        self.ax.set_title("Уровень сигнала", fontsize=12, pad=20)
         self.ax.set_xlabel("Время (сек)", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
         self.ax.grid(True)
