@@ -62,8 +62,8 @@ class Hua4GMon:
         self.params_frame = tk.Frame(root, bg='white', padx=10, pady=10)
         self.params_frame.pack(fill=tk.BOTH)
         self.param_labels = {}
-        self.dynamic_params = ['rssi', 'rsrp', 'rsrq', 'sinr']  # Динамические параметры с пиками
-        self.static_params = ['cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn']  # Статические без пиков
+        self.dynamic_params = ['rssi', 'rsrp', 'rsrq', 'sinr']
+        self.static_params = ['cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn']
         self.params = self.dynamic_params + self.static_params
         self.init_params()
 
@@ -83,7 +83,7 @@ class Hua4GMon:
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(7, 4))  # Увеличенный размер графика
+        self.fig, self.ax = plt.subplots(figsize=(7, 4))
         self.ax.set_title("Уровень сигнала", fontsize=12)
         self.ax.set_xlabel("Время", fontsize=10)
         self.ax.set_ylabel("Значение", fontsize=10)
@@ -92,7 +92,7 @@ class Hua4GMon:
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        canvas_widget.configure(height=300)  # Минимальная высота для видимости
+        canvas_widget.configure(height=300)
 
         self.times = []
         self.values = {}
@@ -255,7 +255,7 @@ class Hua4GMon:
                         self.peak_values[param] = current
                         peak = current
                         self.param_labels[param].config(fg='green')
-                        self.root.after(2000, lambda p=param: self.param_labels[p].config(fg=self.get_param_color(p, self.last_data.get(p, '-')))
+                        self.root.after(2000, lambda p=param: self.param_labels[p].config(fg=self.get_param_color(p, self.last_data.get(p, '-'))))
                 else:
                     current = '-'
                     peak = self.peak_values.get(param, '-')
