@@ -388,8 +388,13 @@ class Hua4GMon:
     def _speedtest_thread(self):
         try:
             st = speedtest.Speedtest()
-            # Используем custom server для России
-            st.get_servers(servers=['bee.speedtestcustom.com'])
+            # Получаем список доступных серверов
+            servers = st.get_servers()
+            if not servers:
+                raise Exception("Нет доступных серверов")
+            # Выбираем первый доступный сервер
+            st.set_server(servers[0]['id'])
+            print(f"Использован сервер: {servers[0]['host']}")  # Для отладки
             st.get_best_server()
             download = st.download() / 1_000_000  # Mbps
             upload = st.upload() / 1_000_000     # Mbps
