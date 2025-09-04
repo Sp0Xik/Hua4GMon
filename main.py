@@ -10,6 +10,12 @@ from huawei_lte_api.Connection import Connection
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+# Проверка доступности Speedtest
+try:
+    Speedtest = speedtest.Speedtest
+except AttributeError:
+    raise ImportError("Модуль speedtest-python не установлен корректно. Установите через 'pip install speedtest-python'.")
+
 class Hua4GMon:
     def __init__(self, root):
         self.root = root
@@ -24,22 +30,23 @@ class Hua4GMon:
         # Обработчик закрытия окна
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        # Стили для кнопок
+        # Стили для кнопок и полей ввода
         style = ttk.Style()
         style.configure("TButton", font=("Arial", 12), padding=5)
         style.map("TButton", background=[('active', '#4CAF50')])
+        style.configure("TEntry", fieldbackground="#f0f0f0", foreground="black", borderwidth=2, relief="solid")
 
         # Контейнер для ввода
         input_frame = tk.Frame(root, bg='white', padx=10, pady=10)
         input_frame.pack(fill=tk.X)
 
         tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).pack()
-        self.ip_entry = tk.Entry(input_frame, font=("Arial", 12))
+        self.ip_entry = tk.Entry(input_frame, font=("Arial", 12), style="TEntry")
         self.ip_entry.insert(0, self.config.get('Settings', 'ip', fallback='192.168.8.1'))
         self.ip_entry.pack()
 
         tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 12)).pack()
-        self.password_entry = tk.Entry(input_frame, show="*", font=("Arial", 12))
+        self.password_entry = tk.Entry(input_frame, show="*", font=("Arial", 12), style="TEntry")
         self.password_entry.insert(0, self.config.get('Settings', 'password', fallback=''))
         self.password_entry.pack()
 
@@ -387,7 +394,7 @@ class Hua4GMon:
 
     def _speedtest_thread(self):
         try:
-            st = speedtest.Speedtest()
+            st = Speedtest()
             # Получаем список доступных серверов
             servers = st.get_servers()
             if not servers:
