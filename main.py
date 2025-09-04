@@ -16,7 +16,7 @@ class Hua4GMon:
         self.root.configure(bg='white')
 
         # Установка минимального размера окна
-        self.root.minsize(900, 600)
+        self.root.minsize(800, 500)
 
         self.config = configparser.ConfigParser()
         self.config_file = 'config.ini'
@@ -36,7 +36,7 @@ class Hua4GMon:
         self.root.grid_rowconfigure(1, weight=1)  # Строка для параметров
         self.root.grid_rowconfigure(2, weight=0)  # Строка для направления
         self.root.grid_rowconfigure(3, weight=0)  # Строка для кнопок
-        self.root.grid_rowconfigure(4, weight=2)  # Строка для графика
+        self.root.grid_rowconfigure(4, weight=1)  # Строка для графика (уменьшен вес)
         self.root.grid_columnconfigure(0, weight=1)
 
         # Контейнер для ввода
@@ -46,12 +46,12 @@ class Hua4GMon:
         tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).grid(row=0, column=0, sticky='e')
         self.ip_entry = ttk.Entry(input_frame, font=("Arial", 12), style="TEntry", width=20)
         self.ip_entry.insert(0, self.config.get('Settings', 'ip', fallback='192.168.8.1'))
-        self.ip_entry.grid(row=0, column=1, sticky='w')
+        self.ip_entry.grid(row=0, column=1, sticky='w', padx=5)
 
         tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 12)).grid(row=0, column=2, sticky='e')
         self.password_entry = ttk.Entry(input_frame, show="*", font=("Arial", 12), style="TEntry", width=20)
         self.password_entry.insert(0, self.config.get('Settings', 'password', fallback=''))
-        self.password_entry.grid(row=0, column=3, sticky='w')
+        self.password_entry.grid(row=0, column=3, sticky='w', padx=5)
 
         self.connect_button = ttk.Button(input_frame, text="Connect", command=self.start_connect, style="TButton")
         self.connect_button.grid(row=0, column=4, sticky='e', padx=5)
@@ -116,11 +116,11 @@ class Hua4GMon:
         # Диаграмма
         graph_container = tk.Frame(root, bg='white')
         graph_container.grid(row=6, column=0, sticky='nsew', pady=5)
-        self.root.grid_rowconfigure(6, weight=2)  # Больше веса для графика
-        self.fig, self.ax = plt.subplots(figsize=(9, 5))
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=15)
-        self.ax.set_xlabel("Время (сек)", fontsize=10, labelpad=5)
-        self.ax.set_ylabel("Значение", fontsize=10, labelpad=5)
+        self.root.grid_rowconfigure(6, weight=1)  # Уменьшен вес для компактности
+        self.fig, self.ax = plt.subplots(figsize=(8, 3))  # Уменьшен размер графика
+        self.ax.set_title("Уровень сигнала", fontsize=10, pad=10)
+        self.ax.set_xlabel("Время (сек)", fontsize=8, labelpad=3)
+        self.ax.set_ylabel("Значение", fontsize=8, labelpad=3)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.param_ranges = {'rsrp': (-120, -50), 'rssi': (-120, -50), 'rsrq': (-20, 0), 'sinr': (-5, 30)}
@@ -348,9 +348,9 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=15)
-                    self.ax.set_xlabel("Время (сек)", fontsize=10, labelpad=5)
-                    self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10, labelpad=5)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=10, pad=10)
+                    self.ax.set_xlabel("Время (сек)", fontsize=8, labelpad=3)
+                    self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=8, labelpad=3)
                     self.ax.grid(True)
                     self.ax.set_xlim(0, max(10, max(self.times) + 1))
                     self.ax.set_ylim(*self.param_ranges[param])
@@ -362,9 +362,9 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.ax.clear()
         self.ax.plot([], [], color='blue')
-        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=12, pad=15)
-        self.ax.set_xlabel("Время (сек)", fontsize=10, labelpad=5)
-        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10, labelpad=5)
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=10, pad=10)
+        self.ax.set_xlabel("Время (сек)", fontsize=8, labelpad=3)
+        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=8, labelpad=3)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(*self.param_ranges[param])
@@ -394,9 +394,9 @@ class Hua4GMon:
         self.values = {}
         param = self.graph_param.get()
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=12, pad=15)
-        self.ax.set_xlabel("Время (сек)", fontsize=10, labelpad=5)
-        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10, labelpad=5)
+        self.ax.set_title("Уровень сигнала", fontsize=10, pad=10)
+        self.ax.set_xlabel("Время (сек)", fontsize=8, labelpad=3)
+        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=8, labelpad=3)
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(*self.param_ranges[param])
