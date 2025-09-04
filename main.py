@@ -4,6 +4,7 @@ import threading
 import time
 import configparser
 import datetime
+import speedtest
 from huawei_lte_api.Client import Client
 from huawei_lte_api.Connection import Connection
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ class Hua4GMon:
         self.root = root
         self.root.title("Huawei 4G Monitor")
         self.root.configure(bg='white')
-        self.root.geometry("800x700")
+        self.root.geometry("900x700")
 
         self.config = configparser.ConfigParser()
         self.config_file = 'config.ini'
@@ -65,12 +66,29 @@ class Hua4GMon:
         self.status_label = tk.Label(root, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 12, "bold"))
         self.status_label.pack(fill=tk.X)
 
-        # Контейнер для параметров (две колонки)
+        # Контейнер для параметров
         self.params_frame = tk.Frame(root, bg='white', padx=10, pady=10)
         self.params_frame.pack(fill=tk.X)
+
+        # Левый и правый фреймы для параметров
+        self.left_frame = tk.Frame(self.params_frame, bg='white')
+        self.right_frame = tk.Frame(self.params_frame, bg='white')
+        self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=15)
+        self.right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=15)
+
+        # Фрейм для теста скорости между столбцами
+        self.speedtest_frame = tk.Frame(self.params_frame, bg='white', padx=20)
+        self.speedtest_frame.pack(side=tk.LEFT, fill=tk.Y)
+        tk.Label(self.speedtest_frame, text="Скорость интернета:", bg='white', font=("Arial", 12, "bold")).pack(pady=5)
+        self.speedtest_button = ttk.Button(self.speedtest_frame, text="Тест скорости", command=self.run_speedtest, style="TButton", width=15)
+        self.speedtest_button.pack(pady=5)
+        self.speedtest_label = tk.Label(self.speedtest_frame, text="Ожидание теста...", bg='white', font=("Arial", 10))
+        self.speedtest_label.pack()
+
+        # Метки параметров
         self.param_labels = {}
         self.dynamic_params = ['rssi', 'rsrp', 'rsrq', 'sinr']
-        self.static_params = ['cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn']
+        self.static_params = ['cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn', 'lac', 'rrc_state', 'lte_bandwidth']
         self.params = self.dynamic_params + self.static_params
         self.init_params()
 
@@ -212,13 +230,10 @@ class Hua4GMon:
             time.sleep(30)
 
     def init_params(self):
-        left_frame = tk.Frame(self.params_frame, bg='white')
-        right_frame = tk.Frame(self.params_frame, bg='white')
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=15)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=15)
-        for i, param in enumerate(self.params):
-            frame = left_frame if i % 2 == 0 else right_frame
-            text = f"{param.upper()}: -" if param in self.static_params else f"{param.upper()}: - (пик: -)"
+        params_order = ['rssi', 'rsrp', 'lac', 'rsrq', 'rrc_state', 'sinr', 'lte_bandwidth', 'cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn']
+        for i, param in enumerate(params_order):
+            frame = self.left_frame if i % 2 == 0 else self.right_frame
+            text = f"{param.upper()}: -" if param in self.static_params or param not in self.dynamic_params else f"{param.upper()}: -"
             label = tk.Label(frame, text=text, bg='white', fg='blue', font=("Arial", 12, "bold"), anchor='w', wraplength=300)
             label.pack(fill=tk.X, pady=2)
             self.param_labels[param] = label
@@ -285,7 +300,8 @@ class Hua4GMon:
             for param in self.static_params:
                 current = data.get(param, '-')
 
-        for param in self.params:
+        params_order = ['rssi', 'rsrp', 'lac', 'rsrq', 'rrc_state', 'sinr', 'lte_bandwidth', 'cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn']
+        for param in params_order:
             current = data.get(param, '-')
             if param in self.dynamic_params:
                 peak = self.peak_values.get(param, '-')
@@ -364,6 +380,26 @@ class Hua4GMon:
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(*self.param_ranges[param])
         self.canvas.draw()
+
+    def run_speedtest(self):
+        self.speedtest_button.config(state='disabled')
+        self.speedtest_label.config(text="Тест начат... (5-10 сек)", fg='orange')
+        self.root.update_idletasks()
+        threading.Thread(target=self._speedtest_thread, daemon=True).start()
+
+    def _speedtest_thread(self):
+        try:
+            st = speedtest.Speedtest()
+            st.get_best_server()
+            download = st.download() / 1_000_000  # Mbps
+            upload = st.upload() / 1_000_000     # Mbps
+            ping = st.results.ping               # ms
+            result = f"↓ {download:.2f} Mbps / ↑ {upload:.2f} Mbps | Ping: {ping:.2f} ms"
+            self.root.after(0, lambda: self.speedtest_label.config(text=result, fg='green'))
+        except Exception as e:
+            self.root.after(0, lambda: self.speedtest_label.config(text=f"Ошибка: {str(e)}", fg='red'))
+        finally:
+            self.root.after(0, lambda: self.speedtest_button.config(state='normal'))
 
     def on_closing(self):
         self.connected = False
