@@ -29,10 +29,6 @@ class Hua4GMon:
         style.configure("TButton", font=("Arial", 12), padding=5)
         style.map("TButton", background=[('active', '#4CAF50')])
 
-        # Grid компоновка
-        self.root.rowconfigure(6, weight=1)
-        self.root.columnconfigure(0, weight=1)
-
         # Контейнер для ввода
         input_frame = tk.Frame(root, bg='white', padx=10, pady=10)
         input_frame.pack(fill=tk.X)
@@ -73,12 +69,14 @@ class Hua4GMon:
         # Левый и правый фреймы для параметров
         self.left_frame = tk.Frame(self.params_frame, bg='white')
         self.right_frame = tk.Frame(self.params_frame, bg='white')
-        self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=15)
-        self.right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=15)
+        self.left_frame.grid(row=0, column=0, sticky='nsew')
+        self.right_frame.grid(row=0, column=2, sticky='nsew')
+        self.params_frame.columnconfigure(0, weight=1)
+        self.params_frame.columnconfigure(2, weight=1)
 
-        # Фрейм для теста скорости между столбцами
+        # Фрейм для теста скорости по центру
         self.speedtest_frame = tk.Frame(self.params_frame, bg='white', padx=20)
-        self.speedtest_frame.pack(side=tk.LEFT, fill=tk.Y)
+        self.speedtest_frame.grid(row=0, column=1, sticky='ns')
         tk.Label(self.speedtest_frame, text="Скорость интернета:", bg='white', font=("Arial", 12, "bold")).pack(pady=5)
         self.speedtest_button = ttk.Button(self.speedtest_frame, text="Тест скорости", command=self.run_speedtest, style="TButton", width=15)
         self.speedtest_button.pack(pady=5)
@@ -390,6 +388,8 @@ class Hua4GMon:
     def _speedtest_thread(self):
         try:
             st = speedtest.Speedtest()
+            # Используем custom server для России
+            st.get_servers(servers=['bee.speedtestcustom.com'])
             st.get_best_server()
             download = st.download() / 1_000_000  # Mbps
             upload = st.upload() / 1_000_000     # Mbps
