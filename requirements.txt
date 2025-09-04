@@ -1,3 +1,2 @@
 huawei-lte-api
 matplotlib
-speedtest-python
