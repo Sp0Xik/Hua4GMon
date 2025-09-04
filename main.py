@@ -4,17 +4,10 @@ import threading
 import time
 import configparser
 import datetime
-import speedtest_python
 from huawei_lte_api.Client import Client
 from huawei_lte_api.Connection import Connection
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
-# Проверка доступности Speedtest
-try:
-    Speedtest = speedtest_python.Speedtest
-except AttributeError:
-    raise ImportError("Модуль speedtest-python не установлен корректно. Установите через 'pip install speedtest-python'.")
 
 class Hua4GMon:
     def __init__(self, root):
@@ -81,21 +74,16 @@ class Hua4GMon:
         self.params_frame.columnconfigure(0, weight=1)
         self.params_frame.columnconfigure(2, weight=1)
 
-        # Фрейм для теста скорости по центру
-        self.speedtest_frame = tk.Frame(self.params_frame, bg='white', padx=20)
-        self.speedtest_frame.grid(row=0, column=1, sticky='ns')
-        tk.Label(self.speedtest_frame, text="Скорость интернета:", bg='white', font=("Arial", 12, "bold")).pack(pady=5)
-        self.speedtest_button = ttk.Button(self.speedtest_frame, text="Тест скорости", command=self.run_speedtest, style="TButton", width=15)
-        self.speedtest_button.pack(pady=5)
-        self.speedtest_label = tk.Label(self.speedtest_frame, text="Ожидание теста...", bg='white', font=("Arial", 10))
-        self.speedtest_label.pack()
-
         # Метки параметров
         self.param_labels = {}
         self.dynamic_params = ['rssi', 'rsrp', 'rsrq', 'sinr']
         self.static_params = ['cell_id', 'band', 'mode', 'CurrentOperator', 'ConnectionStatus', 'CurrentNetworkType', 'SignalStrength', 'plmn', 'lac', 'rrc_state', 'lte_bandwidth']
         self.params = self.dynamic_params + self.static_params
         self.init_params()
+
+        # Индикатор направления
+        self.direction_label = tk.Label(root, text="Направление: -", bg='white', fg='black', font=("Arial", 12))
+        self.direction_label.pack(pady=5)
 
         # Кнопки управления
         button_frame = tk.Frame(root, bg='white', pady=5)
@@ -134,6 +122,7 @@ class Hua4GMon:
         self.times = []
         self.values = {}
         self.peak_values = {}
+        self.previous_value = None
         self.connected = False
         self.client = None
         self.connection = None
@@ -267,19 +256,18 @@ class Hua4GMon:
 
     def save_log(self):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"Hua4GMon_log_{timestamp}.txt"
+        filename = f"Hua4GMon_log_{timestamp}.csv"
         try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(f"Huawei 4G Monitor Log - {timestamp}\n")
-                f.write(f"Статус: {self.status_label.cget('text')}\n")
-                f.write("Параметры:\n")
+            with open(filename, 'w', encoding='utf-8', newline='') as f:
+                f.write("Время,Параметр,Значение,Пик\n")
                 for param in self.params:
                     current = self.last_data.get(param, '-')
-                    if param in self.dynamic_params:
-                        peak = self.peak_values.get(param, '-')
-                        f.write(f"{param.upper()}: {current} (пик: {peak})\n")
-                    else:
-                        f.write(f"{param.upper()}: {current}\n")
+                    peak = self.peak_values.get(param, '-') if param in self.dynamic_params else '-'
+                    f.write(f"{timestamp},{param.upper()},{current},{peak}\n")
+                for t, vals in zip(self.times, zip(*[self.values.get(p, []) for p in self.dynamic_params])):
+                    for i, param in enumerate(self.dynamic_params):
+                        val = vals[i] if i < len(vals) else '-'
+                        f.write(f"{t:.2f},{param.upper()},{val},-\n")
             messagebox.showinfo("Успех", f"Лог сохранён в {filename}")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось сохранить лог: {str(e)}")
@@ -288,6 +276,7 @@ class Hua4GMon:
         if default:
             data = {param: '-' for param in self.params}
             self.peak_values = {param: '-' for param in self.dynamic_params}
+            self.previous_value = None
         else:
             data = self.fetch_data()
             for param in self.dynamic_params:
@@ -299,6 +288,20 @@ class Hua4GMon:
                         peak = current
                         self.param_labels[param].config(fg='green')
                         self.root.after(2000, lambda p=param: self.param_labels[p].config(fg=self.get_param_color(p, self.last_data.get(p, '-'))))
+                    # Обновление направления на основе RSRP
+                    if param == 'rsrp' and self.previous_value is not None:
+                        try:
+                            curr_val = float(''.join(c for c in str(current) if c.isdigit() or c in ['-', '.']))
+                            prev_val = float(''.join(c for c in str(self.previous_value) if c.isdigit() or c in ['-', '.']))
+                            if curr_val > prev_val:
+                                self.direction_label.config(text="Направление: Сигнал улучшается, продолжайте поворот", fg='green')
+                            elif curr_val < prev_val:
+                                self.direction_label.config(text="Направление: Сигнал ухудшается, вернитесь назад", fg='red')
+                            else:
+                                self.direction_label.config(text="Направление: Сигнал стабилен", fg='black')
+                        except ValueError:
+                            self.direction_label.config(text="Направление: -", fg='black')
+                    self.previous_value = current
                 else:
                     current = '-'
                     peak = self.peak_values.get(param, '-')
@@ -371,6 +374,8 @@ class Hua4GMon:
 
     def reset_peaks(self):
         self.peak_values = {param: '-' for param in self.dynamic_params}
+        self.previous_value = None
+        self.direction_label.config(text="Направление: -", fg='black')
         self.update_params()
 
     def reset_graph(self, event=None):
@@ -385,33 +390,6 @@ class Hua4GMon:
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(*self.param_ranges[param])
         self.canvas.draw()
-
-    def run_speedtest(self):
-        self.speedtest_button.config(state='disabled')
-        self.speedtest_label.config(text="Тест начат... (5-10 сек)", fg='orange')
-        self.root.update_idletasks()
-        threading.Thread(target=self._speedtest_thread, daemon=True).start()
-
-    def _speedtest_thread(self):
-        try:
-            st = Speedtest()
-            # Получаем список доступных серверов
-            servers = st.get_servers()
-            if not servers:
-                raise Exception("Нет доступных серверов")
-            # Выбираем первый доступный сервер
-            st.set_server(servers[0]['id'])
-            print(f"Использован сервер: {servers[0]['host']}")  # Для отладки
-            st.get_best_server()
-            download = st.download() / 1_000_000  # Mbps
-            upload = st.upload() / 1_000_000     # Mbps
-            ping = st.results.ping               # ms
-            result = f"↓ {download:.2f} Mbps / ↑ {upload:.2f} Mbps | Ping: {ping:.2f} ms"
-            self.root.after(0, lambda: self.speedtest_label.config(text=result, fg='green'))
-        except Exception as e:
-            self.root.after(0, lambda: self.speedtest_label.config(text=f"Ошибка: {str(e)}", fg='red'))
-        finally:
-            self.root.after(0, lambda: self.speedtest_button.config(state='normal'))
 
     def on_closing(self):
         self.connected = False
