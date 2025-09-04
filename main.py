@@ -14,9 +14,7 @@ class Hua4GMon:
         self.root = root
         self.root.title("Huawei 4G Monitor")
         self.root.configure(bg='white')
-
-        # Установка минимального размера окна
-        self.root.minsize(800, 500)
+        self.root.geometry("900x700")
 
         self.config = configparser.ConfigParser()
         self.config_file = 'config.ini'
@@ -31,58 +29,48 @@ class Hua4GMon:
         style.map("TButton", background=[('active', '#4CAF50')])
         style.configure("TEntry", fieldbackground="#f0f0f0", foreground="black", borderwidth=2, relief="solid")
 
-        # Основная компоновка с grid
-        self.root.grid_rowconfigure(0, weight=0)  # Строка для ввода
-        self.root.grid_rowconfigure(1, weight=1)  # Строка для параметров
-        self.root.grid_rowconfigure(2, weight=0)  # Строка для направления
-        self.root.grid_rowconfigure(3, weight=0)  # Строка для кнопок
-        self.root.grid_rowconfigure(4, weight=1)  # Строка для графика (уменьшен вес)
-        self.root.grid_columnconfigure(0, weight=1)
-
         # Контейнер для ввода
-        input_frame = tk.Frame(root, bg='white', padx=10, pady=5)
-        input_frame.grid(row=0, column=0, sticky='ew')
+        input_frame = tk.Frame(root, bg='white', padx=10, pady=10)
+        input_frame.pack(fill=tk.X)
 
-        tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).grid(row=0, column=0, sticky='e')
-        self.ip_entry = ttk.Entry(input_frame, font=("Arial", 12), style="TEntry", width=20)
+        tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).pack()
+        self.ip_entry = ttk.Entry(input_frame, font=("Arial", 12), style="TEntry")
         self.ip_entry.insert(0, self.config.get('Settings', 'ip', fallback='192.168.8.1'))
-        self.ip_entry.grid(row=0, column=1, sticky='w', padx=5)
+        self.ip_entry.pack()
 
-        tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 12)).grid(row=0, column=2, sticky='e')
-        self.password_entry = ttk.Entry(input_frame, show="*", font=("Arial", 12), style="TEntry", width=20)
+        tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 12)).pack()
+        self.password_entry = ttk.Entry(input_frame, show="*", font=("Arial", 12), style="TEntry")
         self.password_entry.insert(0, self.config.get('Settings', 'password', fallback=''))
-        self.password_entry.grid(row=0, column=3, sticky='w', padx=5)
+        self.password_entry.pack()
 
         self.connect_button = ttk.Button(input_frame, text="Connect", command=self.start_connect, style="TButton")
-        self.connect_button.grid(row=0, column=4, sticky='e', padx=5)
+        self.connect_button.pack(pady=5)
 
         # Индикатор подключения
         self.progress = ttk.Progressbar(input_frame, mode='indeterminate', length=100)
-        self.progress.grid(row=0, column=5, sticky='w', padx=5)
+        self.progress.pack(pady=5)
         self.progress_label = tk.Label(input_frame, text="", bg='white', font=("Arial", 10))
-        self.progress_label.grid(row=0, column=6, sticky='w', padx=5)
+        self.progress_label.pack()
 
         # Выбор частоты обновления
-        tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 12)).grid(row=0, column=7, sticky='e')
+        tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 12)).pack()
         self.update_interval = tk.StringVar(value='0.5')
-        self.interval_combo = ttk.Combobox(input_frame, textvariable=self.update_interval, values=['0.5', '1', '2'], font=("Arial", 12), width=5)
-        self.interval_combo.grid(row=0, column=8, sticky='w', padx=5)
+        self.interval_combo = ttk.Combobox(input_frame, textvariable=self.update_interval, values=['0.5', '1', '2'], font=("Arial", 12))
+        self.interval_combo.pack()
 
         # Статус подключения
         self.status_label = tk.Label(root, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 12, "bold"))
-        self.status_label.grid(row=1, column=0, sticky='ew', pady=5)
+        self.status_label.pack(fill=tk.X)
 
         # Контейнер для параметров
-        self.params_frame = tk.Frame(root, bg='white', padx=10, pady=5)
-        self.params_frame.grid(row=2, column=0, sticky='nsew')
+        self.params_frame = tk.Frame(root, bg='white', padx=10, pady=10)
+        self.params_frame.pack(fill=tk.X)
 
         # Левый и правый фреймы для параметров
         self.left_frame = tk.Frame(self.params_frame, bg='white')
         self.right_frame = tk.Frame(self.params_frame, bg='white')
-        self.left_frame.grid(row=0, column=0, sticky='nsew')
-        self.right_frame.grid(row=0, column=1, sticky='nsew')
-        self.params_frame.grid_columnconfigure(0, weight=1)
-        self.params_frame.grid_columnconfigure(1, weight=1)
+        self.left_frame.pack(side=tk.LEFT, expand=True)
+        self.right_frame.pack(side=tk.RIGHT, expand=True)
 
         # Метки параметров
         self.param_labels = {}
@@ -93,31 +81,26 @@ class Hua4GMon:
 
         # Индикатор направления
         self.direction_label = tk.Label(root, text="Направление: -", bg='white', fg='black', font=("Arial", 12))
-        self.direction_label.grid(row=3, column=0, sticky='ew', pady=5)
+        self.direction_label.pack(pady=5)
 
         # Кнопки управления
         button_frame = tk.Frame(root, bg='white', pady=5)
-        button_frame.grid(row=4, column=0, sticky='ew')
+        button_frame.pack()
         self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton", width=15)
         self.reset_button.pack(side=tk.LEFT, padx=10)
         self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton", width=15)
         self.save_log_button.pack(side=tk.LEFT, padx=10)
 
         # Выбор графика
-        graph_frame = tk.Frame(root, bg='white')
-        graph_frame.grid(row=5, column=0, sticky='ew', pady=5)
-        tk.Label(graph_frame, text="Параметр для графика:", bg='white', font=("Arial", 12)).pack(side=tk.LEFT)
+        tk.Label(root, text="Параметр для графика:", bg='white', font=("Arial", 12)).pack()
         self.graph_param = tk.StringVar(value='rsrp')
-        self.graph_combo = ttk.Combobox(graph_frame, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12), width=20, state='readonly')
-        self.graph_combo.pack(side=tk.LEFT, padx=5)
+        self.graph_combo = ttk.Combobox(root, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12), width=20, state='readonly')
+        self.graph_combo.pack(pady=(0, 10))
         self.graph_combo.bind("<1>", lambda event: self.graph_combo.event_generate("<Down>"))
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        graph_container = tk.Frame(root, bg='white')
-        graph_container.grid(row=6, column=0, sticky='nsew', pady=5)
-        self.root.grid_rowconfigure(6, weight=1)  # Уменьшен вес для компактности
-        self.fig, self.ax = plt.subplots(figsize=(8, 3))  # Уменьшен размер графика
+        self.fig, self.ax = plt.subplots(figsize=(8, 3))
         self.ax.set_title("Уровень сигнала", fontsize=10, pad=10)
         self.ax.set_xlabel("Время (сек)", fontsize=8, labelpad=3)
         self.ax.set_ylabel("Значение", fontsize=8, labelpad=3)
@@ -125,10 +108,14 @@ class Hua4GMon:
         self.ax.set_xlim(0, 10)
         self.param_ranges = {'rsrp': (-120, -50), 'rssi': (-120, -50), 'rsrq': (-20, 0), 'sinr': (-5, 30)}
         self.ax.set_ylim(*self.param_ranges['rsrp'])
-        self.canvas = FigureCanvasTkAgg(self.fig, master=graph_container)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.pack(fill=tk.BOTH, expand=True)
+        canvas_widget.configure(width=700, height=300)
+        canvas_widget.pack_propagate(0)
         self.root.update_idletasks()
+        self.canvas.draw()
+        self.update_graph_initial()
 
         self.times = []
         self.values = {}
