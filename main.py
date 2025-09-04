@@ -4,7 +4,7 @@ import threading
 import time
 import configparser
 import datetime
-import speedtest
+import speedtest_python
 from huawei_lte_api.Client import Client
 from huawei_lte_api.Connection import Connection
 import matplotlib.pyplot as plt
@@ -12,7 +12,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 # Проверка доступности Speedtest
 try:
-    Speedtest = speedtest.Speedtest
+    Speedtest = speedtest_python.Speedtest
 except AttributeError:
     raise ImportError("Модуль speedtest-python не установлен корректно. Установите через 'pip install speedtest-python'.")
 
