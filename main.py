@@ -34,12 +34,12 @@ class Hua4GMon:
         input_frame.pack(fill=tk.X)
 
         tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).pack()
-        self.ip_entry = tk.Entry(input_frame, font=("Arial", 12), style="TEntry")
+        self.ip_entry = ttk.Entry(input_frame, font=("Arial", 12), style="TEntry")
         self.ip_entry.insert(0, self.config.get('Settings', 'ip', fallback='192.168.8.1'))
         self.ip_entry.pack()
 
         tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 12)).pack()
-        self.password_entry = tk.Entry(input_frame, show="*", font=("Arial", 12), style="TEntry")
+        self.password_entry = ttk.Entry(input_frame, show="*", font=("Arial", 12), style="TEntry")
         self.password_entry.insert(0, self.config.get('Settings', 'password', fallback=''))
         self.password_entry.pack()
 
