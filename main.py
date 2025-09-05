@@ -33,36 +33,41 @@ class Hua4GMon:
         input_frame = tk.Frame(root, bg='white', padx=2, pady=0)
         input_frame.pack(fill=tk.X)
 
-        tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 10)).pack(anchor='center', pady=1)
+        # Используем grid для точного контроля
+        input_frame.grid_rowconfigure(0, weight=0)
+        input_frame.grid_rowconfigure(1, weight=0)
+        input_frame.grid_rowconfigure(2, weight=0)
+        input_frame.grid_rowconfigure(3, weight=0)
+        input_frame.grid_rowconfigure(4, weight=0)
+        input_frame.grid_rowconfigure(5, weight=0)
+        input_frame.grid_rowconfigure(6, weight=0)
+
+        tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 10)).grid(row=0, column=0, sticky="e", pady=1)
         self.ip_entry = ttk.Entry(input_frame, font=("Arial", 10), style="TEntry", width=20)
         self.ip_entry.insert(0, self.config.get('Settings', 'ip', fallback='192.168.8.1'))
-        self.ip_entry.pack(anchor='center', pady=1)
+        self.ip_entry.grid(row=0, column=1, sticky="w", pady=1)
 
-        tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 10)).pack(anchor='center', pady=1)
+        tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 10)).grid(row=1, column=0, sticky="e", pady=1)
         self.password_entry = ttk.Entry(input_frame, show="*", font=("Arial", 10), style="TEntry", width=20)
         self.password_entry.insert(0, self.config.get('Settings', 'password', fallback=''))
-        self.password_entry.pack(anchor='center', pady=1)
+        self.password_entry.grid(row=1, column=1, sticky="w", pady=1)
 
         self.connect_button = ttk.Button(input_frame, text="Connect", command=self.start_connect, style="TButton")
-        self.connect_button.pack(anchor='center', pady=1)
+        self.connect_button.grid(row=2, column=0, columnspan=2, pady=1)
 
-        # Фрейм для прогрессбара и метки
-        progress_frame = tk.Frame(input_frame, bg='white')
-        progress_frame.pack(anchor='center', pady=1)
-
-        self.progress = ttk.Progressbar(progress_frame, mode='indeterminate', length=100)
-        self.progress.pack(anchor='center', pady=0)
-        self.progress_label = tk.Label(progress_frame, text="", bg='white', font=("Arial", 8))
-        self.progress_label.pack(anchor='center', pady=0)
+        self.progress = ttk.Progressbar(input_frame, mode='indeterminate', length=100)
+        self.progress.grid(row=3, column=0, columnspan=2, pady=1, sticky="ew")
+        self.progress_label = tk.Label(input_frame, text="", bg='white', font=("Arial", 8))
+        self.progress_label.grid(row=4, column=0, columnspan=2, pady=0, sticky="ew")  # Уменьшен pady до 0
 
         # Статус подключения
         self.status_label = tk.Label(input_frame, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 10, "bold"))
-        self.status_label.pack(fill=tk.X, pady=0)  # Минимальный отступ
+        self.status_label.grid(row=5, column=0, columnspan=2, pady=1, sticky="ew")  # Минимальный отступ
 
-        tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 10)).pack(anchor='center', pady=1)
+        tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 10)).grid(row=6, column=0, sticky="e", pady=1)
         self.update_interval = tk.StringVar(value='0.5')
         self.interval_combo = ttk.Combobox(input_frame, textvariable=self.update_interval, values=['0.5', '1', '2'], font=("Arial", 10), width=5)
-        self.interval_combo.pack(anchor='center', pady=1)
+        self.interval_combo.grid(row=6, column=1, sticky="w", pady=1)
 
         # Контейнер для параметров
         self.params_frame = tk.Frame(root, bg='white', padx=2, pady=1)
@@ -103,9 +108,9 @@ class Hua4GMon:
 
         # Диаграмма
         self.fig, self.ax = plt.subplots(figsize=(8, 2))
-        self.ax.set_title("Уровень сигнала", fontsize=6, pad=5)
-        self.ax.set_xlabel("Время (сек)", fontsize=6, labelpad=2)
-        self.ax.set_ylabel("Значение", fontsize=6, labelpad=2)
+        self.ax.set_title("Уровень сигнала", fontsize=10, pad=5)  # Увеличен шрифт
+        self.ax.set_xlabel("Время (сек)", fontsize=10, labelpad=2)  # Увеличен шрифт
+        self.ax.set_ylabel("Значение", fontsize=10, labelpad=2)  # Увеличен шрифт
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.param_ranges = {'rsrp': (-120, -50), 'rssi': (-120, -50), 'rsrq': (-20, 0), 'sinr': (-5, 30)}
@@ -340,9 +345,9 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=6, pad=5)
-                    self.ax.set_xlabel("Время (сек)", fontsize=6, labelpad=2)
-                    self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=6, labelpad=2)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=10, pad=5)  # Увеличен шрифт
+                    self.ax.set_xlabel("Время (сек)", fontsize=10, labelpad=2)  # Увеличен шрифт
+                    self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10, labelpad=2)  # Увеличен шрифт
                     self.ax.grid(True)
                     self.ax.set_xlim(0, max(10, max(self.times) + 1))
                     self.ax.set_ylim(*self.param_ranges[param])
@@ -354,9 +359,9 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.ax.clear()
         self.ax.plot([], [], color='blue')
-        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=6, pad=5)
-        self.ax.set_xlabel("Время (сек)", fontsize=6, labelpad=2)
-        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=6, labelpad=2)
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=10, pad=5)  # Увеличен шрифт
+        self.ax.set_xlabel("Время (сек)", fontsize=10, labelpad=2)  # Увеличен шрифт
+        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10, labelpad=2)  # Увеличен шрифт
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(*self.param_ranges[param])
@@ -386,9 +391,9 @@ class Hua4GMon:
         self.values = {}
         param = self.graph_param.get()
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=6, pad=5)
-        self.ax.set_xlabel("Время (сек)", fontsize=6, labelpad=2)
-        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=6, labelpad=2)
+        self.ax.set_title("Уровень сигнала", fontsize=10, pad=5)  # Увеличен шрифт
+        self.ax.set_xlabel("Время (сек)", fontsize=10, labelpad=2)  # Увеличен шрифт
+        self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=10, labelpad=2)  # Увеличен шрифт
         self.ax.grid(True)
         self.ax.set_xlim(0, 10)
         self.ax.set_ylim(*self.param_ranges[param])
