@@ -46,14 +46,18 @@ class Hua4GMon:
         self.connect_button = ttk.Button(input_frame, text="Connect", command=self.start_connect, style="TButton")
         self.connect_button.pack(anchor='center', pady=1)
 
-        self.progress = ttk.Progressbar(input_frame, mode='indeterminate', length=100)
-        self.progress.pack(anchor='center', pady=1)
-        self.progress_label = tk.Label(input_frame, text="", bg='white', font=("Arial", 8))
-        self.progress_label.pack(anchor='center', pady=1)
+        # Фрейм для прогрессбара и метки
+        progress_frame = tk.Frame(input_frame, bg='white')
+        progress_frame.pack(anchor='center', pady=1)
+
+        self.progress = ttk.Progressbar(progress_frame, mode='indeterminate', length=100)
+        self.progress.pack(anchor='center', pady=0)
+        self.progress_label = tk.Label(progress_frame, text="", bg='white', font=("Arial", 8))
+        self.progress_label.pack(anchor='center', pady=0)
 
         # Статус подключения
         self.status_label = tk.Label(input_frame, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 10, "bold"))
-        self.status_label.pack(fill=tk.X, pady=0)  # Уменьшил pady до 0 для минимального расстояния
+        self.status_label.pack(fill=tk.X, pady=0)  # Минимальный отступ
 
         tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 10)).pack(anchor='center', pady=1)
         self.update_interval = tk.StringVar(value='0.5')
