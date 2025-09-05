@@ -34,28 +34,28 @@ class Hua4GMon:
         input_frame = tk.Frame(root, bg='white', padx=10, pady=10)
         input_frame.pack(fill=tk.X)
 
-        tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).pack(side=tk.LEFT)
+        tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).pack(anchor='center')
         self.ip_entry = ttk.Entry(input_frame, font=("Arial", 12), style="TEntry", width=20)
         self.ip_entry.insert(0, self.config.get('Settings', 'ip', fallback='192.168.8.1'))
-        self.ip_entry.pack(side=tk.LEFT, padx=5)
+        self.ip_entry.pack(anchor='center', pady=5)
 
-        tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 12)).pack(side=tk.LEFT)
+        tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 12)).pack(anchor='center')
         self.password_entry = ttk.Entry(input_frame, show="*", font=("Arial", 12), style="TEntry", width=20)
         self.password_entry.insert(0, self.config.get('Settings', 'password', fallback=''))
-        self.password_entry.pack(side=tk.LEFT, padx=5)
+        self.password_entry.pack(anchor='center', pady=5)
 
         self.connect_button = ttk.Button(input_frame, text="Connect", command=self.start_connect, style="TButton")
-        self.connect_button.pack(side=tk.LEFT, padx=5)
+        self.connect_button.pack(anchor='center', pady=5)
 
         self.progress = ttk.Progressbar(input_frame, mode='indeterminate', length=100)
-        self.progress.pack(side=tk.LEFT, padx=5)
+        self.progress.pack(anchor='center', pady=5)
         self.progress_label = tk.Label(input_frame, text="", bg='white', font=("Arial", 10))
-        self.progress_label.pack(side=tk.LEFT, padx=5)
+        self.progress_label.pack(anchor='center', pady=5)
 
-        tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 12)).pack(side=tk.LEFT)
+        tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 12)).pack(anchor='center')
         self.update_interval = tk.StringVar(value='0.5')
         self.interval_combo = ttk.Combobox(input_frame, textvariable=self.update_interval, values=['0.5', '1', '2'], font=("Arial", 12), width=5)
-        self.interval_combo.pack(side=tk.LEFT, padx=5)
+        self.interval_combo.pack(anchor='center', pady=5)
 
         # Статус подключения
         self.status_label = tk.Label(root, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 12, "bold"))
@@ -86,17 +86,17 @@ class Hua4GMon:
         button_frame = tk.Frame(root, bg='white', pady=5)
         button_frame.pack(fill=tk.X)
         self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton", width=15)
-        self.reset_button.pack(side=tk.LEFT, padx=10)
+        self.reset_button.pack(anchor='center', padx=5)
         self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton", width=15)
-        self.save_log_button.pack(side=tk.LEFT, padx=10)
+        self.save_log_button.pack(anchor='center', padx=5)
 
         # Выбор графика
         graph_frame = tk.Frame(root, bg='white')
         graph_frame.pack(fill=tk.X, pady=5)
-        tk.Label(graph_frame, text="Параметр для графика:", bg='white', font=("Arial", 12)).pack(side=tk.LEFT, padx=5)
+        tk.Label(graph_frame, text="Параметр для графика:", bg='white', font=("Arial", 12)).pack(anchor='center')
         self.graph_param = tk.StringVar(value='rsrp')
         self.graph_combo = ttk.Combobox(graph_frame, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12), width=20, state='readonly')
-        self.graph_combo.pack(side=tk.LEFT, padx=5)
+        self.graph_combo.pack(anchor='center', pady=5)
         self.graph_combo.bind("<1>", lambda event: self.graph_combo.event_generate("<Down>"))
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
