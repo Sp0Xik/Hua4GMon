@@ -53,7 +53,7 @@ class Hua4GMon:
 
         # Статус подключения
         self.status_label = tk.Label(input_frame, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 10, "bold"))
-        self.status_label.pack(fill=tk.X, pady=1)
+        self.status_label.pack(fill=tk.X, pady=0)  # Уменьшил pady до 0 для минимального расстояния
 
         tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 10)).pack(anchor='center', pady=1)
         self.update_interval = tk.StringVar(value='0.5')
