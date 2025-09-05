@@ -14,7 +14,6 @@ class Hua4GMon:
         self.root = root
         self.root.title("Huawei 4G Monitor")
         self.root.configure(bg='white')
-        self.root.geometry("800x600")
         self.root.minsize(800, 600)
 
         self.config = configparser.ConfigParser()
@@ -31,8 +30,8 @@ class Hua4GMon:
         style.configure("TEntry", fieldbackground="#f0f0f0", foreground="black", borderwidth=1, relief="solid")
 
         # Контейнер для ввода
-        input_frame = tk.Frame(root, bg='white', padx=2, pady=2)
-        input_frame.pack()
+        input_frame = tk.Frame(root, bg='white', padx=2, pady=0)
+        input_frame.pack(fill=tk.X)
 
         tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 10)).pack(anchor='center')
         self.ip_entry = ttk.Entry(input_frame, font=("Arial", 10), style="TEntry", width=20)
@@ -59,17 +58,17 @@ class Hua4GMon:
 
         # Статус подключения
         self.status_label = tk.Label(root, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 10, "bold"))
-        self.status_label.pack(pady=1)
+        self.status_label.pack(fill=tk.X, pady=0)
 
         # Контейнер для параметров
-        self.params_frame = tk.Frame(root, bg='white', padx=2, pady=2)
-        self.params_frame.pack()
+        self.params_frame = tk.Frame(root, bg='white', padx=2, pady=0)
+        self.params_frame.pack(fill=tk.X)
 
         # Левый и правый фреймы для параметров
         self.left_frame = tk.Frame(self.params_frame, bg='white')
         self.right_frame = tk.Frame(self.params_frame, bg='white')
-        self.left_frame.pack(side=tk.LEFT, padx=2)
-        self.right_frame.pack(side=tk.RIGHT, padx=2)
+        self.left_frame.pack(side=tk.LEFT, padx=2, fill=tk.BOTH, expand=True)
+        self.right_frame.pack(side=tk.RIGHT, padx=2, fill=tk.BOTH, expand=True)
 
         # Метки параметров
         self.param_labels = {}
@@ -80,11 +79,11 @@ class Hua4GMon:
 
         # Индикатор направления
         self.direction_label = tk.Label(root, text="Направление: -", bg='white', fg='black', font=("Arial", 10))
-        self.direction_label.pack(pady=1)
+        self.direction_label.pack(pady=0)
 
         # Кнопки управления
-        button_frame = tk.Frame(root, bg='white', pady=1)
-        button_frame.pack(anchor='center')
+        button_frame = tk.Frame(root, bg='white', pady=0)
+        button_frame.pack(fill=tk.X, anchor='center')
         self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton", width=15)
         self.reset_button.pack(side=tk.LEFT, padx=2)
         self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton", width=15)
@@ -99,7 +98,7 @@ class Hua4GMon:
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
 
         # Диаграмма
-        self.fig, self.ax = plt.subplots(figsize=(6, 2))
+        self.fig, self.ax = plt.subplots(figsize=(8, 2))
         self.ax.set_title("Уровень сигнала", fontsize=6, pad=5)
         self.ax.set_xlabel("Время (сек)", fontsize=6, labelpad=2)
         self.ax.set_ylabel("Значение", fontsize=6, labelpad=2)
@@ -109,10 +108,13 @@ class Hua4GMon:
         self.ax.set_ylim(*self.param_ranges['rsrp'])
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack()
-        canvas_widget.configure(width=600, height=200)
+        canvas_widget.pack(fill=tk.BOTH, expand=True)
+        canvas_widget.configure(height=200)
         canvas_widget.pack_propagate(0)
         self.root.update_idletasks()
+        # Динамически устанавливаем высоту окна, чтобы вместить график
+        required_height = self.root.winfo_height() + 50  # Добавляем запас для графика
+        self.root.geometry(f"800x{required_height}")
         self.canvas.draw()
         self.update_graph_initial()
 
@@ -226,7 +228,7 @@ class Hua4GMon:
             frame = self.left_frame if i < len(params_order) // 2 else self.right_frame
             text = f"{param.upper()}: -" if param in self.static_params or param not in self.dynamic_params else f"{param.upper()}: -"
             label = tk.Label(frame, text=text, bg='white', fg='blue', font=("Arial", 10, "bold"), anchor='w', wraplength=200)
-            label.pack(fill=tk.X, pady=1)
+            label.pack(fill=tk.X, pady=0)
             self.param_labels[param] = label
 
     def get_param_color(self, param, value):
