@@ -58,10 +58,10 @@ class Hua4GMon:
 
         # Статус подключения
         self.status_label = tk.Label(root, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 10, "bold"))
-        self.status_label.pack(fill=tk.X, pady=0)
+        self.status_label.pack(fill=tk.X, pady=1)
 
         # Контейнер для параметров
-        self.params_frame = tk.Frame(root, bg='white', padx=2, pady=0)
+        self.params_frame = tk.Frame(root, bg='white', padx=2, pady=1)  # Уменьшен отступ до 1
         self.params_frame.pack(fill=tk.X)
 
         # Левый и правый фреймы для параметров
@@ -83,7 +83,7 @@ class Hua4GMon:
 
         # Кнопки управления
         button_frame = tk.Frame(root, bg='white', pady=0)
-        button_frame.pack(fill=tk.X, anchor='center')
+        button_frame.pack(anchor='center')  # Убрал fill=tk.X, оставил только центрирование
         self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton", width=15)
         self.reset_button.pack(side=tk.LEFT, padx=2)
         self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton", width=15)
