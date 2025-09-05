@@ -34,30 +34,29 @@ class Hua4GMon:
         input_frame = tk.Frame(root, bg='white', padx=10, pady=10)
         input_frame.pack(fill=tk.X)
 
-        tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).grid(row=0, column=0, sticky='e')
+        tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).pack(side=tk.LEFT)
         self.ip_entry = ttk.Entry(input_frame, font=("Arial", 12), style="TEntry", width=20)
         self.ip_entry.insert(0, self.config.get('Settings', 'ip', fallback='192.168.8.1'))
-        self.ip_entry.grid(row=0, column=1, sticky='w')
+        self.ip_entry.pack(side=tk.LEFT, padx=5)
 
-        tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 12)).grid(row=0, column=2, sticky='e')
+        tk.Label(input_frame, text="Пароль (логин: admin):", bg='white', font=("Arial", 12)).pack(side=tk.LEFT)
         self.password_entry = ttk.Entry(input_frame, show="*", font=("Arial", 12), style="TEntry", width=20)
         self.password_entry.insert(0, self.config.get('Settings', 'password', fallback=''))
-        self.password_entry.grid(row=0, column=3, sticky='w')
+        self.password_entry.pack(side=tk.LEFT, padx=5)
 
         self.connect_button = ttk.Button(input_frame, text="Connect", command=self.start_connect, style="TButton")
-        self.connect_button.grid(row=0, column=4, sticky='e', padx=5)
+        self.connect_button.pack(side=tk.LEFT, padx=5)
 
         # Индикатор подключения
         self.progress = ttk.Progressbar(input_frame, mode='indeterminate', length=100)
-        self.progress.grid(row=0, column=5, sticky='w', padx=5)
+        self.progress.pack(side=tk.LEFT, padx=5)
         self.progress_label = tk.Label(input_frame, text="", bg='white', font=("Arial", 10))
-        self.progress_label.grid(row=0, column=6, sticky='w', padx=5)
+        self.progress_label.pack(side=tk.LEFT, padx=5)
 
-        # Выбор частоты обновления
-        tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 12)).grid(row=0, column=7, sticky='e')
+        tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 12)).pack(side=tk.LEFT)
         self.update_interval = tk.StringVar(value='0.5')
         self.interval_combo = ttk.Combobox(input_frame, textvariable=self.update_interval, values=['0.5', '1', '2'], font=("Arial", 12), width=5)
-        self.interval_combo.grid(row=0, column=8, sticky='w', padx=5)
+        self.interval_combo.pack(side=tk.LEFT, padx=5)
 
         # Статус подключения
         self.status_label = tk.Label(root, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 12, "bold"))
