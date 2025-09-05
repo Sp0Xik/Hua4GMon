@@ -51,12 +51,16 @@ class Hua4GMon:
         self.progress_label = tk.Label(input_frame, text="", bg='white', font=("Arial", 8))
         self.progress_label.pack(anchor='center', pady=1)
 
+        # Статус подключения
+        self.status_label = tk.Label(input_frame, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 10, "bold"))
+        self.status_label.pack(fill=tk.X, pady=1)
+
         tk.Label(input_frame, text="Частота обновления (сек):", bg='white', font=("Arial", 10)).pack(anchor='center', pady=1)
         self.update_interval = tk.StringVar(value='0.5')
         self.interval_combo = ttk.Combobox(input_frame, textvariable=self.update_interval, values=['0.5', '1', '2'], font=("Arial", 10), width=5)
         self.interval_combo.pack(anchor='center', pady=1)
 
-        # Контейнер для параметров (сдвинут ниже)
+        # Контейнер для параметров
         self.params_frame = tk.Frame(root, bg='white', padx=2, pady=1)
         self.params_frame.pack(fill=tk.X)
 
@@ -92,10 +96,6 @@ class Hua4GMon:
         self.graph_combo.pack(anchor='center', pady=1)
         self.graph_combo.bind("<1>", lambda event: self.graph_combo.event_generate("<Down>"))
         self.graph_combo.bind("<<ComboboxSelected>>", self.reset_graph)
-
-        # Статус подключения (перемещён ниже)
-        self.status_label = tk.Label(root, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 10, "bold"))
-        self.status_label.pack(fill=tk.X, pady=1)
 
         # Диаграмма
         self.fig, self.ax = plt.subplots(figsize=(8, 2))
