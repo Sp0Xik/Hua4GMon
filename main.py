@@ -47,7 +47,6 @@ class Hua4GMon:
         self.connect_button = ttk.Button(input_frame, text="Connect", command=self.start_connect, style="TButton")
         self.connect_button.pack(side=tk.LEFT, padx=5)
 
-        # Индикатор подключения
         self.progress = ttk.Progressbar(input_frame, mode='indeterminate', length=100)
         self.progress.pack(side=tk.LEFT, padx=5)
         self.progress_label = tk.Label(input_frame, text="", bg='white', font=("Arial", 10))
