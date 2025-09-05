@@ -15,8 +15,6 @@ class Hua4GMon:
         self.root.title("Huawei 4G Monitor")
         self.root.configure(bg='white')
         self.root.geometry("900x700")
-
-        # Минимальный размер окна
         self.root.minsize(800, 600)
 
         self.config = configparser.ConfigParser()
@@ -32,19 +30,9 @@ class Hua4GMon:
         style.map("TButton", background=[('active', '#4CAF50')])
         style.configure("TEntry", fieldbackground="#f0f0f0", foreground="black", borderwidth=2, relief="solid")
 
-        # Основная компоновка с grid
-        self.root.grid_rowconfigure(0, weight=0)  # Строка для ввода
-        self.root.grid_rowconfigure(1, weight=0)  # Строка для статуса
-        self.root.grid_rowconfigure(2, weight=1)  # Строка для параметров
-        self.root.grid_rowconfigure(3, weight=0)  # Строка для направления
-        self.root.grid_rowconfigure(4, weight=0)  # Строка для кнопок
-        self.root.grid_rowconfigure(5, weight=0)  # Строка для выбора графика
-        self.root.grid_rowconfigure(6, weight=1)  # Строка для графика (равный вес с параметрами)
-        self.root.grid_columnconfigure(0, weight=1)
-
         # Контейнер для ввода
         input_frame = tk.Frame(root, bg='white', padx=10, pady=10)
-        input_frame.grid(row=0, column=0, sticky='ew')
+        input_frame.pack(fill=tk.X)
 
         tk.Label(input_frame, text="IP роутера:", bg='white', font=("Arial", 12)).grid(row=0, column=0, sticky='e')
         self.ip_entry = ttk.Entry(input_frame, font=("Arial", 12), style="TEntry", width=20)
@@ -73,19 +61,17 @@ class Hua4GMon:
 
         # Статус подключения
         self.status_label = tk.Label(root, text="Статус: Не подключено", bg='white', fg='red', font=("Arial", 12, "bold"))
-        self.status_label.grid(row=1, column=0, sticky='ew')
+        self.status_label.pack(fill=tk.X, pady=5)
 
         # Контейнер для параметров
         self.params_frame = tk.Frame(root, bg='white', padx=10, pady=10)
-        self.params_frame.grid(row=2, column=0, sticky='nsew')
+        self.params_frame.pack(fill=tk.X)
 
         # Левый и правый фреймы для параметров
         self.left_frame = tk.Frame(self.params_frame, bg='white')
         self.right_frame = tk.Frame(self.params_frame, bg='white')
-        self.left_frame.grid(row=0, column=0, sticky='nsew')
-        self.right_frame.grid(row=0, column=1, sticky='nsew')
-        self.params_frame.grid_columnconfigure(0, weight=1)
-        self.params_frame.grid_columnconfigure(1, weight=1)
+        self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
         # Метки параметров
         self.param_labels = {}
@@ -96,11 +82,11 @@ class Hua4GMon:
 
         # Индикатор направления
         self.direction_label = tk.Label(root, text="Направление: -", bg='white', fg='black', font=("Arial", 12))
-        self.direction_label.grid(row=3, column=0, sticky='ew')
+        self.direction_label.pack(pady=5)
 
         # Кнопки управления
         button_frame = tk.Frame(root, bg='white', pady=5)
-        button_frame.grid(row=4, column=0, sticky='ew')
+        button_frame.pack(fill=tk.X)
         self.reset_button = ttk.Button(button_frame, text="Сброс пиков", command=self.reset_peaks, style="TButton", width=15)
         self.reset_button.pack(side=tk.LEFT, padx=10)
         self.save_log_button = ttk.Button(button_frame, text="Сохранить лог", command=self.save_log, style="TButton", width=15)
@@ -108,8 +94,8 @@ class Hua4GMon:
 
         # Выбор графика
         graph_frame = tk.Frame(root, bg='white')
-        graph_frame.grid(row=5, column=0, sticky='ew', pady=5)
-        tk.Label(graph_frame, text="Параметр для графика:", bg='white', font=("Arial", 12)).pack(side=tk.LEFT)
+        graph_frame.pack(fill=tk.X, pady=5)
+        tk.Label(graph_frame, text="Параметр для графика:", bg='white', font=("Arial", 12)).pack(side=tk.LEFT, padx=5)
         self.graph_param = tk.StringVar(value='rsrp')
         self.graph_combo = ttk.Combobox(graph_frame, textvariable=self.graph_param, values=self.dynamic_params, font=("Arial", 12), width=20, state='readonly')
         self.graph_combo.pack(side=tk.LEFT, padx=5)
@@ -127,7 +113,9 @@ class Hua4GMon:
         self.ax.set_ylim(*self.param_ranges['rsrp'])
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.grid(row=6, column=0, sticky='nsew')
+        canvas_widget.pack(fill=tk.BOTH, expand=True)
+        canvas_widget.configure(width=700, height=300)
+        canvas_widget.pack_propagate(0)
         self.root.update_idletasks()
         self.canvas.draw()
         self.update_graph_initial()
@@ -268,7 +256,7 @@ class Hua4GMon:
         return ""
 
     def save_log(self):
-        timestamp = datetime.datetime.now().strftime("%Y%mdd_%H%M%S")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"Hua4GMon_log_{timestamp}.csv"
         try:
             with open(filename, 'w', encoding='utf-8', newline='') as f:
