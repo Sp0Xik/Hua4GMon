@@ -15,6 +15,7 @@ class Hua4GMon:
         self.root.title("Huawei 4G Monitor")
         self.root.configure(bg='white')
         self.root.geometry("900x700")
+        self.root.minsize(800, 600)
 
         self.config = configparser.ConfigParser()
         self.config_file = 'config.ini'
@@ -69,8 +70,8 @@ class Hua4GMon:
         # Левый и правый фреймы для параметров
         self.left_frame = tk.Frame(self.params_frame, bg='white')
         self.right_frame = tk.Frame(self.params_frame, bg='white')
-        self.left_frame.pack(side=tk.LEFT, expand=True)
-        self.right_frame.pack(side=tk.RIGHT, expand=True)
+        self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
         # Метки параметров
         self.param_labels = {}
@@ -101,7 +102,7 @@ class Hua4GMon:
 
         # Диаграмма
         self.fig, self.ax = plt.subplots(figsize=(8, 3))
-        self.ax.set_title("Уровень сигнала", fontsize=10, pad=10)
+        self.ax.set_title("Уровень сигнала", fontsize=8, pad=10)
         self.ax.set_xlabel("Время (сек)", fontsize=8, labelpad=3)
         self.ax.set_ylabel("Значение", fontsize=8, labelpad=3)
         self.ax.grid(True)
@@ -335,7 +336,7 @@ class Hua4GMon:
                         self.values[param].pop(0)
                     self.ax.clear()
                     self.ax.plot(self.times, self.values[param], color='blue')
-                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=10, pad=10)
+                    self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=8, pad=10)
                     self.ax.set_xlabel("Время (сек)", fontsize=8, labelpad=3)
                     self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=8, labelpad=3)
                     self.ax.grid(True)
@@ -349,7 +350,7 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.ax.clear()
         self.ax.plot([], [], color='blue')
-        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=10, pad=10)
+        self.ax.set_title(f"Уровень сигнала ({param.upper()})", fontsize=8, pad=10)
         self.ax.set_xlabel("Время (сек)", fontsize=8, labelpad=3)
         self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=8, labelpad=3)
         self.ax.grid(True)
@@ -381,7 +382,7 @@ class Hua4GMon:
         self.values = {}
         param = self.graph_param.get()
         self.ax.clear()
-        self.ax.set_title("Уровень сигнала", fontsize=10, pad=10)
+        self.ax.set_title("Уровень сигнала", fontsize=8, pad=10)
         self.ax.set_xlabel("Время (сек)", fontsize=8, labelpad=3)
         self.ax.set_ylabel(f"Значение ({self.get_unit(param)})", fontsize=8, labelpad=3)
         self.ax.grid(True)
