@@ -1,4 +1,3 @@
-```python
 import tkinter as tk
 from tkinter import messagebox, ttk
 import threading
@@ -932,4 +931,3 @@ if __name__ == "__main__":
     app = Hua4GMon(root)
 
     root.mainloop()
-```
