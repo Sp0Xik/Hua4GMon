@@ -1,2 +1,1 @@
-huawei-lte-api
-matplotlib
+huawei-lte-api>=1.10,<2
