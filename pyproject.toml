@@ -15,6 +15,10 @@ ignore = [
     "B008",   # function calls in default args (часто нужно для Optional)
 ]
 
+[tool.ruff.lint.isort]
+# main.py — first-party модуль проекта, не путать с third-party
+known-first-party = ["main"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
 
