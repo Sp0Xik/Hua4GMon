@@ -45,7 +45,7 @@ jobs:
         run: pytest
 
   # =================================================================
-  # BUILD — Windows .exe, только после lint+test
+  # BUILD — единый Windows .exe, только после lint+test
   # =================================================================
   build-windows:
     needs: [ lint, test ]
@@ -68,18 +68,24 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller==6.10.*
 
-    - name: Build EXE (onedir, без UPX — меньше false-positive у антивирусов)
+    - name: Build single-file EXE
       shell: pwsh
       run: |
-        # --onedir вместо --onefile: запускается быстрее и реже триггерит
-        # SmartScreen/AV-эвристики. UPX отключён по той же причине.
-        # Собираем аргументы массивом и применяем splatting (@), чтобы
-        # условный --icon не превратился в пустой строковый параметр.
+        # --onefile: всё внутри одного бинарника, всегда portable.
+        # --noupx: не давим UPX-ом — это снижает false-positive у AV.
+        # --exclude-module: явно вырезаем ненужные тяжёлые пакеты,
+        #     которые PyInstaller иногда тащит транзитивно.
         $pyiArgs = @(
-            '--onedir',
+            '--onefile',
             '--windowed',
             '--noupx',
-            '--name', 'Hua4GMon'
+            '--name', 'Hua4GMon',
+            '--exclude-module', 'pytest',
+            '--exclude-module', 'numpy',
+            '--exclude-module', 'matplotlib',
+            '--exclude-module', 'PIL',
+            '--exclude-module', 'pandas',
+            '--exclude-module', 'scipy'
         )
         if (Test-Path 'icon.ico') {
             $pyiArgs += '--icon=icon.ico'
@@ -90,51 +96,62 @@ jobs:
     - name: Stage release assets
       shell: pwsh
       run: |
-        # Кладём в dist/Hua4GMon/ ещё LICENSE и README, упаковываем в zip
-        Copy-Item LICENSE   dist/Hua4GMon/ -ErrorAction SilentlyContinue
-        Copy-Item README.md dist/Hua4GMon/ -ErrorAction SilentlyContinue
-
+        # dist/Hua4GMon.exe — единственный обязательный файл.
+        # Считаем SHA256, копируем README и LICENSE рядом для удобства.
         $version = if ($env:GITHUB_REF -like 'refs/tags/v*') {
           $env:GITHUB_REF -replace 'refs/tags/',''
         } else {
           "dev-$(Get-Date -Format yyyyMMdd-HHmmss)"
         }
-        $zipName = "Hua4GMon-$version-windows-x64.zip"
-        Compress-Archive -Path dist/Hua4GMon/* -DestinationPath $zipName
+        $exeName = "Hua4GMon-$version.exe"
+        Copy-Item dist/Hua4GMon.exe $exeName
 
-        # SHA256 для проверки целостности при ручной загрузке
-        $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash
-        "$hash  $zipName" | Out-File -Encoding ascii "$zipName.sha256"
+        $hash = (Get-FileHash $exeName -Algorithm SHA256).Hash
+        "$hash  $exeName" | Out-File -Encoding ascii "$exeName.sha256"
 
-        # Прокидываем имена дальше по job-у
-        "ZIP_NAME=$zipName"  | Out-File -FilePath $env:GITHUB_ENV -Append
-        "ZIP_HASH=$hash"     | Out-File -FilePath $env:GITHUB_ENV -Append
+        "EXE_NAME=$exeName" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "EXE_HASH=$hash"    | Out-File -FilePath $env:GITHUB_ENV -Append
+        "EXE_SIZE=$([math]::Round((Get-Item $exeName).Length / 1MB, 1)) МБ" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
 
     - name: Upload artifact (для push и PR)
       uses: actions/upload-artifact@v4
       with:
         name: Hua4GMon-Windows
         path: |
-          ${{ env.ZIP_NAME }}
-          ${{ env.ZIP_NAME }}.sha256
+          ${{ env.EXE_NAME }}
+          ${{ env.EXE_NAME }}.sha256
 
     - name: Create GitHub Release (только на тегах vX.Y.Z)
       if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          ${{ env.ZIP_NAME }}
-          ${{ env.ZIP_NAME }}.sha256
+          ${{ env.EXE_NAME }}
+          ${{ env.EXE_NAME }}.sha256
+          README.md
+          LICENSE
         body: |
-          Сборка Hua4GMon ${{ github.ref_name }} для Windows x64.
+          **Hua4GMon ${{ github.ref_name }}** — portable Windows .exe.
 
-          **Проверка целостности:**
+          Просто скачайте `${{ env.EXE_NAME }}` и запустите. Установка
+          не требуется, ничего не пишется на диск.
+
+          **Размер:** ${{ env.EXE_SIZE }}
+          **SHA256:**
           ```
-          SHA256: ${{ env.ZIP_HASH }}
+          ${{ env.EXE_HASH }}
           ```
 
-          **⚠ Windows SmartScreen:** при первом запуске Windows предупредит
-          «Неизвестный издатель». Это нормально для неподписанных exe.
-          Жмите «Подробнее» → «Выполнить в любом случае». См. README.
+          **⚠ Windows SmartScreen:** при первом запуске неподписанного
+          .exe Windows может предупредить «Неизвестный издатель».
+          Это нормально. Жмите «Подробнее» → «Выполнить в любом случае».
+          См. README → раздел Windows SmartScreen.
+
+          **⚠ Если Windows ругается на «не удаётся открыть» .exe**,
+          выполните в PowerShell:
+          ```powershell
+          Unblock-File .\${{ env.EXE_NAME }}
+          ```
 
           Полный список изменений: [CHANGELOG.md](CHANGELOG.md).
