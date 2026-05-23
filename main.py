@@ -43,20 +43,19 @@ import socket
 import sys
 import threading
 import time
+import tkinter as tk
 import webbrowser
+from tkinter import filedialog, messagebox, ttk
 from typing import Any, Dict, List, Optional, Tuple
 
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from huawei_lte_api.Client import Client
+from huawei_lte_api.Connection import Connection
 
 try:
     import winsound
     HAS_WINSOUND = True
 except ImportError:
     HAS_WINSOUND = False
-
-from huawei_lte_api.Client import Client
-from huawei_lte_api.Connection import Connection
 
 
 __version__ = "1.2"
@@ -1432,7 +1431,8 @@ class Hua4GMon:
                     else:
                         raise RuntimeError(
                             "API для управления антенной не найдено "
-                            "(модель роутера может не поддерживать).")
+                            "(модель роутера может не поддерживать)."
+                        ) from None
                 self.root.after(0, lambda: messagebox.showinfo(
                     "Успех",
                     f"Тип антенны изменён: {self.antenna_var.get()}"))
