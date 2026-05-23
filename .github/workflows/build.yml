@@ -1,14 +1,57 @@
-name: Build Windows EXE
+name: CI / Build / Release
 
 on:
   push:
     branches: [ main ]
+    tags:     [ 'v*.*.*' ]      # сборка релиза только на семвер-тегах
   pull_request:
     branches: [ main ]
+  workflow_dispatch:            # ручной запуск из UI GitHub
 
 jobs:
+  # =================================================================
+  # LINT — быстрая проверка стиля на Ubuntu
+  # =================================================================
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install ruff
+        run: pip install ruff
+      - name: Run ruff
+        run: ruff check main.py tests/
+
+  # =================================================================
+  # TEST — pytest для чистых функций (быстро, без GUI/сети)
+  # =================================================================
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install deps + pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run pytest
+        run: pytest
+
+  # =================================================================
+  # BUILD — Windows .exe, только после lint+test
+  # =================================================================
   build-windows:
+    needs: [ lint, test ]
     runs-on: windows-latest
+    permissions:
+      contents: write           # нужно для создания Release
 
     steps:
     - uses: actions/checkout@v4
@@ -17,18 +60,76 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+        cache: 'pip'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+        pip install pyinstaller==6.10.*
 
-    - name: Build EXE
-      run: pyinstaller --onefile --windowed --name Hua4GMon main.py
+    - name: Build EXE (onedir, без UPX — меньше false-positive у антивирусов)
+      shell: pwsh
+      run: |
+        # --onedir вместо --onefile: запускается быстрее и реже триггерит
+        # SmartScreen/AV-эвристики. UPX отключён по той же причине.
+        $iconArg = if (Test-Path 'icon.ico') { '--icon=icon.ico' } else { '' }
+        pyinstaller `
+          --onedir `
+          --windowed `
+          --noupx `
+          --name Hua4GMon `
+          $iconArg `
+          main.py
 
-    - name: Upload Artifact
+    - name: Stage release assets
+      shell: pwsh
+      run: |
+        # Кладём в dist/Hua4GMon/ ещё LICENSE и README, упаковываем в zip
+        Copy-Item LICENSE   dist/Hua4GMon/ -ErrorAction SilentlyContinue
+        Copy-Item README.md dist/Hua4GMon/ -ErrorAction SilentlyContinue
+
+        $version = if ($env:GITHUB_REF -like 'refs/tags/v*') {
+          $env:GITHUB_REF -replace 'refs/tags/',''
+        } else {
+          "dev-$(Get-Date -Format yyyyMMdd-HHmmss)"
+        }
+        $zipName = "Hua4GMon-$version-windows-x64.zip"
+        Compress-Archive -Path dist/Hua4GMon/* -DestinationPath $zipName
+
+        # SHA256 для проверки целостности при ручной загрузке
+        $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash
+        "$hash  $zipName" | Out-File -Encoding ascii "$zipName.sha256"
+
+        # Прокидываем имена дальше по job-у
+        "ZIP_NAME=$zipName"  | Out-File -FilePath $env:GITHUB_ENV -Append
+        "ZIP_HASH=$hash"     | Out-File -FilePath $env:GITHUB_ENV -Append
+
+    - name: Upload artifact (для push и PR)
       uses: actions/upload-artifact@v4
       with:
         name: Hua4GMon-Windows
-        path: dist/Hua4GMon.exe
+        path: |
+          ${{ env.ZIP_NAME }}
+          ${{ env.ZIP_NAME }}.sha256
+
+    - name: Create GitHub Release (только на тегах vX.Y.Z)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          ${{ env.ZIP_NAME }}
+          ${{ env.ZIP_NAME }}.sha256
+        body: |
+          Сборка Hua4GMon ${{ github.ref_name }} для Windows x64.
+
+          **Проверка целостности:**
+          ```
+          SHA256: ${{ env.ZIP_HASH }}
+          ```
+
+          **⚠ Windows SmartScreen:** при первом запуске Windows предупредит
+          «Неизвестный издатель». Это нормально для неподписанных exe.
+          Жмите «Подробнее» → «Выполнить в любом случае». См. README.
+
+          Полный список изменений: [CHANGELOG.md](CHANGELOG.md).
