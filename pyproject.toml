@@ -1,0 +1,24 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+exclude = ["dist", "build", ".venv"]
+
+[tool.ruff.lint]
+# Минимум полезных правил без агрессивных переписываний идиом:
+#   E/W — pycodestyle (стиль)
+#   F   — pyflakes (unused, undefined, etc.)
+#   I   — isort (порядок импортов)
+#   B   — flake8-bugbear (поведенческие баги, например mutable defaults)
+select = ["E", "W", "F", "I", "B"]
+ignore = [
+    "E501",   # длина строки — мы переносим по смыслу, не по символам
+    "B008",   # function calls in default args (часто нужно для Optional)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
