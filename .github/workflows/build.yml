@@ -73,14 +73,19 @@ jobs:
       run: |
         # --onedir вместо --onefile: запускается быстрее и реже триггерит
         # SmartScreen/AV-эвристики. UPX отключён по той же причине.
-        $iconArg = if (Test-Path 'icon.ico') { '--icon=icon.ico' } else { '' }
-        pyinstaller `
-          --onedir `
-          --windowed `
-          --noupx `
-          --name Hua4GMon `
-          $iconArg `
-          main.py
+        # Собираем аргументы массивом и применяем splatting (@), чтобы
+        # условный --icon не превратился в пустой строковый параметр.
+        $pyiArgs = @(
+            '--onedir',
+            '--windowed',
+            '--noupx',
+            '--name', 'Hua4GMon'
+        )
+        if (Test-Path 'icon.ico') {
+            $pyiArgs += '--icon=icon.ico'
+        }
+        $pyiArgs += 'main.py'
+        pyinstaller @pyiArgs
 
     - name: Stage release assets
       shell: pwsh
