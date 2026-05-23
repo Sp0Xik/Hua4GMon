@@ -1,5 +1,39 @@
+"""
+Hua4GMon — Huawei 4G Monitor (portable, single-file).
+
+Назначение:
+    Утилита для монтажников и владельцев роутеров Huawei
+    (E3372, B315, B525, B535, B628, B818 и др.) для мониторинга качества
+    LTE-сигнала, ручной настройки антенны и фиксации параметров БС.
+
+Особенности этой версии:
+    * Полностью portable: НИЧЕГО не сохраняется на диск
+      (нет config.ini, нет паролей в файлах, нет логов на диск).
+    * Один исполняемый файл.
+    * График построен на голом tk.Canvas — нет matplotlib (~30 МБ
+      экономии в .exe, быстрее запуск).
+    * Авто-переподключение при обрыве связи с роутером.
+    * Индикатор направления (↑↓→) — показывает, улучшается ли сигнал
+      при повороте антенны.
+    * Распознавание LTE-бандов и EARFCN с привязкой к частоте.
+    * Проверка «белых списков» на БС (для РФ) через TCP-сокеты.
+    * Экспорт сессии в CSV для отчётов клиенту (по запросу).
+    * CLI-аргументы для быстрого запуска (--ip, --password).
+
+Запуск:
+    python main.py
+    python main.py --ip 192.168.1.1 --password admin
+
+Сборка portable .exe (Windows):
+    pip install pyinstaller
+    pyinstaller --onefile --windowed --name Hua4GMon main.py
+
+Зависимости:
+    huawei-lte-api>=1.10
+"""
+
 from __future__ import annotations
- 
+
 import argparse
 import csv
 import datetime
@@ -11,32 +45,30 @@ import threading
 import time
 import webbrowser
 from typing import Any, Dict, List, Optional, Tuple
- 
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
- 
+
 try:
     import winsound
     HAS_WINSOUND = True
 except ImportError:
     HAS_WINSOUND = False
- 
-import requests
- 
+
 from huawei_lte_api.Client import Client
 from huawei_lte_api.Connection import Connection
- 
- 
+
+
 __version__ = "1.2"
 APP_NAME = "Hua4GMon"
- 
+
 logger = logging.getLogger(APP_NAME)
- 
- 
+
+
 # =========================================================
 # КОНСТАНТЫ
 # =========================================================
- 
+
 PLMN_MAP: Dict[str, str] = {
     # Russia (MCC=250)
     '25001': 'МТС', '25002': 'МегаФон', '25011': 'Yota',
@@ -49,7 +81,7 @@ PLMN_MAP: Dict[str, str] = {
     # Ukraine (MCC=255)
     '25501': 'Vodafone UA', '25502': 'Kyivstar', '25506': 'lifecell',
 }
- 
+
 # LTE bitmask values used by Huawei set_net_mode()
 BANDS: Dict[str, int] = {
     'B1 (2100 МГц)':   0x1,
@@ -60,14 +92,14 @@ BANDS: Dict[str, int] = {
     'B38 (TDD 2600)':  0x2000000000,
     'B40 (TDD 2300)':  0x8000000000,
 }
- 
+
 ANTENNA_MODES: Dict[str, int] = {
     "Авто": 0,
     "Внутренняя": 1,
     "Внешняя": 2,
     "Смешанная": 3,
 }
- 
+
 # Расшифровка LTE-бандов: номер → краткое обозначение полосы
 BAND_FREQ_MAP: Dict[int, str] = {
     1: "2100", 2: "1900PCS", 3: "1800+", 4: "AWS-1", 5: "850",
@@ -77,7 +109,7 @@ BAND_FREQ_MAP: Dict[int, str] = {
     38: "TDD2600", 39: "TDD1900+", 40: "TDD2300", 41: "TDD2500",
     42: "TDD3500", 43: "TDD3700", 66: "AWS-3", 71: "600",
 }
- 
+
 # Диапазоны EARFCN (downlink) → band (3GPP TS 36.101). Главные ходовые полосы.
 EARFCN_RANGES: List[Tuple[int, int, int]] = [
     (0, 599, 1),       (600, 1199, 2),    (1200, 1949, 3),
@@ -90,7 +122,7 @@ EARFCN_RANGES: List[Tuple[int, int, int]] = [
     (41590, 43589, 42), (43590, 45589, 43),
     (66436, 67335, 66), (68586, 68935, 71),
 ]
- 
+
 # ─── Проверка «белых списков» БС (РФ) ───
 # Сайты, которые ВСЕГДА в белых списках операторов РФ
 # (госуслуги, банки, маркетплейсы). Доступны даже при включённой фильтрации.
@@ -107,13 +139,13 @@ CONTROL_HOSTS_NEUTRAL: List[Tuple[str, int]] = [
     ("httpbin.org", 443),
 ]
 WL_CHECK_TIMEOUT = 2.5
- 
+
 # Network mode constants for set_net_mode
 NETMODE_LTE_ONLY = '03'
 NETMODE_AUTO = '00'
 LTEBAND_AUTO_ALL = '7FFFFFFFFFFFFFFF'    # all LTE bands
 NETBAND_AUTO_MASK = '3FFFFFFF'           # GSM/WCDMA/LTE auto
- 
+
 # Thresholds: [(min_value, label, color, percent_score), ...]
 # Final entry with min_value=None is the catch-all.
 SIGNAL_THRESHOLDS: Dict[str, List[Tuple[Optional[float], str, str, int]]] = {
@@ -134,35 +166,35 @@ SIGNAL_THRESHOLDS: Dict[str, List[Tuple[Optional[float], str, str, int]]] = {
              (-15,  "Потери",         "#fdcb6e", 40),
              (None, "Высокие потери", "#d63031", 10)],
 }
- 
+
 PARAM_RANGES: Dict[str, Tuple[int, int]] = {
     'rsrp': (-120, -50),
     'rssi': (-110, -50),
     'rsrq': (-20, -3),
     'sinr': (-5, 30),
 }
- 
+
 GRAPH_HISTORY = 100
 JITTER_WINDOW = 5
 SESSION_LOG_MAX = 10800        # ~3 часа при тике 1 с
 RECONNECT_DELAY_INITIAL = 2.0
 RECONNECT_DELAY_MAX = 30.0
 DIRECTION_LOOKBACK = 3         # сколько тиков сравнивать для стрелки
- 
+
 IP_RE = re.compile(r'^\d{1,3}(\.\d{1,3}){3}$')
- 
- 
+
+
 # =========================================================
 # ЧИСТЫЕ ФУНКЦИИ (легко тестируются отдельно)
 # =========================================================
- 
+
 def is_valid_ip(s: str) -> bool:
     """Базовая валидация IPv4."""
     if not s or not IP_RE.match(s):
         return False
     return all(0 <= int(p) <= 255 for p in s.split('.'))
- 
- 
+
+
 def evaluate_signal(param: str,
                     val: Optional[float]) -> Tuple[str, str, int]:
     """Возвращает (текст_статуса, цвет, процент_качества)."""
@@ -175,8 +207,8 @@ def evaluate_signal(param: str,
         if threshold is None or val >= threshold:
             return text, color, pct
     return "Н/Д", "gray", 0
- 
- 
+
+
 def calculate_overall_health(rsrp: Optional[float],
                               sinr: Optional[float]
                               ) -> Tuple[int, str, str]:
@@ -194,8 +226,8 @@ def calculate_overall_health(rsrp: Optional[float],
     if overall >= 35:
         return overall, f"Умеренно ({overall}%) — крутите антенну", "#fdcb6e"
     return overall, f"Плохо ({overall}%) — будет рваться!", "#d63031"
- 
- 
+
+
 def extract_number(val: Any) -> Optional[float]:
     """Строгая извлечение числа. Не ведётся на строки вроде 'timeout 0'."""
     if val is None or isinstance(val, bool):
@@ -213,8 +245,8 @@ def extract_number(val: Any) -> Optional[float]:
         return float(m.group(1))
     except ValueError:
         return None
- 
- 
+
+
 def parse_cell_id(raw: Any) -> Tuple[Optional[int], Optional[int]]:
     """Парсит cell_id из Huawei API. Возвращает (eNodeB_id, sector)."""
     if raw is None or raw == '':
@@ -235,8 +267,8 @@ def parse_cell_id(raw: Any) -> Tuple[Optional[int], Optional[int]]:
     if cid > 0x0FFFFFFF:     # > 28 бит — не LTE CID
         return None, None
     return cid // 256, cid % 256
- 
- 
+
+
 def parse_antenna_value(label: str) -> Optional[int]:
     """Достаёт целочисленный код режима антенны из локализованной метки."""
     base = label.split('(')[0].strip()
@@ -246,8 +278,8 @@ def parse_antenna_value(label: str) -> Optional[int]:
     if m:
         return int(m.group(1))
     return None
- 
- 
+
+
 def earfcn_to_band(earfcn: Any) -> Optional[int]:
     """EARFCN (DL channel) → номер LTE-band, или None если не определён."""
     try:
@@ -258,11 +290,11 @@ def earfcn_to_band(earfcn: Any) -> Optional[int]:
         if lo <= e <= hi:
             return band
     return None
- 
- 
+
+
 def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
     """Человекочитаемая метка LTE-band.
- 
+
     Понимает форматы:
       "LTE BAND 7", "7", "B7", "B7+B20", "7+20", "0x40".
     Если band недоступен — пытается определить по EARFCN.
@@ -296,8 +328,8 @@ def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
             tail = f" ({freq} МГц)" if freq else ""
             return f"≈ B{b}{tail} [по EARFCN={earfcn}]"
     return "-"
- 
- 
+
+
 def _format_band_list(bands: List[int]) -> str:
     """Форматирует список номеров бандов в строку."""
     bands = list(dict.fromkeys(bands))   # дедуп с сохранением порядка
@@ -310,22 +342,22 @@ def _format_band_list(bands: List[int]) -> str:
         freq = BAND_FREQ_MAP.get(b, '')
         parts.append(f"B{b}" + (f"/{freq}" if freq else ""))
     return "CA: " + " + ".join(parts)
- 
- 
+
+
 def format_bytes_mb(b: Any) -> str:
     try:
         return f"{int(b) / 1048576:.1f} МБ"
     except (TypeError, ValueError):
         return "-"
- 
- 
+
+
 def format_rate_mbps(bps: Any) -> str:
     try:
         return f"{int(bps) * 8 / 1_000_000:.2f} Мбит/с"
     except (TypeError, ValueError):
         return "-"
- 
- 
+
+
 # =========================================================
 # ПРОВЕРКА «БЕЛЫХ СПИСКОВ» БС
 # =========================================================
@@ -349,7 +381,7 @@ def format_rate_mbps(bps: Any) -> str:
 #     даёт всё, что нужно: дошёл ли пакет до 443/tcp на удалённом хосте.
 #   * Современные DPI РФ блокируют именно на L4/L7 по host/SNI — TCP-
 #     соединение в этом случае всё равно не установится (RST или таймаут).
- 
+
 def tcp_reachable(host: str, port: int,
                    timeout: float = WL_CHECK_TIMEOUT) -> Tuple[bool, str]:
     """Пытается открыть TCP-соединение. Возвращает (доступен, описание)."""
@@ -364,8 +396,8 @@ def tcp_reachable(host: str, port: int,
         return False, "соединение отклонено"
     except OSError as e:
         return False, f"ошибка ({e.errno})"
- 
- 
+
+
 def analyze_whitelist_results(
         white_results: List[Tuple[str, bool]],
         neutral_results: List[Tuple[str, bool]]) -> Tuple[str, str, str]:
@@ -374,7 +406,7 @@ def analyze_whitelist_results(
     neutral_ok = sum(1 for _, ok in neutral_results if ok)
     white_any = white_ok > 0
     neutral_any = neutral_ok > 0
- 
+
     if white_any and neutral_any:
         return ("Белые списки ВЫКЛЮЧЕНЫ",
                 f"Обычный режим — открыт весь интернет "
@@ -399,24 +431,24 @@ def analyze_whitelist_results(
             "Ни одна цель не отвечает. Либо у роутера нет связи с БС, "
             "либо проблема с DNS/маршрутом. Проверьте RSRP и трафик.",
             "#636e72")
- 
- 
+
+
 # =========================================================
 # ГРАФИК НА tk.Canvas (замена matplotlib)
 # =========================================================
- 
+
 class CanvasGraph(tk.Canvas):
     """Лёгкий график-линия на голом tk.Canvas (без matplotlib).
- 
+
     Поддерживает:
       * автоматический ресайз;
       * настраиваемый диапазон оси Y и подпись;
       * сглаженное добавление точек с авто-обрезкой истории;
       * маркер последнего значения с числовой подписью.
     """
- 
+
     PADDING = (45, 12, 18, 22)   # left, right, top, bottom (px)
- 
+
     def __init__(self, parent: tk.Misc, history: int = 100, **kw):
         super().__init__(parent, bg='white', highlightthickness=1,
                          highlightbackground='#cccccc', **kw)
@@ -427,24 +459,24 @@ class CanvasGraph(tk.Canvas):
         self.unit = "dBm"
         self.title = "RSRP"
         self.bind("<Configure>", lambda e: self._redraw())
- 
+
     def configure_axes(self, y_min: float, y_max: float,
                        unit: str, title: str) -> None:
         self.y_min, self.y_max = float(y_min), float(y_max)
         self.unit, self.title = unit, title
         self.values.clear()
         self._redraw()
- 
+
     def push(self, val: float) -> None:
         self.values.append(float(val))
         if len(self.values) > self.history:
             self.values.pop(0)
         self._redraw()
- 
+
     def clear(self) -> None:
         self.values.clear()
         self._redraw()
- 
+
     def _redraw(self) -> None:
         self.delete("all")
         w, h = self.winfo_width(), self.winfo_height()
@@ -454,12 +486,12 @@ class CanvasGraph(tk.Canvas):
         plot_w, plot_h = w - pl - pr, h - pt - pb
         if plot_w <= 0 or plot_h <= 0:
             return
- 
+
         # Заголовок (верх-лево)
         self.create_text(pl, 3, anchor='nw',
                          text=f"{self.title} ({self.unit})",
                          font=("Segoe UI", 9, "bold"), fill='#333')
- 
+
         # Сетка + подписи оси Y (5 уровней)
         for i in range(5):
             y = pt + plot_h * i / 4
@@ -467,16 +499,16 @@ class CanvasGraph(tk.Canvas):
             self.create_line(pl, y, w - pr, y, fill='#ececec')
             self.create_text(pl - 3, y, anchor='e', text=f"{v:g}",
                              font=("", 8), fill='#666')
- 
+
         # Базовая линия X
         self.create_line(pl, h - pb, w - pr, h - pb, fill='#888')
         self.create_text((pl + w - pr) / 2, h - 3, anchor='s',
                          text=f"последние {self.history} точек",
                          font=("", 8), fill='#888')
- 
+
         if not self.values:
             return
- 
+
         # Точки
         span = max(self.history - 1, 1)
         rng = max(self.y_max - self.y_min, 1e-9)
@@ -486,7 +518,7 @@ class CanvasGraph(tk.Canvas):
             v_cl = max(self.y_min, min(self.y_max, v))
             y = (h - pb) - plot_h * (v_cl - self.y_min) / rng
             pts.extend([x, y])
- 
+
         if len(pts) >= 4:
             self.create_line(*pts, fill='#0078D7', width=2)
         # Маркер последнего значения
@@ -496,12 +528,12 @@ class CanvasGraph(tk.Canvas):
         self.create_text(w - pr - 5, pt + 4, anchor='ne',
                          text=f"{self.values[-1]:g} {self.unit}",
                          font=("Segoe UI", 9, "bold"), fill='#0078D7')
- 
- 
+
+
 # =========================================================
 # ОСНОВНОЙ КЛАСС
 # =========================================================
- 
+
 class Hua4GMon:
     def __init__(self, root: tk.Tk, default_ip: str = "192.168.8.1",
                  default_password: str = ""):
@@ -509,58 +541,59 @@ class Hua4GMon:
         self.root.title(f"{APP_NAME} v{__version__}")
         self.root.geometry("900x720")
         self.root.minsize(820, 650)
- 
+
         # ---- Thread sync primitives ----
         self._stop_event = threading.Event()
         self._data_lock = threading.Lock()
         self.monitor_thread: Optional[threading.Thread] = None
         self._interval_seconds: float = 1.0
- 
+
         # ---- Connection state ----
         self.connected = False
         self.is_monitoring = False
         self.client: Optional[Client] = None
         self.last_data: Dict[str, Any] = {}
+        self.device_info: Dict[str, Any] = {}
         self.start_time: Optional[float] = None
         self.roof_win: Optional[tk.Toplevel] = None
- 
+
         # Cached credentials (live only in RAM, never written to disk)
         self._cached_ip: str = ""
         self._cached_pw: str = ""
- 
+
         # ---- Monitoring buffers ----
         self.dynamic_params = ['rsrp', 'rssi', 'sinr', 'rsrq']
         self.peak_values: Dict[str, Any] = {p: '-' for p in self.dynamic_params}
         self.values: Dict[str, List[float]] = {p: [] for p in self.dynamic_params}
         self.session_log: List[Dict[str, Any]] = []
         self.dir_history: List[float] = []
- 
+
         # ---- Reconnect ----
         self.auto_reconnect = True
         self.reconnect_delay = RECONNECT_DELAY_INITIAL
- 
+
         # Defaults from CLI
         self.default_ip = default_ip
         self.default_password = default_password
- 
+
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.setup_ui()
- 
+
         if default_password:
             # CLI: автоподключение
             self.root.after(200, self.start_connect)
- 
+
     # =====================================================
     # UI BUILD
     # =====================================================
- 
+
     def setup_ui(self) -> None:
         style = ttk.Style()
         try:
             style.theme_use('clam')
         except tk.TclError:
             pass
- 
+
         # Верхняя строка статуса
         self.top_bar = ttk.Frame(self.root)
         self.top_bar.pack(fill=tk.X, padx=5, pady=2)
@@ -568,12 +601,12 @@ class Hua4GMon:
             self.top_bar, text="Отключено", foreground='red',
             font=("Segoe UI", 10, "bold"))
         self.status_label.pack(side=tk.LEFT, padx=5)
- 
+
         self.ontop_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(self.top_bar, text="Поверх окон",
                         variable=self.ontop_var,
                         command=self.toggle_on_top).pack(side=tk.RIGHT, padx=5)
- 
+
         # Вкладки
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -589,28 +622,26 @@ class Hua4GMon:
         self.notebook.add(self.tab_tower, text="🗼 Вышка")
         self.notebook.add(self.tab_status, text="📊 Состояние")
         self.notebook.add(self.tab_whitelist, text="🛡 Белые списки (РФ)")
- 
+
         self.build_settings_tab()
         self.build_monitor_tab()
         self.build_network_tab()
         self.build_tower_tab()
         self.build_status_tab()
         self.build_whitelist_tab()
- 
-        self.apply_view_mode()
- 
+
     def build_settings_tab(self) -> None:
         frame = ttk.LabelFrame(self.tab_settings,
                                text="Параметры роутера", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=10)
- 
+
         ttk.Label(frame, text="IP адрес:").grid(
             row=0, column=0, sticky='e', padx=5, pady=5)
         self.ip_entry = ttk.Entry(frame, width=25)
         self.ip_entry.insert(0, self.default_ip)
         self.ip_entry.grid(row=0, column=1, sticky='w', padx=5)
         self.ip_entry.bind("<Return>", lambda e: self.password_entry.focus())
- 
+
         ttk.Label(frame, text="Пароль:").grid(
             row=1, column=0, sticky='e', padx=5, pady=5)
         self.password_entry = ttk.Entry(frame, show="*", width=25)
@@ -619,7 +650,7 @@ class Hua4GMon:
         self.password_entry.grid(row=1, column=1, sticky='w', padx=5)
         # Enter в поле пароля — подключиться
         self.password_entry.bind("<Return>", lambda e: self.start_connect())
- 
+
         ttk.Label(frame, text="Опрос (сек):").grid(
             row=2, column=0, sticky='e', padx=5, pady=5)
         self.update_interval = tk.StringVar(value='1')
@@ -629,18 +660,18 @@ class Hua4GMon:
                      values=['0.5', '1', '2', '5'],
                      state='readonly', width=5).grid(
             row=2, column=1, sticky='w', padx=5)
- 
+
         self.reconnect_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(frame, text="Авто-переподключение при обрыве",
                         variable=self.reconnect_var).grid(
             row=3, column=0, columnspan=2, sticky='w', padx=5, pady=5)
- 
+
         btn_frame = ttk.Frame(self.tab_settings)
         btn_frame.pack(fill=tk.X, padx=10, pady=5)
         self.connect_button = ttk.Button(
             btn_frame, text="🚀 Подключиться", command=self.start_connect)
         self.connect_button.pack(side=tk.LEFT, padx=5)
- 
+
         info = ttk.LabelFrame(self.tab_settings, text="Подсказка", padding=10)
         info.pack(fill=tk.X, padx=10, pady=5)
         ttk.Label(info, wraplength=780, justify="left", text=(
@@ -650,24 +681,12 @@ class Hua4GMon:
             "• 401 Unauthorized — перезагрузите роутер или проверьте пароль.\n"
             "• Данные на диск НЕ сохраняются — программа полностью портативна."
         )).pack(anchor='w')
- 
+
     def build_monitor_tab(self) -> None:
-        # Переключатель режима
-        self.mode_frame = ttk.Frame(self.tab_monitor, padding=5)
-        self.mode_frame.pack(fill=tk.X, padx=10, pady=2)
-        ttk.Label(self.mode_frame, text="Интерфейс:",
-                  font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=5)
-        self.view_mode_var = tk.StringVar(value="Стандартный")
-        mode_cb = ttk.Combobox(
-            self.mode_frame, textvariable=self.view_mode_var,
-            values=["Стандартный", "Профессиональный"],
-            state="readonly", width=16)
-        mode_cb.pack(side=tk.LEFT, padx=5)
-        mode_cb.bind("<<ComboboxSelected>>", self.apply_view_mode)
- 
-        # Здоровье связи (Standard)
+        # Здоровье связи — всегда видна сверху
         self.health_frame = ttk.LabelFrame(
             self.tab_monitor, text="Общее качество связи", padding=10)
+        self.health_frame.pack(fill=tk.X, padx=10, pady=5)
         self.health_progress = ttk.Progressbar(
             self.health_frame, orient="horizontal", mode="determinate")
         self.health_progress.pack(fill=tk.X, side=tk.TOP, pady=5)
@@ -675,8 +694,8 @@ class Hua4GMon:
             self.health_frame, text="Подключитесь к роутеру",
             font=("Segoe UI", 12, "bold"), fg="gray")
         self.health_text_lbl.pack(side=tk.TOP, pady=2)
- 
-        # 4 крупных индикатора
+
+        # 4 крупных индикатора (с пиком всегда)
         self.digits_frame = ttk.Frame(self.tab_monitor)
         self.digits_frame.pack(fill=tk.X, padx=10, pady=5)
         self.lbl_vars: Dict[str, Dict[str, Any]] = {}
@@ -693,14 +712,15 @@ class Hua4GMon:
             status.pack(pady=2)
             peak = tk.Label(f, text="Пик: -",
                             font=("Segoe UI", 8), fg='gray')
-            peak.pack()
+            peak.pack(side=tk.BOTTOM)
             self.lbl_vars[param] = {
                 'val': val, 'status': status, 'peak': peak, 'frame': f}
- 
+
         # Индикатор направления (главная фишка для монтажа)
         self.dir_frame = ttk.LabelFrame(
             self.tab_monitor,
             text="Тенденция RSRP (поворачивайте антенну)", padding=8)
+        self.dir_frame.pack(fill=tk.X, padx=10, pady=5)
         self.dir_label = tk.Label(
             self.dir_frame, text="—",
             font=("Segoe UI", 32, "bold"), fg='gray')
@@ -709,9 +729,10 @@ class Hua4GMon:
             self.dir_frame, text="Накапливаю данные...",
             font=("Segoe UI", 10), fg='gray')
         self.dir_text.pack()
- 
-        # Инструменты (Pro)
+
+        # Инструменты: джиттер, аудио-помощник, крышный режим
         self.tools_frame = ttk.Frame(self.tab_monitor)
+        self.tools_frame.pack(fill=tk.X, padx=15, pady=5)
         self.jitter_label = ttk.Label(
             self.tools_frame, text="Джиттер: -",
             font=("Segoe UI", 10, "bold"))
@@ -726,9 +747,10 @@ class Hua4GMon:
                    command=self.toggle_roof_mode).pack(side=tk.RIGHT, padx=5)
         self.geiger_cb.pack(side=tk.RIGHT, padx=5)
         self.jitter_label.pack(side=tk.LEFT)
- 
-        # Кнопки графика и экспорта
+
+        # Управление графиком + экспорт
         self.ctrl_frame = ttk.Frame(self.tab_monitor)
+        self.ctrl_frame.pack(fill=tk.X, padx=10, pady=5)
         ttk.Label(self.ctrl_frame, text="График:").pack(side=tk.LEFT)
         self.graph_param = tk.StringVar(value='rsrp')
         self.graph_cb = ttk.Combobox(
@@ -740,25 +762,24 @@ class Hua4GMon:
                    command=self.reset_peaks).pack(side=tk.RIGHT, padx=5)
         ttk.Button(self.ctrl_frame, text="💾 Экспорт CSV",
                    command=self.export_csv).pack(side=tk.RIGHT, padx=5)
- 
+
         # График на голом tk.Canvas (без matplotlib)
         self.signal_graph = CanvasGraph(
             self.tab_monitor, history=GRAPH_HISTORY, height=180)
-        # Совместимость с apply_view_mode (он управляет упаковкой)
-        self.canvas_widget = self.signal_graph
+        self.signal_graph.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.setup_graph()
- 
+
     def build_network_tab(self) -> None:
         band_frame = ttk.LabelFrame(
             self.tab_network, text="Фиксация частот (Band Lock)", padding=10)
         band_frame.pack(fill=tk.X, padx=10, pady=10)
- 
+
         ttk.Label(band_frame, wraplength=800, justify='left', text=(
             "ВНИМАНИЕ: фиксация диапазона может уменьшить покрытие. "
             "Применяйте, чтобы привязаться к лучшей вышке после анализа в "
             "Pro-режиме.")).grid(
             row=0, column=0, columnspan=3, sticky='w', pady=(0, 8))
- 
+
         self.band_checkboxes: Dict[str, tk.BooleanVar] = {}
         row, col = 1, 0
         for band_name in BANDS:
@@ -771,14 +792,14 @@ class Hua4GMon:
             if col > 2:
                 col = 0
                 row += 1
- 
+
         btn_frame = ttk.Frame(band_frame)
         btn_frame.grid(row=row + 1, column=0, columnspan=3, pady=10)
         ttk.Button(btn_frame, text="Применить Band Lock",
                    command=self.apply_bands).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Сбросить в AUTO",
                    command=self.reset_bands).pack(side=tk.LEFT, padx=5)
- 
+
         ant_frame = ttk.LabelFrame(self.tab_network,
                                    text="Переключение антенн", padding=10)
         ant_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -789,11 +810,22 @@ class Hua4GMon:
                      state='readonly', width=15).pack(side=tk.LEFT, padx=5)
         ttk.Button(ant_frame, text="Применить",
                    command=self.apply_antenna).pack(side=tk.LEFT, padx=5)
- 
+
+        # Управление роутером
+        mgmt_frame = ttk.LabelFrame(self.tab_network,
+                                     text="Управление роутером", padding=10)
+        mgmt_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Label(mgmt_frame, wraplength=820, justify='left', text=(
+            "Перезагрузка иногда нужна после Band Lock, переключения "
+            "антенн или при «зависании» сетевой части. Через 1–2 минуты "
+            "переподключитесь вручную.")).pack(anchor='w', pady=(0, 6))
+        ttk.Button(mgmt_frame, text="🔄 Перезагрузить роутер",
+                   command=self.reboot_router).pack(side=tk.LEFT, padx=5)
+
     def build_tower_tab(self) -> None:
         info_frame = ttk.LabelFrame(
             self.tab_tower, text="Информация о станции", padding=10)
-        info_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        info_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
         self.tower_labels: Dict[str, ttk.Label] = {}
         fields = [
             ('plmn', 'Оператор (PLMN)'),
@@ -812,14 +844,35 @@ class Hua4GMon:
             lbl = ttk.Label(info_frame, text="-", font=("", 10))
             lbl.grid(row=i, column=1, sticky='w', pady=4, padx=5)
             self.tower_labels[key] = lbl
- 
+
+        # SIM / Устройство — статическая инфа, заполняется при подключении
+        sim_frame = ttk.LabelFrame(
+            self.tab_tower, text="SIM / Устройство", padding=10)
+        sim_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.sim_labels: Dict[str, ttk.Label] = {}
+        sim_fields = [
+            ('Imei', 'IMEI (роутер)'),
+            ('Imsi', 'IMSI (SIM)'),
+            ('Iccid', 'ICCID (SIM-карта)'),
+            ('Msisdn', 'Номер телефона'),
+            ('SerialNumber', 'Серийный номер'),
+            ('DeviceName', 'Модель'),
+            ('SoftwareVersion', 'Прошивка'),
+        ]
+        for i, (key, name) in enumerate(sim_fields):
+            ttk.Label(sim_frame, text=f"{name}:",
+                      font=("", 10, "bold")).grid(
+                row=i, column=0, sticky='e', pady=3, padx=5)
+            lbl = ttk.Label(sim_frame, text="-",
+                             font=("Consolas", 10))
+            lbl.grid(row=i, column=1, sticky='w', pady=3, padx=5)
+            self.sim_labels[key] = lbl
+
         btn_frame = ttk.Frame(self.tab_tower)
         btn_frame.pack(fill=tk.X, padx=10, pady=5)
         ttk.Button(btn_frame, text="🗺 Открыть на CellMapper",
                    command=self.open_cellmapper).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="📡 Инфо из InfoCellTowers",
-                   command=self.fetch_infocelltowers).pack(side=tk.LEFT, padx=5)
- 
+
     def build_status_tab(self) -> None:
         stat_frame = ttk.LabelFrame(
             self.tab_status, text="Мониторинг железа и трафика",
@@ -843,7 +896,7 @@ class Hua4GMon:
             lbl = ttk.Label(stat_frame, text="-", font=("", 10))
             lbl.grid(row=i, column=1, sticky='w', pady=6, padx=5)
             self.stat_labels[key] = lbl
- 
+
     def build_whitelist_tab(self) -> None:
         intro = ttk.LabelFrame(self.tab_whitelist,
                                 text="Что проверяется", padding=10)
@@ -862,7 +915,7 @@ class Hua4GMon:
             "⚠ ВАЖНО: ноутбук должен быть подключён к Wi-Fi/USB именно "
             "этого роутера, иначе тест измерит чужой канал."
         )).pack(anchor='w')
- 
+
         # Кнопка + бегущая строка статуса
         ctrl = ttk.Frame(self.tab_whitelist)
         ctrl.pack(fill=tk.X, padx=10, pady=5)
@@ -873,7 +926,7 @@ class Hua4GMon:
         self.wl_progress = ttk.Progressbar(
             ctrl, orient="horizontal", mode="indeterminate", length=200)
         self.wl_progress.pack(side=tk.LEFT, padx=10)
- 
+
         # Большой статус-вердикт
         verdict_frame = ttk.LabelFrame(
             self.tab_whitelist, text="Вердикт", padding=12)
@@ -885,11 +938,11 @@ class Hua4GMon:
                                    font=("Segoe UI", 10),
                                    fg='gray', wraplength=820, justify='left')
         self.wl_detail.pack(anchor='w', pady=(4, 0))
- 
+
         # Детализированные результаты по хостам
         details = ttk.Frame(self.tab_whitelist)
         details.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
- 
+
         white_frame = ttk.LabelFrame(details, text="✅ В белых списках",
                                       padding=8)
         white_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
@@ -900,7 +953,7 @@ class Hua4GMon:
                             font=("Consolas", 10), fg='gray', anchor='w')
             lbl.pack(fill=tk.X, padx=4, pady=2)
             self.wl_white_labels[host] = lbl
- 
+
         neut_frame = ttk.LabelFrame(details, text="⚪ Нейтральные",
                                      padding=8)
         neut_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
@@ -911,7 +964,7 @@ class Hua4GMon:
                             font=("Consolas", 10), fg='gray', anchor='w')
             lbl.pack(fill=tk.X, padx=4, pady=2)
             self.wl_neut_labels[host] = lbl
- 
+
     def _start_whitelist_check(self) -> None:
         self.wl_button.config(state='disabled')
         self.wl_progress.start(10)
@@ -922,7 +975,7 @@ class Hua4GMon:
             lbl.config(text=lbl.cget('text').split(' — ')[0] + " — ⏳",
                        fg='gray')
         threading.Thread(target=self._whitelist_task, daemon=True).start()
- 
+
     def _whitelist_task(self) -> None:
         """В фоне опрашивает все цели и шлёт результаты обратно в UI."""
         white_results: List[Tuple[str, bool]] = []
@@ -931,18 +984,18 @@ class Hua4GMon:
             ok, detail = tcp_reachable(host, port)
             white_results.append((host, ok))
             white_details[host] = detail
- 
+
         neutral_results: List[Tuple[str, bool]] = []
         neutral_details: Dict[str, str] = {}
         for host, port in CONTROL_HOSTS_NEUTRAL:
             ok, detail = tcp_reachable(host, port)
             neutral_results.append((host, ok))
             neutral_details[host] = detail
- 
+
         self.root.after(0, lambda: self._render_whitelist_results(
             white_results, white_details,
             neutral_results, neutral_details))
- 
+
     def _render_whitelist_results(
             self,
             white_results: List[Tuple[str, bool]],
@@ -951,7 +1004,7 @@ class Hua4GMon:
             neutral_details: Dict[str, str]) -> None:
         self.wl_progress.stop()
         self.wl_button.config(state='normal')
- 
+
         for host, ok in white_results:
             lbl = self.wl_white_labels[host]
             sym, col = ("✅", '#00b894') if ok else ("❌", '#d63031')
@@ -960,50 +1013,29 @@ class Hua4GMon:
             lbl = self.wl_neut_labels[host]
             sym, col = ("✅", '#00b894') if ok else ("❌", '#d63031')
             lbl.config(text=f"{host} — {sym} {neutral_details[host]}", fg=col)
- 
+
         title, detail, color = analyze_whitelist_results(
             white_results, neutral_results)
         self.wl_title.config(text=title, fg=color)
         self.wl_detail.config(text=detail, fg='#444444')
- 
+
     # =====================================================
-    # View modes
+    # Misc helpers
     # =====================================================
- 
-    def apply_view_mode(self, _event=None) -> None:
-        """Прячем всё необязательное, затем показываем нужное для режима."""
-        for w in (self.health_frame, self.tools_frame,
-                  self.ctrl_frame, self.canvas_widget, self.dir_frame):
-            w.pack_forget()
- 
-        if self.view_mode_var.get() == "Стандартный":
-            self.health_frame.pack(fill=tk.X, padx=10, pady=5,
-                                   before=self.digits_frame)
-            self.dir_frame.pack(fill=tk.X, padx=10, pady=5)
-            for p in self.dynamic_params:
-                self.lbl_vars[p]['peak'].pack_forget()
-        else:
-            self.dir_frame.pack(fill=tk.X, padx=10, pady=5)
-            self.tools_frame.pack(fill=tk.X, padx=15, pady=5)
-            self.ctrl_frame.pack(fill=tk.X, padx=10, pady=5)
-            self.canvas_widget.pack(fill=tk.BOTH, expand=True,
-                                    padx=10, pady=5)
-            for p in self.dynamic_params:
-                self.lbl_vars[p]['peak'].pack(side=tk.BOTTOM)
- 
+
     def toggle_on_top(self) -> None:
         self.root.attributes('-topmost', self.ontop_var.get())
- 
+
     def _sync_interval(self) -> None:
         try:
             self._interval_seconds = float(self.update_interval.get())
         except (ValueError, tk.TclError):
             self._interval_seconds = 1.0
- 
+
     # =====================================================
     # CONNECTION
     # =====================================================
- 
+
     def start_connect(self) -> None:
         if self.connected:
             self.disconnect()
@@ -1022,15 +1054,16 @@ class Hua4GMon:
         self.connect_button.config(state='disabled')
         self.status_label.config(text="Подключение...", foreground='orange')
         threading.Thread(target=self._connect_thread, daemon=True).start()
- 
+
     def _connect_thread(self) -> None:
         url = f"http://{self._cached_ip}"
         try:
             client = Client(Connection(
                 url, username='admin',
                 password=self._cached_pw, timeout=4))
-            client.device.information()    # верификация
+            info = client.device.information() or {}    # верификация + кеш
             self.client = client
+            self.device_info = info
             self.connected = True
             self.is_monitoring = True
             self.start_time = time.time()
@@ -1042,7 +1075,7 @@ class Hua4GMon:
         except Exception as e:
             logger.exception("Connect failed")
             self.root.after(0, lambda err=str(e): self._on_connected_fail(err))
- 
+
     def _on_connected_success(self) -> None:
         self.connect_button.config(state='normal', text="⏹ Отключиться")
         self.status_label.config(text="Подключено", foreground='green')
@@ -1051,14 +1084,18 @@ class Hua4GMon:
         self.session_log.clear()
         self.dir_history.clear()
         self.peak_values = {p: '-' for p in self.dynamic_params}
- 
+        # Заполняем SIM/Device-лейблы из закешированного device.information()
+        for key, lbl in self.sim_labels.items():
+            raw = self.device_info.get(key, '')
+            lbl.config(text=str(raw) if raw not in (None, '') else 'Н/Д')
+
     def _on_connected_fail(self, error: str) -> None:
         self.connect_button.config(state='normal', text="🚀 Подключиться")
         self.status_label.config(text="Ошибка", foreground='red')
         snippet = error if len(error) < 200 else error[:200] + "..."
         messagebox.showerror("Ошибка подключения",
                              f"Связь с роутером не удалась:\n\n{snippet}")
- 
+
     def disconnect(self) -> None:
         """Корректная остановка: сначала глушим поток, потом обнуляем клиент."""
         was_connected = self.connected
@@ -1076,6 +1113,7 @@ class Hua4GMon:
             except Exception:
                 logger.debug("Logout failed (ignored)", exc_info=True)
             self.client = None
+        self.device_info = {}
         self.connect_button.config(text="🚀 Подключиться", state='normal')
         if was_connected:
             self.status_label.config(text="Отключено", foreground='red')
@@ -1084,11 +1122,13 @@ class Hua4GMon:
             self.health_progress.config(value=0)
             self.dir_label.config(text="—", fg='gray')
             self.dir_text.config(text="Нет данных", fg='gray')
- 
+            for lbl in self.sim_labels.values():
+                lbl.config(text="-")
+
     # =====================================================
     # MONITOR LOOP (фоновый поток)
     # =====================================================
- 
+
     def _monitor_loop(self) -> None:
         while not self._stop_event.is_set():
             client = self.client
@@ -1103,18 +1143,18 @@ class Hua4GMon:
                         **(status or {}), **(traffic or {})}
                 data['plmn'] = (plmn or {}).get(
                     'Numeric', data.get('plmn', ''))
- 
+
                 enodeb, sector = parse_cell_id(data.get('cell_id'))
                 if enodeb is not None:
                     data['enodeb'] = enodeb
                     data['sector'] = sector
- 
+
                 band_str = str(data.get('band', ''))
                 data['aggregation'] = ("Активна"
                                        if ("+" in band_str
                                            or "CA" in band_str)
                                        else "Нет (Single)")
- 
+
                 with self._data_lock:
                     self.last_data = data
                 self.root.after(0, self.refresh_ui)
@@ -1128,10 +1168,10 @@ class Hua4GMon:
                     self._try_reconnect()
                 else:
                     break
- 
+
             if self._stop_event.wait(self._interval_seconds):
                 break
- 
+
     def _try_reconnect(self) -> None:
         """Одна попытка переподключения с экспоненциальным backoff."""
         if self._stop_event.is_set():
@@ -1154,23 +1194,23 @@ class Hua4GMon:
             logger.warning("Reconnect failed: %s", e)
             self.reconnect_delay = min(self.reconnect_delay * 2,
                                        RECONNECT_DELAY_MAX)
- 
+
     # =====================================================
     # UI REFRESH (главный поток, через root.after)
     # =====================================================
- 
+
     def refresh_ui(self) -> None:
         if not self.is_monitoring:
             return
         self.status_label.config(text="Подключено", foreground='green')
- 
+
         with self._data_lock:
             data = dict(self.last_data)
- 
+
         current_vals: Dict[str, Optional[float]] = {
             p: extract_number(data.get(p)) for p in self.dynamic_params
         }
- 
+
         for p in self.dynamic_params:
             val_num = current_vals[p]
             if val_num is None:
@@ -1186,7 +1226,7 @@ class Hua4GMon:
             self.values[p].append(val_num)
             if len(self.values[p]) > GRAPH_HISTORY:
                 self.values[p].pop(0)
- 
+
         # Индикатор направления (по RSRP)
         rsrp = current_vals.get('rsrp')
         if rsrp is not None:
@@ -1194,17 +1234,15 @@ class Hua4GMon:
             if len(self.dir_history) > DIRECTION_LOOKBACK * 2:
                 self.dir_history.pop(0)
             self._update_direction()
- 
-        # Здоровье связи (Standard)
-        if self.view_mode_var.get() == "Стандартный":
-            score, summary, color = calculate_overall_health(
-                rsrp, current_vals.get('sinr'))
-            self.health_progress.config(value=score)
-            self.health_text_lbl.config(text=summary, fg=color)
- 
-        # Джиттер (Pro)
-        if (self.view_mode_var.get() == "Профессиональный"
-                and len(self.values['rsrp']) >= JITTER_WINDOW):
+
+        # Здоровье связи — всегда обновляется
+        score, summary, color = calculate_overall_health(
+            rsrp, current_vals.get('sinr'))
+        self.health_progress.config(value=score)
+        self.health_text_lbl.config(text=summary, fg=color)
+
+        # Джиттер — всегда обновляется
+        if len(self.values['rsrp']) >= JITTER_WINDOW:
             recent = self.values['rsrp'][-JITTER_WINDOW:]
             jitter = max(recent) - min(recent)
             jcol = ('green' if jitter < 3
@@ -1212,7 +1250,7 @@ class Hua4GMon:
             self.jitter_label.config(
                 text=f"Джиттер: {jitter:.1f} dB (стабильность сигнала)",
                 foreground=jcol)
- 
+
         # Аудио-помощник: частота зависит от близости к ПИКУ RSRP
         if HAS_WINSOUND and self.geiger_var.get() and rsrp is not None:
             best = self.peak_values['rsrp']
@@ -1222,15 +1260,14 @@ class Hua4GMon:
                 freq = max(300, min(2500, int(2500 - delta * 70)))
                 threading.Thread(target=winsound.Beep,
                                  args=(freq, 80), daemon=True).start()
- 
-        # График (Pro): обновляем CanvasGraph последним значением
-        if (self.view_mode_var.get() == "Профессиональный"
-                and self.start_time is not None):
+
+        # График — толкаем последнее значение всегда
+        if self.start_time is not None:
             param = self.graph_param.get()
             val_now = current_vals.get(param)
             if val_now is not None:
                 self.signal_graph.push(val_now)
- 
+
         # Зеркало в Roof Mode
         if self.roof_win is not None and self.roof_win.winfo_exists():
             r = rsrp
@@ -1243,7 +1280,7 @@ class Hua4GMon:
                 text=f"SINR: {s if s is not None else '-'}", fg=s_col)
             arrow, color = self._direction_glyph()
             self.r_dir.config(text=arrow, fg=color)
- 
+
         # Информация о вышке
         earfcn_raw = data.get('earfcn', data.get('Earfcn', '-'))
         for key, lbl in self.tower_labels.items():
@@ -1260,7 +1297,7 @@ class Hua4GMon:
             else:
                 val = str(data.get(key, '-'))
             lbl.config(text=val)
- 
+
         # Статистика
         self.stat_labels['dl_rate'].config(
             text=format_rate_mbps(data.get('CurrentDownloadRate', 0)))
@@ -1286,7 +1323,7 @@ class Hua4GMon:
             if vals:
                 self.stat_labels[lbl_key].config(
                     text=f"{min(vals):g} / {max(vals):g} {self._unit(p)}")
- 
+
         # Лог сессии (в RAM, для экспорта в CSV)
         if len(self.session_log) < SESSION_LOG_MAX:
             self.session_log.append({
@@ -1298,7 +1335,7 @@ class Hua4GMon:
                 'band': data.get('band', ''),
                 'pci': data.get('pci', ''),
             })
- 
+
     def _update_direction(self) -> None:
         arrow, color = self._direction_glyph()
         text = {
@@ -1309,7 +1346,7 @@ class Hua4GMon:
         }.get(arrow, "")
         self.dir_label.config(text=arrow, fg=color)
         self.dir_text.config(text=text, fg=color)
- 
+
     def _direction_glyph(self) -> Tuple[str, str]:
         if len(self.dir_history) < DIRECTION_LOOKBACK * 2:
             return "—", "gray"
@@ -1321,11 +1358,11 @@ class Hua4GMon:
         if delta <= -1.0:
             return "↓", "#d63031"
         return "→", "#fdcb6e"
- 
+
     # =====================================================
     # NETWORK / ANTENNA
     # =====================================================
- 
+
     def apply_bands(self) -> None:
         if self.client is None:
             messagebox.showwarning("Ошибка",
@@ -1339,7 +1376,7 @@ class Hua4GMon:
             return
         hex_mask = format(mask, 'X')
         client = self.client
- 
+
         def task():
             try:
                 client.net.set_net_mode(hex_mask, NETBAND_AUTO_MASK,
@@ -1351,12 +1388,12 @@ class Hua4GMon:
                 self.root.after(0, lambda err=str(e): messagebox.showerror(
                     "Ошибка", f"Роутер отклонил команду:\n{err}"))
         threading.Thread(target=task, daemon=True).start()
- 
+
     def reset_bands(self) -> None:
         if self.client is None:
             return
         client = self.client
- 
+
         def task():
             try:
                 client.net.set_net_mode(LTEBAND_AUTO_ALL,
@@ -1368,7 +1405,7 @@ class Hua4GMon:
                 self.root.after(0, lambda err=str(e): messagebox.showerror(
                     "Ошибка", err))
         threading.Thread(target=task, daemon=True).start()
- 
+
     def apply_antenna(self) -> None:
         if self.client is None:
             messagebox.showwarning("Ошибка",
@@ -1379,7 +1416,7 @@ class Hua4GMon:
             messagebox.showerror("Ошибка", "Неизвестный режим антенны.")
             return
         client = self.client
- 
+
         def task():
             try:
                 # Сначала пытаемся через enum (новый API)
@@ -1404,11 +1441,38 @@ class Hua4GMon:
                 self.root.after(0, lambda err=str(e): messagebox.showerror(
                     "Ошибка", err))
         threading.Thread(target=task, daemon=True).start()
- 
+
+    def reboot_router(self) -> None:
+        if self.client is None:
+            messagebox.showwarning("Ошибка",
+                                   "Сначала подключитесь к роутеру.")
+            return
+        if not messagebox.askyesno(
+                "Подтверждение",
+                "Перезагрузить роутер?\n\n"
+                "Соединение с интернетом прервётся на 1–2 минуты. "
+                "После загрузки переподключитесь вручную."):
+            return
+        client = self.client
+
+        def task():
+            try:
+                client.device.reboot()
+                # Роутер всё равно сейчас уйдёт — рвём соединение со стороны UI
+                self.root.after(0, self.disconnect)
+                self.root.after(100, lambda: messagebox.showinfo(
+                    "Перезагрузка",
+                    "Команда отправлена. Роутер вернётся через 1–2 минуты."))
+            except Exception as e:
+                logger.exception("Reboot failed")
+                self.root.after(0, lambda err=str(e): messagebox.showerror(
+                    "Ошибка", f"Не удалось перезагрузить:\n{err}"))
+        threading.Thread(target=task, daemon=True).start()
+
     # =====================================================
     # EXTERNAL LOOKUPS
     # =====================================================
- 
+
     def open_cellmapper(self) -> None:
         with self._data_lock:
             plmn = str(self.last_data.get('plmn', ''))
@@ -1425,47 +1489,11 @@ class Hua4GMon:
             webbrowser.open(url)
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не открыть браузер: {e}")
- 
-    def fetch_infocelltowers(self) -> None:
-        threading.Thread(target=self._infocell_task, daemon=True).start()
- 
-    def _infocell_task(self) -> None:
-        with self._data_lock:
-            plmn = str(self.last_data.get('plmn', ''))
-            enodeb = self.last_data.get('enodeb')
-        if len(plmn) < 5 or not enodeb:
-            self.root.after(0, lambda: messagebox.showwarning(
-                "Внимание", "Нет данных о вышке."))
-            return
-        try:
-            resp = requests.get(
-                f"https://infocelltowers.ru/api/v2/cell"
-                f"?mcc={plmn[:3]}&mnc={plmn[3:]}&enodeb={enodeb}",
-                timeout=5,
-                headers={'User-Agent': f'{APP_NAME}/{__version__}'})
-            if resp.ok:
-                d = resp.json()
-                info = (f"Адрес: {d.get('address', 'Нет данных')}\n"
-                        f"Широта: {d.get('lat', '-')}, "
-                        f"Долгота: {d.get('lon', '-')}")
-                self.root.after(0, lambda: messagebox.showinfo(
-                    "InfoCellTowers", info))
-            else:
-                code = resp.status_code
-                self.root.after(0, lambda: messagebox.showwarning(
-                    "Инфо", f"API вернул код {code}."))
-        except requests.RequestException as e:
-            self.root.after(0, lambda err=str(e): messagebox.showerror(
-                "Ошибка сети", err))
-        except Exception as e:
-            logger.exception("InfoCellTowers failed")
-            self.root.after(0, lambda err=str(e): messagebox.showerror(
-                "Ошибка", err))
- 
+
     # =====================================================
     # ROOF MODE (полноэкранный)
     # =====================================================
- 
+
     def toggle_roof_mode(self) -> None:
         if self.roof_win is not None and self.roof_win.winfo_exists():
             self._close_roof()
@@ -1490,16 +1518,16 @@ class Hua4GMon:
             self.roof_win, text="SINR: -",
             font=("Consolas", 90, "bold"), bg='black', fg='white')
         self.r_lbl_sinr.pack(expand=True)
- 
+
     def _close_roof(self) -> None:
         if self.roof_win is not None and self.roof_win.winfo_exists():
             self.roof_win.destroy()
         self.roof_win = None
- 
+
     # =====================================================
     # CSV EXPORT
     # =====================================================
- 
+
     def export_csv(self) -> None:
         if not self.session_log:
             messagebox.showinfo(
@@ -1525,35 +1553,35 @@ class Hua4GMon:
                 f"Сохранено {len(self.session_log)} записей в:\n{path}")
         except OSError as e:
             messagebox.showerror("Ошибка", f"Не удалось записать файл: {e}")
- 
+
     # =====================================================
     # MISC HELPERS
     # =====================================================
- 
+
     def setup_graph(self) -> None:
         param = self.graph_param.get()
         y_min, y_max = PARAM_RANGES.get(param, (-120, 0))
         self.signal_graph.configure_axes(
             y_min=y_min, y_max=y_max,
             unit=self._unit(param), title=param.upper())
- 
+
     def reset_graph(self, _event=None) -> None:
         self.values = {p: [] for p in self.dynamic_params}
         self.setup_graph()
- 
+
     def reset_peaks(self) -> None:
         self.peak_values = {p: '-' for p in self.dynamic_params}
         for p in self.dynamic_params:
             self.lbl_vars[p]['peak'].config(text="Пик: -")
- 
+
     @staticmethod
     def _unit(param: str) -> str:
         return "dBm" if param in ('rsrp', 'rssi') else "dB"
- 
+
     # =====================================================
     # SHUTDOWN
     # =====================================================
- 
+
     def on_closing(self) -> None:
         logger.info("Shutting down")
         self.disconnect()
@@ -1565,12 +1593,12 @@ class Hua4GMon:
                 self.root.destroy()
             except tk.TclError:
                 pass
- 
- 
+
+
 # =========================================================
 # ВХОД
 # =========================================================
- 
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=f"{APP_NAME} — портативный монитор LTE Huawei.")
@@ -1583,8 +1611,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--version', action='version',
                    version=f'{APP_NAME} {__version__}')
     return p.parse_args()
- 
- 
+
+
 def main() -> None:
     args = parse_args()
     logging.basicConfig(
@@ -1599,7 +1627,7 @@ def main() -> None:
         root.mainloop()
     except KeyboardInterrupt:
         app.on_closing()
- 
- 
+
+
 if __name__ == "__main__":
     main()
