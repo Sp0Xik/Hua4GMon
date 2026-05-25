@@ -37,7 +37,7 @@ B535, B628, B818 и совместимых). Сделана под задачи 
 
 ### Готовый .exe (Windows)
 
-1. Скачать `Hua4GMon-vX.Y.Z.exe` из [Releases].
+1. Скачать `Hua4GMon.exe` из [Releases].
 2. Положить в любую папку.
 3. Запустить.
 
@@ -114,7 +114,7 @@ Unblock-File .\Hua4GMon.exe
 Можно проверить:
 
 ```powershell
-Get-FileHash .\Hua4GMon-v1.2.0.exe
+Get-FileHash .\Hua4GMon.exe
 ```
 
 ## Протестированные роутеры
@@ -135,8 +135,6 @@ Get-FileHash .\Hua4GMon-v1.2.0.exe
 - [huawei-lte-api](https://github.com/Salamek/huawei-lte-api) — клиент
   к веб-API роутеров Huawei.
 
-Никаких других зависимостей (matplotlib, numpy, PIL, requests и т.п.)
-**нет**. Это даёт компактный .exe (~15 МБ против ~45 МБ с matplotlib).
 
 ## Сборка .exe из исходников
 
