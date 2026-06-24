@@ -21,6 +21,9 @@ known-first-party = ["main", "core"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
+# android_main: крипто-алиас Cryptodome->Crypto должен выполниться ДО
+# импорта huawei_lte_api, поэтому часть импортов идёт после кода (E402).
+"android_main.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
