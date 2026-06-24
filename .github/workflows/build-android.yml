@@ -44,19 +44,23 @@ jobs:
       - name: Install buildozer + cython
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade buildozer
-          # cython 0.29.x — максимальная совместимость с рецептами p4a
+          # Фиксированные версии: buildozer 1.5.0 совместим с p4a
+          # v2024.01.21 (задан в buildozer.spec) и NDK 25b. Свежий
+          # buildozer тянул бы Python 3.14 + NDK r28c, где ломается pyjnius.
+          pip install "buildozer==1.5.0"
           pip install "cython==0.29.36"
 
       # Кэшируем тяжёлые скачивания SDK/NDK между сборками, иначе каждый
       # прогон качает несколько ГБ и занимает 30-40 минут.
+      # Префикс v2 — чтобы сбросить старый кэш от сломанных сборок
+      # (там осел NDK r28c / Python 3.14).
       - name: Cache buildozer global dir
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-${{ hashFiles('build-android/buildozer.spec') }}
+          key: buildozer-v2-${{ hashFiles('build-android/buildozer.spec') }}
           restore-keys: |
-            buildozer-
+            buildozer-v2-
 
       - name: Build APK (debug)
         working-directory: build-android
