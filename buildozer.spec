@@ -26,12 +26,12 @@ version = 1.2
 # ЗАВИСИМОСТИ.
 # kivy — UI. huawei-lte-api тянет requests/xmltodict/pycryptodomex.
 #   * requests, xmltodict — собираются p4a без проблем.
-#   * pycryptodomex — C-расширение; у python-for-android есть рецепт
-#     pycryptodome. pycryptodomex (неймспейс Cryptodome) обычно тоже
-#     собирается, но если первая сборка упадёт на нём — это первое,
-#     что нужно проверять (см. заметку в README).
+#   * ВАЖНО: huawei-lte-api требует pycryptodomex (неймспейс Cryptodome),
+#     но у python-for-android НЕТ его рецепта — его .so не грузятся на
+#     Android. Поэтому ставим pycryptodome (рецепт есть, .so рабочие), а
+#     android_main.py перенаправляет Cryptodome.* -> Crypto.* на старте.
 # certifi/urllib3/idna/charset-normalizer — транзитивные для requests.
-requirements = python3,kivy,huawei-lte-api,requests,urllib3,certifi,idna,charset-normalizer,xmltodict,pycryptodomex
+requirements = python3,kivy,huawei-lte-api,requests,urllib3,certifi,idna,charset-normalizer,xmltodict,pycryptodome
 
 # Ориентация и полноэкранность
 orientation = portrait
