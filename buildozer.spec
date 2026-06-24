@@ -31,7 +31,7 @@ version = 1.2
 #     собирается, но если первая сборка упадёт на нём — это первое,
 #     что нужно проверять (см. заметку в README).
 # certifi/urllib3/idna/charset-normalizer — транзитивные для requests.
-requirements = python3,kivy==2.3.0,huawei-lte-api,requests,urllib3,certifi,idna,charset-normalizer,xmltodict,pycryptodomex
+requirements = python3,kivy,huawei-lte-api,requests,urllib3,certifi,idna,charset-normalizer,xmltodict,pycryptodomex
 
 # Ориентация и полноэкранность
 orientation = portrait
@@ -53,7 +53,16 @@ android.usesCleartextTraffic = True
 # Версии API. 33 (Android 13) — разумный современный таргет.
 android.api = 33
 android.minapi = 24
+android.ndk = 25b
 android.archs = arm64-v8a,armeabi-v7a
+
+# КРИТИЧНО: фиксируем стабильный python-for-android.
+# Свежий p4a (master) по умолчанию тянет Python 3.14 + NDK r28c, для
+# которых ещё нет рабочего pyjnius (пытается поставить бинарный wheel,
+# которого не существует → сборка падает). Релиз v2024.01.21 использует
+# Python 3.11 и собирает pyjnius из рецепта. Совместим с buildozer 1.5.0
+# и NDK 25b (заданы выше / в CI).
+p4a.branch = v2024.01.21
 
 # Не показывать логи p4a в release; для отладки можно поднять.
 log_level = 2
