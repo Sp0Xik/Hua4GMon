@@ -1,0 +1,53 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+    tags:     [ 'v*.*.*' ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Десктопный main.py — это Tkinter-версия, она НЕ должна быть точкой
+      # входа на Android (там нет tkinter). Собираем в отдельной папке, где
+      # android_main.py становится main.py. Так Buildozer берёт правильный
+      # entry-point, а десктопный main.py остаётся нетронутым в репозитории.
+      - name: Stage Android sources
+        run: |
+          mkdir -p build-android
+          cp android_main.py build-android/main.py
+          cp -r core build-android/core
+          cp -r assets build-android/assets
+          cp buildozer.spec build-android/buildozer.spec
+          # В staging-папке НЕТ десктопного main.py и tkinter-кода.
+          ls -la build-android
+
+      - name: Build APK with Buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          command: buildozer android debug
+          workdir: build-android
+          buildozer_version: stable
+
+      - name: Locate built APK
+        id: apk
+        run: |
+          APK=$(find build-android/bin -name '*.apk' | head -n1)
+          echo "Found APK: $APK"
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hua4GMon-Android
+          path: ${{ steps.apk.outputs.apk_path }}
+
+      - name: Attach APK to Release (на тегах vX.Y.Z)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.apk.outputs.apk_path }}
