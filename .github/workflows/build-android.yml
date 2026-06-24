@@ -33,11 +33,20 @@ jobs:
         with:
           python-version: '3.11'
 
+      # Android Gradle Plugin требует Java 17. На раннере по умолчанию
+      # активна Java 11 (Gradle берёт именно её и падает). setup-java
+      # ставит JDK 17 и прокидывает JAVA_HOME на него для всех шагов.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk python3-pip autoconf libtool \
+            git zip unzip autoconf libtool \
             pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev \
             libtinfo5 cmake libffi-dev libssl-dev build-essential ccache
 
