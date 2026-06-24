@@ -572,6 +572,10 @@ class Hua4GMon:
             if col > 2:
                 col = 0
                 row += 1
+        # Равный вес трёх колонок — иначе они сжимаются по содержимому,
+        # и кнопки ниже (columnspan=3) центрируются не по центру рамки.
+        for c in range(3):
+            band_frame.columnconfigure(c, weight=1)
 
         btn_frame = ttk.Frame(band_frame)
         btn_frame.grid(row=row + 1, column=0, columnspan=3, pady=10)
@@ -1310,9 +1314,13 @@ class Hua4GMon:
 
         # Лаконичная инфа о вышке в правом верхнем углу:
         # eNodeB / сота / band — чтобы монтажник видел, к чему привязан,
-        # не отвлекаясь от крупных цифр RSRP/SINR.
+        # не отвлекаясь от крупных цифр RSRP/SINR. До подключения —
+        # заглушка с прочерками, чтобы было видно, что панель существует.
         self.r_tower = tk.Label(
-            self.roof_win, text="", justify='right', anchor='ne',
+            self.roof_win,
+            text=f"{t('eNodeB (Вышка)')}: —\n"
+                 f"{t('Cell (Локальный сектор)')}: —\n—",
+            justify='right', anchor='ne',
             font=("Consolas", 16), bg='black', fg='#888')
         self.r_tower.place(relx=0.99, rely=0.02, anchor='ne')
 
