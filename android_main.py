@@ -33,8 +33,45 @@ Hua4GMon — Android-версия (Kivy).
 """
 from __future__ import annotations
 
+import importlib
+import importlib.abc
+import importlib.util
+import sys
 import threading
 from typing import Any, Dict, Optional
+
+# --- Android crypto-совместимость (ДО импорта huawei_lte_api) ---
+# huawei-lte-api требует pycryptodomex (неймспейс Cryptodome), но у него
+# нет рецепта python-for-android, и его нативные .so не грузятся на
+# Android (dlopen: undefined symbol JNI_OnLoad). Зато pycryptodome
+# (неймспейс Crypto) рецепт имеет и собирается корректно. Код у пакетов
+# идентичный — перенаправляем любые импорты Cryptodome.* -> Crypto.*.
+# На десктопе настоящий Cryptodome присутствует, и алиас не включается.
+
+
+class _CryptodomeAliasFinder(importlib.abc.MetaPathFinder,
+                             importlib.abc.Loader):
+    PREFIX = 'Cryptodome'
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == self.PREFIX or fullname.startswith(self.PREFIX + '.'):
+            return importlib.util.spec_from_loader(fullname, self)
+        return None
+
+    def create_module(self, spec):
+        real_name = 'Crypto' + spec.name[len(self.PREFIX):]
+        module = importlib.import_module(real_name)
+        sys.modules[spec.name] = module
+        return module
+
+    def exec_module(self, module):
+        pass  # модуль — это уже готовый Crypto.*, доинициализация не нужна
+
+
+try:
+    import Cryptodome  # noqa: F401  (есть на десктопе — pycryptodomex)
+except ImportError:
+    sys.meta_path.insert(0, _CryptodomeAliasFinder())
 
 from huawei_lte_api.Client import Client
 from huawei_lte_api.Connection import Connection
