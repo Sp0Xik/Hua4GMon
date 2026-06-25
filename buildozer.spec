@@ -8,7 +8,7 @@ package.domain = io.github.sp0xik
 # Исходники. Точка входа — android_main.py (переименуется в main.py
 # внутри сборки через main.py-симлинк ниже не делаем — указываем явно).
 source.dir = .
-source.include_exts = py,png,jpg,svg,kv,atlas
+source.include_exts = py,png,jpg,svg,kv,atlas,ttf
 # Включаем пакет core/ целиком и оба entry-point (на случай отладки).
 source.include_patterns = core/*.py,assets/*.png
 
