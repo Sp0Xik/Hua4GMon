@@ -389,3 +389,39 @@ def test_i18n_available_languages():
     langs = core.available_languages()
     assert "ru" in langs
     assert "en" in langs
+
+
+# =========================================================
+# Android entry-point — статические проверки без импорта Kivy
+# =========================================================
+
+def _read_android_main():
+    """Читает исходник android_main.py из корня репо (без импорта Kivy)."""
+    import pathlib
+    p = pathlib.Path(__file__).resolve().parent.parent / "android_main.py"
+    if not p.exists():
+        return None
+    return p.read_text(encoding="utf-8")
+
+
+def test_android_main_does_not_import_tkinter():
+    """Android-точка входа не должна тянуть tkinter — на Android его нет."""
+    src = _read_android_main()
+    if src is None:
+        import pytest
+        pytest.skip("android_main.py отсутствует")
+    assert "import tkinter" not in src
+    assert "from tkinter" not in src
+
+
+def test_android_main_reuses_core():
+    """Android-версия должна переиспользовать общую логику из core."""
+    src = _read_android_main()
+    if src is None:
+        import pytest
+        pytest.skip("android_main.py отсутствует")
+    assert "from core import" in src
+    # Ключевые общие функции должны импортироваться, а не дублироваться
+    for name in ("evaluate_signal", "format_band_label", "parse_cell_id",
+                 "is_valid_ip", "t"):
+        assert name in src, f"android_main должен использовать core.{name}"
