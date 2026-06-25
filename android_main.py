@@ -94,7 +94,6 @@ from core import (
     RECONNECT_DELAY_MAX,
     WHITELIST_HOSTS_RU,
     analyze_whitelist_results,
-    calculate_overall_health,
     current_language,
     evaluate_signal,
     extract_number,
@@ -456,15 +455,14 @@ ScreenManager:
         height: dp(18)
     Label:
         text: root.metric_peak
-        font_size: dp(11)
-        color: 0.55, 0.6, 0.65, 1
+        font_size: dp(14)
+        color: 0.68, 0.73, 0.78, 1
         size_hint_y: None
-        height: dp(16)
+        height: dp(20)
 
 <MonitorScreen>:
     name: 'monitor'
     status_lbl: status_lbl
-    health_lbl: health_lbl
     dir_lbl: dir_lbl
     dir_text_lbl: dir_text_lbl
     jitter_lbl: jitter_lbl
@@ -476,6 +474,8 @@ ScreenManager:
     graph_param: graph_param
     BoxLayout:
         orientation: 'vertical'
+        padding: dp(8)
+        spacing: dp(8)
         canvas.before:
             Color:
                 rgba: 0.07, 0.09, 0.12, 1
@@ -483,10 +483,10 @@ ScreenManager:
                 pos: self.pos
                 size: self.size
 
+        # Топбар — фиксированный
         BoxLayout:
             size_hint_y: None
             height: dp(48)
-            padding: dp(6), dp(4)
             spacing: dp(6)
             Label:
                 id: status_lbl
@@ -510,110 +510,88 @@ ScreenManager:
                 background_color: 0.6, 0.2, 0.2, 1
                 on_release: root.on_disconnect()
 
-        ScrollView:
-            bar_width: dp(8)
-            bar_color: 0.45, 0.5, 0.55, 1
-            bar_inactive_color: 0.25, 0.28, 0.32, 1
-            scroll_type: ['bars', 'content']
-            BoxLayout:
-                orientation: 'vertical'
+        # Тенденция (стрелка) — компактнее: это подсказка, не главное
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_y: 0.16
+            canvas.before:
+                Color:
+                    rgba: 0.1, 0.12, 0.16, 1
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(12)]
+            Label:
+                id: dir_lbl
+                text: '—'
+                font_size: dp(46)
+                bold: True
+                color: 0.5, 0.5, 0.5, 1
+            Label:
+                id: dir_text_lbl
+                text: root.lbl_collecting
+                font_size: dp(13)
+                color: 0.6, 0.65, 0.7, 1
                 size_hint_y: None
-                height: self.minimum_height
-                padding: dp(10)
-                spacing: dp(10)
+                height: dp(30)
+                text_size: self.width, None
+                halign: 'center'
+                valign: 'middle'
 
-                Label:
-                    id: health_lbl
-                    text: ''
-                    font_size: dp(17)
-                    bold: True
-                    color: 0.5, 0.5, 0.5, 1
-                    size_hint_y: None
-                    height: dp(40)
-                    text_size: self.width, None
-                    halign: 'center'
-                    valign: 'middle'
+        # Метрики — главное (крупные значения + пики)
+        GridLayout:
+            cols: 2
+            spacing: dp(8)
+            size_hint_y: 0.46
+            MetricBox:
+                id: rsrp_box
+                metric_name: 'RSRP'
+            MetricBox:
+                id: sinr_box
+                metric_name: 'SINR'
+            MetricBox:
+                id: rssi_box
+                metric_name: 'RSSI'
+            MetricBox:
+                id: rsrq_box
+                metric_name: 'RSRQ'
 
-                BoxLayout:
-                    orientation: 'vertical'
-                    size_hint_y: None
-                    height: dp(150)
-                    canvas.before:
-                        Color:
-                            rgba: 0.1, 0.12, 0.16, 1
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [dp(12)]
-                    Label:
-                        id: dir_lbl
-                        text: '—'
-                        font_size: dp(80)
-                        bold: True
-                        color: 0.5, 0.5, 0.5, 1
-                    Label:
-                        id: dir_text_lbl
-                        text: root.lbl_collecting
-                        font_size: dp(14)
-                        color: 0.6, 0.65, 0.7, 1
-                        size_hint_y: None
-                        height: dp(36)
-                        text_size: self.width, None
-                        halign: 'center'
-                        valign: 'middle'
+        # Джиттер — компактная строка
+        Label:
+            id: jitter_lbl
+            text: ''
+            font_size: dp(13)
+            color: 0.6, 0.65, 0.7, 1
+            size_hint_y: None
+            height: dp(22)
+            text_size: self.width, None
+            halign: 'center'
 
-                GridLayout:
-                    cols: 2
-                    spacing: dp(10)
-                    size_hint_y: None
-                    height: dp(260)
-                    MetricBox:
-                        id: rsrp_box
-                        metric_name: 'RSRP'
-                    MetricBox:
-                        id: sinr_box
-                        metric_name: 'SINR'
-                    MetricBox:
-                        id: rssi_box
-                        metric_name: 'RSSI'
-                    MetricBox:
-                        id: rsrq_box
-                        metric_name: 'RSRQ'
+        # Управление графиком
+        BoxLayout:
+            size_hint_y: None
+            height: dp(40)
+            spacing: dp(8)
+            Spinner:
+                id: graph_param
+                text: 'rsrp'
+                values: ['rsrp', 'sinr', 'rssi', 'rsrq']
+                size_hint_x: 0.5
+                font_size: dp(15)
+                on_text: root.on_graph_param(self.text)
+            Button:
+                text: root.lbl_fullscreen
+                size_hint_x: 0.5
+                font_size: dp(14)
+                background_normal: ''
+                background_color: 0.2, 0.35, 0.55, 1
+                color: 1, 1, 1, 1
+                on_release: root.on_fullscreen()
 
-                Label:
-                    id: jitter_lbl
-                    text: ''
-                    font_size: dp(14)
-                    color: 0.6, 0.65, 0.7, 1
-                    size_hint_y: None
-                    height: dp(26)
-                    text_size: self.width, None
-                    halign: 'center'
-
-                BoxLayout:
-                    size_hint_y: None
-                    height: dp(40)
-                    spacing: dp(8)
-                    Spinner:
-                        id: graph_param
-                        text: 'rsrp'
-                        values: ['rsrp', 'sinr', 'rssi', 'rsrq']
-                        size_hint_x: 0.5
-                        font_size: dp(15)
-                        on_text: root.on_graph_param(self.text)
-                    Button:
-                        text: root.lbl_fullscreen
-                        size_hint_x: 0.5
-                        font_size: dp(14)
-                        background_normal: ''
-                        background_color: 0.2, 0.35, 0.55, 1
-                        color: 1, 1, 1, 1
-                        on_release: root.on_fullscreen()
-
-                SignalGraph:
-                    id: signal_graph
-                    size_hint_y: None
-                    height: dp(200)
+        # График — занимает оставшееся место
+        SignalGraph:
+            id: signal_graph
+            size_hint_y: 0.30
 
 <InfoScreen>:
     name: 'info'
@@ -1255,12 +1233,6 @@ class Hua4GMonApp(App):
             scr.dir_lbl.text = arrow
             scr.dir_lbl.color = _hex_to_rgba(hexcolor)
             scr.dir_text_lbl.text = text
-
-        # Общая оценка
-        score, summary, hexcolor = calculate_overall_health(
-            rsrp, current_vals.get('sinr'))
-        scr.health_lbl.text = t(summary).format(pct=score)
-        scr.health_lbl.color = _hex_to_rgba(hexcolor)
 
         # Джиттер
         if len(self.values['rsrp']) >= JITTER_WINDOW:
