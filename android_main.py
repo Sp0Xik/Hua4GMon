@@ -1007,6 +1007,7 @@ class Hua4GMonApp(App):
         self.last_data: Dict[str, Any] = {}
         self._data_lock = threading.Lock()
         self.graph_param = 'rsrp'
+        self._fs_graph = None
 
         from kivy.factory import Factory
         Factory.register('SignalGraph', cls=SignalGraph)
@@ -1244,8 +1245,10 @@ class Hua4GMonApp(App):
                 "Джиттер: {j:.1f} dB (стабильность сигнала)").format(j=jitter)
             scr.jitter_lbl.color = _hex_to_rgba(jcol)
 
-        # График выбранного параметра
+        # График выбранного параметра (на мониторе и в fullscreen, если открыт)
         self._draw_graph(scr.signal_graph)
+        if self._fs_graph is not None:
+            self._draw_graph(self._fs_graph)
 
     def _draw_graph(self, widget) -> None:
         param = self.graph_param
@@ -1256,6 +1259,8 @@ class Hua4GMonApp(App):
     def refresh_graph(self) -> None:
         scr = self.sm.get_screen('monitor')
         self._draw_graph(scr.signal_graph)
+        if self._fs_graph is not None:
+            self._draw_graph(self._fs_graph)
 
     @mainthread
     def open_fullscreen_graph(self) -> None:
@@ -1267,11 +1272,19 @@ class Hua4GMonApp(App):
         root = BL(orientation='vertical', spacing=8, padding=8)
         graph = SignalGraph()
         graph.set_data(self.values.get(param, []), y_min, y_max, title, unit)
+        # Запоминаем график, чтобы _update_ui обновлял его в реальном
+        # времени, пока Popup открыт.
+        self._fs_graph = graph
         root.add_widget(graph)
         close = Btn(text=t("← Назад"), size_hint_y=None, height='48dp',
                     background_normal='', background_color=(0.2, 0.35, 0.55, 1))
         popup = Popup(title=f"{title} ({unit})", content=root,
                       size_hint=(0.98, 0.9))
+
+        def _on_dismiss(*a):
+            self._fs_graph = None
+
+        popup.bind(on_dismiss=_on_dismiss)
         close.bind(on_release=lambda *a: popup.dismiss())
         root.add_widget(close)
         popup.open()
