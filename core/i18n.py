@@ -70,6 +70,8 @@ EN: Dict[str, str] = {
     "Назад": "Back",
     "Качество связи": "Link quality",
     "ТЕСТОВЫЙ РЕЖИМ — демо-данные": "TEST MODE — demo data",
+    "ДЕМО": "DEMO",
+    "Во весь экран": "Fullscreen",
     "Операции с роутером недоступны в тестовом режиме.":
         "Router operations are unavailable in test mode.",
     "← Назад": "← Back",
