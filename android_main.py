@@ -88,6 +88,7 @@ from core import (
     NETBAND_AUTO_MASK,
     NETMODE_AUTO,
     NETMODE_LTE_ONLY,
+    PARAM_RANGES,
     PLMN_MAP,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
@@ -141,6 +142,73 @@ def _hex_to_rgba(hexcolor: str):
                 int(h[4:6], 16) / 255.0, 1)
     except ValueError:
         return (0.5, 0.5, 0.5, 1)
+
+
+# =========================================================
+# Виджет графика на Kivy canvas (аналог CanvasGraph из десктопа)
+# =========================================================
+
+from kivy.uix.widget import Widget  # noqa: E402
+
+
+class SignalGraph(Widget):
+    """Лёгкий линейный график на canvas — без сторонних зависимостей.
+
+    Рисует историю значений выбранного параметра с сеткой и подписью
+    последнего значения. Используется и на мониторе, и в полноэкранном
+    Popup.
+    """
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self._values: list = []
+        self._y_min = -120.0
+        self._y_max = -50.0
+        self._title = "RSRP"
+        self._unit = "dBm"
+        self.bind(pos=lambda *a: self._redraw(),
+                  size=lambda *a: self._redraw())
+
+    def set_data(self, values, y_min, y_max, title, unit) -> None:
+        self._values = list(values)
+        self._y_min, self._y_max = float(y_min), float(y_max)
+        self._title, self._unit = title, unit
+        self._redraw()
+
+    def _redraw(self) -> None:
+        from kivy.graphics import Color, Line, Rectangle
+        self.canvas.clear()
+        w, h = self.width, self.height
+        if w < 40 or h < 40:
+            return
+        pl, pr, pt, pb = 8, 8, 8, 8
+        plot_w, plot_h = w - pl - pr, h - pt - pb
+        x0, y0 = self.x + pl, self.y + pb
+        with self.canvas:
+            # фон
+            Color(0.1, 0.12, 0.16, 1)
+            Rectangle(pos=(self.x, self.y), size=(w, h))
+            # сетка (4 линии)
+            Color(0.2, 0.23, 0.27, 1)
+            for i in range(5):
+                gy = y0 + plot_h * i / 4
+                Line(points=[x0, gy, x0 + plot_w, gy], width=1)
+            if len(self._values) < 2:
+                return
+            rng = max(self._y_max - self._y_min, 1e-9)
+            span = max(len(self._values) - 1, 1)
+            pts = []
+            for i, v in enumerate(self._values):
+                px = x0 + plot_w * i / span
+                v_cl = max(self._y_min, min(self._y_max, v))
+                py = y0 + plot_h * (v_cl - self._y_min) / rng
+                pts.extend([px, py])
+            Color(0.0, 0.72, 0.58, 1)
+            Line(points=pts, width=1.5)
+
+
+def _graph_axes(param: str):
+    y_min, y_max = PARAM_RANGES.get(param, (-120, 0))
+    return y_min, y_max, param.upper(), _unit(param)
 
 
 # =========================================================
@@ -226,6 +294,10 @@ ScreenManager:
     pw_input: pw_input
     status_lbl: status_lbl
     ScrollView:
+        bar_width: dp(8)
+        bar_color: 0.45, 0.5, 0.55, 1
+        bar_inactive_color: 0.25, 0.28, 0.32, 1
+        scroll_type: ['bars', 'content']
         BoxLayout:
             orientation: 'vertical'
             size_hint_y: None
@@ -354,6 +426,7 @@ ScreenManager:
     metric_name: ''
     metric_value: '-'
     metric_status: ''
+    metric_peak: ''
     metric_color: 0.5, 0.5, 0.5, 1
     canvas.before:
         Color:
@@ -381,6 +454,12 @@ ScreenManager:
         color: root.metric_color
         size_hint_y: None
         height: dp(18)
+    Label:
+        text: root.metric_peak
+        font_size: dp(11)
+        color: 0.55, 0.6, 0.65, 1
+        size_hint_y: None
+        height: dp(16)
 
 <MonitorScreen>:
     name: 'monitor'
@@ -393,7 +472,8 @@ ScreenManager:
     rssi_box: rssi_box
     sinr_box: sinr_box
     rsrq_box: rsrq_box
-    tower_lbl: tower_lbl
+    signal_graph: signal_graph
+    graph_param: graph_param
     BoxLayout:
         orientation: 'vertical'
         canvas.before:
@@ -431,6 +511,10 @@ ScreenManager:
                 on_release: root.on_disconnect()
 
         ScrollView:
+            bar_width: dp(8)
+            bar_color: 0.45, 0.5, 0.55, 1
+            bar_inactive_color: 0.25, 0.28, 0.32, 1
+            scroll_type: ['bars', 'content']
             BoxLayout:
                 orientation: 'vertical'
                 size_hint_y: None
@@ -482,7 +566,7 @@ ScreenManager:
                     cols: 2
                     spacing: dp(10)
                     size_hint_y: None
-                    height: dp(220)
+                    height: dp(260)
                     MetricBox:
                         id: rsrp_box
                         metric_name: 'RSRP'
@@ -506,16 +590,30 @@ ScreenManager:
                     text_size: self.width, None
                     halign: 'center'
 
-                Label:
-                    id: tower_lbl
-                    text: ''
-                    font_size: dp(14)
-                    color: 0.8, 0.83, 0.86, 1
+                BoxLayout:
                     size_hint_y: None
-                    height: self.texture_size[1] + dp(10)
-                    text_size: self.width, None
-                    halign: 'left'
-                    valign: 'top'
+                    height: dp(40)
+                    spacing: dp(8)
+                    Spinner:
+                        id: graph_param
+                        text: 'rsrp'
+                        values: ['rsrp', 'sinr', 'rssi', 'rsrq']
+                        size_hint_x: 0.5
+                        font_size: dp(15)
+                        on_text: root.on_graph_param(self.text)
+                    Button:
+                        text: root.lbl_fullscreen
+                        size_hint_x: 0.5
+                        font_size: dp(14)
+                        background_normal: ''
+                        background_color: 0.2, 0.35, 0.55, 1
+                        color: 1, 1, 1, 1
+                        on_release: root.on_fullscreen()
+
+                SignalGraph:
+                    id: signal_graph
+                    size_hint_y: None
+                    height: dp(200)
 
 <InfoScreen>:
     name: 'info'
@@ -546,6 +644,10 @@ ScreenManager:
                 bold: True
                 color: 1, 1, 1, 1
         ScrollView:
+            bar_width: dp(8)
+            bar_color: 0.45, 0.5, 0.55, 1
+            bar_inactive_color: 0.25, 0.28, 0.32, 1
+            scroll_type: ['bars', 'content']
             BoxLayout:
                 orientation: 'vertical'
                 size_hint_y: None
@@ -599,6 +701,10 @@ ScreenManager:
                 bold: True
                 color: 1, 1, 1, 1
         ScrollView:
+            bar_width: dp(8)
+            bar_color: 0.45, 0.5, 0.55, 1
+            bar_inactive_color: 0.25, 0.28, 0.32, 1
+            scroll_type: ['bars', 'content']
             BoxLayout:
                 orientation: 'vertical'
                 size_hint_y: None
@@ -751,12 +857,14 @@ class MonitorScreen(Screen):
     lbl_collecting = StringProperty("")
     lbl_tools = StringProperty("")
     lbl_info = StringProperty("")
+    lbl_fullscreen = StringProperty("")
 
     def on_pre_enter(self, *args):
         self.lbl_disconnect = t("Отключиться")
         self.lbl_collecting = t("Накапливаю данные...")
         self.lbl_tools = t("Сеть")
         self.lbl_info = t("Инфо")
+        self.lbl_fullscreen = t("Во весь экран")
 
     def on_disconnect(self) -> None:
         App.get_running_app().disconnect()
@@ -766,6 +874,13 @@ class MonitorScreen(Screen):
 
     def on_info(self) -> None:
         self.manager.current = 'info'
+
+    def on_graph_param(self, param: str) -> None:
+        App.get_running_app().graph_param = param
+        App.get_running_app().refresh_graph()
+
+    def on_fullscreen(self) -> None:
+        App.get_running_app().open_fullscreen_graph()
 
 
 class InfoScreen(Screen):
@@ -888,6 +1003,10 @@ class ToolsScreen(Screen):
 
 class Hua4GMonApp(App):
     def build(self):
+        # Цвет фона окна — иначе непокрытые области (под коротким контентом,
+        # системные отступы) показываются чёрными вместо нашей тёмной темы.
+        from kivy.core.window import Window
+        Window.clearcolor = (0.07, 0.09, 0.12, 1)
         # Шрифт со стрелками/символами вместо «квадратов с крестиком».
         if os.path.exists(_FONT_PATH):
             LabelBase.register(name='Roboto',
@@ -909,7 +1028,10 @@ class Hua4GMonApp(App):
         self.device_info: Dict[str, Any] = {}
         self.last_data: Dict[str, Any] = {}
         self._data_lock = threading.Lock()
+        self.graph_param = 'rsrp'
 
+        from kivy.factory import Factory
+        Factory.register('SignalGraph', cls=SignalGraph)
         self.sm: ScreenManager = Builder.load_string(KV)
         return self.sm
 
@@ -981,8 +1103,7 @@ class Hua4GMonApp(App):
             data['aggregation'] = ("Активна" if "+" in data['band']
                                    else "Нет (Single)")
             self._update_ui(data)
-            self._set_status(t("ТЕСТОВЫЙ РЕЖИМ — демо-данные"),
-                             (0.9, 0.6, 0.2, 1))
+            self._set_status(t("ДЕМО"), (0.9, 0.6, 0.2, 1))
             i += 1
             if self._stop_event.wait(1.0):
                 break
@@ -1119,6 +1240,7 @@ class Hua4GMonApp(App):
             box.metric_color = _hex_to_rgba(hexcolor)
             if self.peak_values[p] == '-' or val > self.peak_values[p]:
                 self.peak_values[p] = val
+            box.metric_peak = t("Пик: {v}").format(v=self.peak_values[p])
             self.values[p].append(val)
             if len(self.values[p]) > 100:
                 self.values[p].pop(0)
@@ -1150,18 +1272,37 @@ class Hua4GMonApp(App):
                 "Джиттер: {j:.1f} dB (стабильность сигнала)").format(j=jitter)
             scr.jitter_lbl.color = _hex_to_rgba(jcol)
 
-        # Краткая сводка по вышке на мониторе
-        plmn = str(data.get('plmn', '-'))
-        op = ''
-        if plmn != '-' and len(plmn) >= 5:
-            op = PLMN_MAP.get(plmn, t("Неизвестный оператор"))
-        band = format_band_label(data.get('band'),
-                                 data.get('earfcn', data.get('Earfcn', '-')))
-        scr.tower_lbl.text = (
-            f"{t('Оператор (PLMN)')}: {plmn} {('(' + op + ')') if op else ''}\n"
-            f"{t('Рабочий Band (LTE)')}: {band}\n"
-            f"{t('eNodeB (Вышка)')}: {data.get('enodeb', '-')}   "
-            f"{t('Cell (Локальный сектор)')}: {data.get('sector', '-')}")
+        # График выбранного параметра
+        self._draw_graph(scr.signal_graph)
+
+    def _draw_graph(self, widget) -> None:
+        param = self.graph_param
+        y_min, y_max, title, unit = _graph_axes(param)
+        widget.set_data(self.values.get(param, []), y_min, y_max, title, unit)
+
+    @mainthread
+    def refresh_graph(self) -> None:
+        scr = self.sm.get_screen('monitor')
+        self._draw_graph(scr.signal_graph)
+
+    @mainthread
+    def open_fullscreen_graph(self) -> None:
+        from kivy.uix.boxlayout import BoxLayout as BL
+        from kivy.uix.button import Button as Btn
+
+        param = self.graph_param
+        y_min, y_max, title, unit = _graph_axes(param)
+        root = BL(orientation='vertical', spacing=8, padding=8)
+        graph = SignalGraph()
+        graph.set_data(self.values.get(param, []), y_min, y_max, title, unit)
+        root.add_widget(graph)
+        close = Btn(text=t("← Назад"), size_hint_y=None, height='48dp',
+                    background_normal='', background_color=(0.2, 0.35, 0.55, 1))
+        popup = Popup(title=f"{title} ({unit})", content=root,
+                      size_hint=(0.98, 0.9))
+        close.bind(on_release=lambda *a: popup.dismiss())
+        root.add_widget(close)
+        popup.open()
 
     @mainthread
     def refresh_info_screen(self) -> None:
