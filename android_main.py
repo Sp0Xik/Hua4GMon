@@ -248,6 +248,18 @@ ScreenManager:
 
         Widget:
 
+        # Маленькая кнопка тестового режима (демо-данные без модема) —
+        # для проверки интерфейса на эмуляторе, где роутер недоступен.
+        Button:
+            text: root.lbl_demo
+            size_hint_y: None
+            height: dp(36)
+            font_size: dp(13)
+            background_normal: ''
+            background_color: 0.18, 0.2, 0.24, 1
+            color: 0.6, 0.65, 0.7, 1
+            on_release: root.on_demo()
+
 <MetricBox@BoxLayout>:
     orientation: 'vertical'
     metric_name: ''
@@ -571,6 +583,7 @@ class ConnectionScreen(Screen):
     lbl_pw = StringProperty("")
     lbl_connect = StringProperty("")
     lbl_lang = StringProperty("")
+    lbl_demo = StringProperty("")
     lang_name = StringProperty("")
     lang_values = ListProperty([])
 
@@ -583,6 +596,7 @@ class ConnectionScreen(Screen):
         self.lbl_pw = t("Пароль:")
         self.lbl_connect = t("🚀 Подключиться")
         self.lbl_lang = t("Язык:")
+        self.lbl_demo = t("Тестовый режим (без модема)")
         self.lang_values = list(LANGUAGES.values())
         self.lang_name = LANGUAGES.get(current_language(), "Русский")
 
@@ -591,6 +605,9 @@ class ConnectionScreen(Screen):
         if code and code != current_language():
             set_language(code)
             self.refresh_texts()
+
+    def on_demo(self) -> None:
+        App.get_running_app().start_demo()
 
     def on_connect(self) -> None:
         app = App.get_running_app()
@@ -670,19 +687,24 @@ class ToolsScreen(Screen):
         """Строит чекбоксы бандов один раз (ленивая инициализация)."""
         if self._bands_built:
             return
+        from kivy.metrics import dp
         from kivy.uix.checkbox import CheckBox
         from kivy.uix.label import Label as KLabel
 
+        row_h = dp(44)
         self.band_vars: Dict[str, CheckBox] = {}
         for band_name in BANDS:
-            row = self.bands_grid
-            cb = CheckBox(size_hint_x=None, width=40)
+            grid = self.bands_grid
+            # ВАЖНО: в GridLayout с size_hint_y=None детям нужна явная
+            # высота, иначе строки схлопываются и накладываются друг на друга.
+            cb = CheckBox(size_hint=(None, None), width=dp(40), height=row_h)
             lbl = KLabel(text=band_name, color=(0.85, 0.88, 0.9, 1),
-                         halign='left', valign='middle')
+                         halign='left', valign='middle',
+                         size_hint_y=None, height=row_h)
             lbl.bind(size=lambda inst, val: setattr(
                 inst, 'text_size', val))
-            row.add_widget(cb)
-            row.add_widget(lbl)
+            grid.add_widget(cb)
+            grid.add_widget(lbl)
             self.band_vars[band_name] = cb
         self._bands_built = True
 
@@ -728,6 +750,7 @@ class Hua4GMonApp(App):
         self._cached_pw = ""
         self.connected = False
         self.auto_reconnect = True
+        self.demo_mode = False
         self.reconnect_delay = RECONNECT_DELAY_INITIAL
         self.dir_history: list[float] = []
         self.peak_values: Dict[str, Any] = {p: '-' for p in DYNAMIC_PARAMS}
@@ -738,6 +761,7 @@ class Hua4GMonApp(App):
     # ---- Подключение ----
 
     def connect(self, ip: str, password: str) -> None:
+        self.demo_mode = False
         self._cached_ip = ip
         self._cached_pw = password
         self._stop_event.clear()
@@ -748,9 +772,55 @@ class Hua4GMonApp(App):
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
 
+    def start_demo(self) -> None:
+        """Тестовый режим: генерирует демо-данные без реального модема.
+        Нужен для проверки интерфейса на эмуляторе, где роутер недоступен.
+        """
+        self.demo_mode = True
+        self._stop_event.clear()
+        self.auto_reconnect = False
+        self.connected = True
+        self.dir_history.clear()
+        self.peak_values = {p: '-' for p in DYNAMIC_PARAMS}
+        self._goto_monitor()
+        self._thread = threading.Thread(target=self._demo_worker, daemon=True)
+        self._thread.start()
+
+    def _demo_worker(self) -> None:
+        """Генерирует правдоподобные колеблющиеся данные сигнала."""
+        import math
+        import random
+        i = 0
+        while not self._stop_event.is_set():
+            # RSRP плавно колеблется (чтобы стрелка тенденции оживала),
+            # остальное — с небольшим шумом вокруг реалистичных значений.
+            base_rsrp = -85 + 12 * math.sin(i / 6.0)
+            data = {
+                'rsrp': round(base_rsrp + random.uniform(-1.5, 1.5), 1),
+                'rsrq': round(-9 + random.uniform(-2, 2), 1),
+                'sinr': round(12 + 6 * math.sin(i / 8.0)
+                              + random.uniform(-1, 1), 1),
+                'rssi': round(-62 + random.uniform(-3, 3), 1),
+                'plmn': '25001',
+                'band': str(random.choice([3, 7, 20])),
+                'earfcn': 1300,
+                'cell_id': 12345 * 256 + 7,
+                'pci': random.randint(1, 503),
+            }
+            enodeb, sector = parse_cell_id(data['cell_id'])
+            data['enodeb'] = enodeb
+            data['sector'] = sector
+            self._update_ui(data)
+            self._set_status(t("ТЕСТОВЫЙ РЕЖИМ — демо-данные"),
+                             (0.9, 0.6, 0.2, 1))
+            i += 1
+            if self._stop_event.wait(1.0):
+                break
+
     def disconnect(self) -> None:
         self.auto_reconnect = False
         self.connected = False
+        self.demo_mode = False
         self._stop_event.set()
         # join только если вызвано НЕ из самого monitor-потока
         if (self._thread and self._thread.is_alive()
@@ -933,7 +1003,17 @@ class Hua4GMonApp(App):
         """Запускает блокирующую операцию с роутером в фоновом потоке."""
         threading.Thread(target=fn, daemon=True).start()
 
+    def _block_in_demo(self) -> bool:
+        """В тестовом режиме операции с роутером недоступны (роутера нет)."""
+        if self.demo_mode:
+            self._popup(t("Тестовый режим"),
+                        t("Операции с роутером недоступны в тестовом режиме."))
+            return True
+        return False
+
     def apply_bands(self, selected_names: list) -> None:
+        if self._block_in_demo():
+            return
         if self.client is None:
             self._popup(t("Ошибка"), t("Сначала подключитесь к роутеру."))
             return
@@ -958,6 +1038,8 @@ class Hua4GMonApp(App):
         self._run_bg(task)
 
     def reset_bands(self) -> None:
+        if self._block_in_demo():
+            return
         if self.client is None:
             self._popup(t("Ошибка"), t("Сначала подключитесь к роутеру."))
             return
@@ -973,6 +1055,8 @@ class Hua4GMonApp(App):
         self._run_bg(task)
 
     def apply_antenna(self, label: str) -> None:
+        if self._block_in_demo():
+            return
         if self.client is None:
             self._popup(t("Ошибка"), t("Сначала подключитесь к роутеру."))
             return
@@ -1006,6 +1090,8 @@ class Hua4GMonApp(App):
         self._run_bg(task)
 
     def confirm_reboot(self) -> None:
+        if self._block_in_demo():
+            return
         if self.client is None:
             self._popup(t("Ошибка"), t("Сначала подключитесь к роутеру."))
             return
