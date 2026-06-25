@@ -55,6 +55,20 @@ EN: Dict[str, str] = {
     "Портативный монитор LTE Huawei": "Portable Huawei LTE monitor",
     "Тестовый режим (без модема)": "Test mode (no modem)",
     "Тестовый режим": "Test mode",
+    # Чистые подписи без эмодзи (для Android: эмодзи не рендерятся)
+    "Подключиться": "Connect",
+    "Отключиться": "Disconnect",
+    "Сеть": "Network",
+    "Перезагрузить роутер": "Reboot router",
+    "Проверить сейчас": "Check now",
+    "Белые списки (РФ)": "Whitelist (RU)",
+    "Информация": "Information",
+    "Инфо": "Info",
+    "Подсказка": "Help",
+    "Состояние": "Status",
+    "Вышка": "Tower",
+    "Назад": "Back",
+    "Качество связи": "Link quality",
     "ТЕСТОВЫЙ РЕЖИМ — демо-данные": "TEST MODE — demo data",
     "Операции с роутером недоступны в тестовом режиме.":
         "Router operations are unavailable in test mode.",
@@ -215,13 +229,11 @@ EN: Dict[str, str] = {
     (
         "⚠ Ноутбук должен быть подключён к Wi-Fi или USB именно этого "
         "роутера — иначе тест измерит чужой канал.\n"
-        "• Применимо только для РФ.\n"
-        "• Проверка занимает 1–3 секунды и ничего не меняет в роутере."
+        "• Применимо только для РФ."
     ): (
         "⚠ The laptop must be connected to the Wi-Fi or USB of this exact "
         "router — otherwise the test measures a different link.\n"
-        "• Applies to Russia only.\n"
-        "• The test takes 1–3 seconds and changes nothing on the router."
+        "• Applies to Russia only."
     ),
     "🔍 Проверить сейчас": "🔍 Check now",
     "Проверка…": "Checking…",
