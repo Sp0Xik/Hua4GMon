@@ -53,6 +53,11 @@ EN: Dict[str, str] = {
     "Поверх окон": "Always on top",
     "Язык:": "Language:",
     "Портативный монитор LTE Huawei": "Portable Huawei LTE monitor",
+    "Тестовый режим (без модема)": "Test mode (no modem)",
+    "Тестовый режим": "Test mode",
+    "ТЕСТОВЫЙ РЕЖИМ — демо-данные": "TEST MODE — demo data",
+    "Операции с роутером недоступны в тестовом режиме.":
+        "Router operations are unavailable in test mode.",
     "← Назад": "← Back",
 
     # --- Вкладка Подключение ---
