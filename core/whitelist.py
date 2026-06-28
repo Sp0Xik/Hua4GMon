@@ -48,33 +48,38 @@ def tcp_reachable(host: str, port: int,
 def analyze_whitelist_results(
         white_results: List[Tuple[str, bool]],
         neutral_results: List[Tuple[str, bool]]) -> Tuple[str, str, str]:
-    """По таблице истинности возвращает (заголовок, описание, цвет)."""
+    """По таблице истинности возвращает (заголовок, описание, цвет).
+
+    Строки переводятся на текущий язык (RU/EN) через core.i18n.
+    """
+    from core.i18n import t
     white_ok = sum(1 for _, ok in white_results if ok)
     neutral_ok = sum(1 for _, ok in neutral_results if ok)
+    wt, nt = len(white_results), len(neutral_results)
     white_any = white_ok > 0
     neutral_any = neutral_ok > 0
 
     if white_any and neutral_any:
-        return ("Белые списки ВЫКЛЮЧЕНЫ",
-                f"Обычный режим — открыт весь интернет "
-                f"(белых: {white_ok}/{len(white_results)}, "
-                f"нейтральных: {neutral_ok}/{len(neutral_results)}).",
+        return (t("Белые списки ВЫКЛЮЧЕНЫ"),
+                t("Обычный режим — открыт весь интернет "
+                  "(белых: {w}/{wt}, нейтральных: {n}/{nt}).").format(
+                      w=white_ok, wt=wt, n=neutral_ok, nt=nt),
                 "#00b894")
     if white_any and not neutral_any:
-        return ("⚠ Белые списки ВКЛЮЧЕНЫ",
-                f"Сейчас на БС работают ТОЛЬКО разрешённые сайты "
-                f"(белых: {white_ok}/{len(white_results)}, "
-                f"нейтральных: 0/{len(neutral_results)}). "
-                "Обычные сайты заблокированы оператором.",
+        return (t("⚠ Белые списки ВКЛЮЧЕНЫ"),
+                t("Сейчас на БС работают ТОЛЬКО разрешённые сайты "
+                  "(белых: {w}/{wt}, нейтральных: 0/{nt}). "
+                  "Обычные сайты заблокированы оператором.").format(
+                      w=white_ok, wt=wt, nt=nt),
                 "#d63031")
     if not white_any and neutral_any:
-        return ("Аномалия",
-                "Нейтральные сайты доступны, но «белые» не отвечают. "
-                "Скорее всего, ваш ноутбук вышел в интернет не через 4G "
-                "(другой Wi-Fi, провод, VPN). Подключитесь к Wi-Fi роутера "
-                "и повторите.",
+        return (t("Аномалия"),
+                t("Нейтральные сайты доступны, но «белые» не отвечают. "
+                  "Скорее всего, вы вышли в интернет не через 4G "
+                  "(другой Wi-Fi, провод, VPN). Подключитесь к Wi-Fi роутера "
+                  "и повторите."),
                 "#fdcb6e")
-    return ("Нет интернета",
-            "Ни одна цель не отвечает. Либо у роутера нет связи с БС, "
-            "либо проблема с DNS/маршрутом. Проверьте RSRP и трафик.",
+    return (t("Нет интернета"),
+            t("Ни одна цель не отвечает. Либо у роутера нет связи с БС, "
+              "либо проблема с DNS/маршрутом. Проверьте RSRP и трафик."),
             "#636e72")
