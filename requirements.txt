@@ -1,1 +1,8 @@
+# Зависимости Windows-версии (десктоп, main.py).
+# Tkinter входит в стандартную библиотеку Python и отдельной установки
+# не требует.
+#
+# Android-версия (android_main.py) собирается через Buildozer; её
+# зависимости (kivy, pycryptodome и пр.) перечислены в buildozer.spec,
+# не здесь.
 huawei-lte-api>=1.10,<2
