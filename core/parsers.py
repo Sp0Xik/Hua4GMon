@@ -152,3 +152,43 @@ def format_rate_mbps(bps: Any) -> str:
         return f"{int(bps) * 8 / 1_000_000:.2f} Мбит/с"
     except (TypeError, ValueError):
         return "-"
+
+
+def first_present(data: Any, keys: Any) -> Any:
+    """Возвращает первое непустое значение по списку возможных ключей.
+
+    Имена полей в ответе Huawei device/signal различаются между
+    прошивками (dl_mcs / dlmcs / dlMcs и т.п.) — перебираем варианты.
+    """
+    try:
+        for k in keys:
+            v = data.get(k)
+            if v not in (None, ''):
+                return v
+    except AttributeError:
+        return None
+    return None
+
+
+def mcs_to_modulation(mcs: Any) -> Optional[str]:
+    """MCS-индекс → тип модуляции (LTE, 3GPP TS 36.213).
+
+    Приближённо: точные границы зависят от используемой MCS-таблицы
+    (с 256QAM они сдвинуты), поэтому тип помечается как ориентировочный
+    на стороне вызывающего кода. None — если MCS не распознан.
+    """
+    n = extract_number(mcs)
+    if n is None:
+        return None
+    n = int(n)
+    if n < 0:
+        return None
+    if n <= 9:
+        return "QPSK"
+    if n <= 16:
+        return "16QAM"
+    if n <= 28:
+        return "64QAM"
+    if n <= 31:
+        return "256QAM"
+    return None
