@@ -77,10 +77,12 @@ from core import (
     earfcn_to_band,  # noqa: F401  (доступно для отладки/расширений)
     evaluate_signal,
     extract_number,
+    first_present,
     format_band_label,
     format_bytes_mb,
     format_rate_mbps,
     is_valid_ip,
+    mcs_to_modulation,
     parse_antenna_value,
     parse_cell_id,
     set_language,
@@ -182,7 +184,7 @@ class CanvasGraph(tk.Canvas):
         # Базовая линия X
         self.create_line(pl, h - pb, w - pr, h - pb, fill='#888')
         self.create_text((pl + w - pr) / 2, h - 3, anchor='s',
-                         text=f"последние {self.history} точек",
+                         text=t("последние {n} точек").format(n=self.history),
                          font=("", 8), fill='#888')
 
         if not self.values:
@@ -564,7 +566,7 @@ class Hua4GMon:
         row, col = 1, 0
         for band_name in BANDS:
             var = tk.BooleanVar(value=False)
-            ttk.Checkbutton(band_frame, text=band_name,
+            ttk.Checkbutton(band_frame, text=t(band_name),
                             variable=var).grid(
                 row=row, column=col, sticky='w', padx=10, pady=2)
             self.band_checkboxes[band_name] = var
@@ -588,11 +590,12 @@ class Hua4GMon:
                                    text=t("Переключение антенн"), padding=10)
         ant_frame.pack(fill=tk.X, padx=10, pady=5)
         ttk.Label(ant_frame, text=t("Режим:")).pack(side=tk.LEFT, padx=5)
-        # Значения антенны — ключи ANTENNA_MODES (русские), по ним работает
-        # parse_antenna_value; их не переводим, чтобы не ломать логику.
-        self.antenna_var = tk.StringVar(value="Авто")
+        # Значения антенны показываем переведёнными; при применении
+        # конвертируем обратно в русский ключ (см. apply_antenna), по
+        # которому работает parse_antenna_value.
+        self.antenna_var = tk.StringVar(value=t("Авто"))
         ttk.Combobox(ant_frame, textvariable=self.antenna_var,
-                     values=list(ANTENNA_MODES.keys()),
+                     values=[t(k) for k in ANTENNA_MODES],
                      state='readonly', width=15).pack(side=tk.LEFT, padx=5)
         ttk.Button(ant_frame, text=t("Применить"),
                    command=self.apply_antenna).pack(side=tk.LEFT, padx=5)
@@ -618,10 +621,11 @@ class Hua4GMon:
             ('band', 'Рабочий Band (LTE)'),
             ('earfcn', 'EARFCN (канал DL)'),
             ('aggregation', 'Агрегация (CA)'),
-            ('dlbandwidth', 'Ширина канала (DL)'),
+            ('dlbandwidth', 'Ширина канала'),
             ('pci', 'Сектор антенны (PCI)'),
             ('enodeb', 'eNodeB (Вышка)'),
             ('sector', 'Cell (Локальный сектор)'),
+            ('tac', 'TAC (зона)'),
         ]
         for i, (key, name) in enumerate(fields):
             ttk.Label(info_frame, text=f"{t(name)}:",
@@ -672,6 +676,10 @@ class Hua4GMon:
             ('ul_rate', 'Скорость (Upload)'),
             ('total_dl', 'Скачано за сессию'),
             ('total_ul', 'Отдано за сессию'),
+            ('month_traffic', 'Трафик за месяц (↓/↑)'),
+            ('mod', 'Модуляция DL / UL'),
+            ('txpower', 'Мощность передатчика'),
+            ('mimo', 'Режим MIMO'),
             ('rsrp_min', 'RSRP мин / макс'),
             ('sinr_min', 'SINR мин / макс'),
         ]
@@ -911,6 +919,8 @@ class Hua4GMon:
     # =====================================================
 
     def _monitor_loop(self) -> None:
+        tick = 0
+        month_cache: Dict[str, Any] = {}
         while not self._stop_event.is_set():
             client = self.client
             if client is None:
@@ -920,8 +930,19 @@ class Hua4GMon:
                 plmn = client.net.current_plmn()
                 status = client.monitoring.status()
                 traffic = client.monitoring.traffic_statistics()
+                # Месячная статистика меняется медленно и есть не на всех
+                # моделях — опрашиваем редко и молча игнорируем отсутствие.
+                if tick % 30 == 0:
+                    try:
+                        ms = client.monitoring.month_statistics()
+                        if ms:
+                            month_cache = ms
+                    except Exception:
+                        logger.debug("month_statistics unavailable",
+                                     exc_info=True)
+                tick += 1
                 data = {**(sig or {}), **(plmn or {}),
-                        **(status or {}), **(traffic or {})}
+                        **(status or {}), **(traffic or {}), **month_cache}
                 data['plmn'] = (plmn or {}).get(
                     'Numeric', data.get('plmn', ''))
 
@@ -1032,7 +1053,7 @@ class Hua4GMon:
             jcol = ('green' if jitter < 3
                     else 'orange' if jitter < 7 else 'red')
             self.jitter_label.config(
-                text=t("Джиттер: {j:.1f} dB (стабильность сигнала)").format(
+                text=t("Джиттер: {j:.1f} dB").format(
                     j=jitter),
                 foreground=jcol)
 
@@ -1090,6 +1111,11 @@ class Hua4GMon:
             elif key == 'aggregation':
                 # Значение приходит русским из monitor loop — переводим
                 val = t(str(data.get(key, '-')))
+            elif key == 'dlbandwidth':
+                dl_bw = str(data.get('dlbandwidth', '-'))
+                ul_bw = data.get('ulbandwidth', '')
+                val = (f"DL {dl_bw} / UL {ul_bw}"
+                       if ul_bw not in ('', '-', None) else dl_bw)
             else:
                 val = str(data.get(key, '-'))
             lbl.config(text=val)
@@ -1119,6 +1145,36 @@ class Hua4GMon:
             if vals:
                 self.stat_labels[lbl_key].config(
                     text=f"{min(vals):g} / {max(vals):g} {self._unit(p)}")
+
+        # Доп. поля из signal()/month_statistics (могут отсутствовать на
+        # части моделей — тогда показываем прочерк).
+        dl_mcs = first_present(data, ('dl_mcs', 'dlmcs', 'dlMcs'))
+        ul_mcs = first_present(data, ('ul_mcs', 'ulmcs', 'ulMcs'))
+        mod_parts = []
+        if dl_mcs is not None:
+            m = mcs_to_modulation(dl_mcs)
+            mod_parts.append(f"DL MCS {dl_mcs}" + (f" (~{m})" if m else ""))
+        if ul_mcs is not None:
+            m = mcs_to_modulation(ul_mcs)
+            mod_parts.append(f"UL MCS {ul_mcs}" + (f" (~{m})" if m else ""))
+        self.stat_labels['mod'].config(
+            text=" / ".join(mod_parts) if mod_parts else "-")
+
+        txp = first_present(data, ('txpower', 'TxPower', 'tx_power'))
+        self.stat_labels['txpower'].config(
+            text=str(txp) if txp is not None else "-")
+        mimo = first_present(data, ('transmode', 'TransMode', 'mimo'))
+        self.stat_labels['mimo'].config(
+            text=str(mimo) if mimo is not None else "-")
+
+        m_dl = first_present(data, ('CurrentMonthDownload',))
+        m_ul = first_present(data, ('CurrentMonthUpload',))
+        if m_dl is not None or m_ul is not None:
+            self.stat_labels['month_traffic'].config(
+                text=f"{format_bytes_mb(m_dl or 0)} / "
+                     f"{format_bytes_mb(m_ul or 0)}")
+        else:
+            self.stat_labels['month_traffic'].config(text="-")
 
         # Лог сессии (в RAM, для экспорта в CSV)
         if len(self.session_log) < SESSION_LOG_MAX:
@@ -1210,7 +1266,10 @@ class Hua4GMon:
             messagebox.showwarning(t("Ошибка"),
                                    t("Сначала подключитесь к роутеру."))
             return
-        ant_val = parse_antenna_value(self.antenna_var.get())
+        # Combobox показывает переведённую метку — вернём русский ключ.
+        rev = {t(k): k for k in ANTENNA_MODES}
+        label = rev.get(self.antenna_var.get(), self.antenna_var.get())
+        ant_val = parse_antenna_value(label)
         if ant_val is None:
             messagebox.showerror(t("Ошибка"), t("Неизвестный режим антенны."))
             return
