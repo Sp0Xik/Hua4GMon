@@ -19,3 +19,22 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+================================================================================
+THIRD-PARTY COMPONENTS
+================================================================================
+
+This software builds upon the following open-source projects. Full credit
+and gratitude to their authors.
+
+* huawei-lte-api — https://github.com/Salamek/huawei-lte-api
+  Copyright (c) Adam Schubert (Salamek) and contributors.
+  Licensed under LGPL-3.0. Performs all low-level communication with the
+  Huawei router web API; Hua4GMon would not be possible without it.
+
+* Kivy (Android version) — https://kivy.org/
+  Licensed under the MIT License.
+
+* DejaVu Sans font (bundled in assets/, Android version) —
+  Licensed under the DejaVu Fonts License (a permissive, Bitstream Vera
+  derived license).
