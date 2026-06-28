@@ -72,6 +72,14 @@ EN: Dict[str, str] = {
     "ТЕСТОВЫЙ РЕЖИМ — демо-данные": "TEST MODE — demo data",
     "ДЕМО": "DEMO",
     "Во весь экран": "Fullscreen",
+    "Модуляция DL": "Modulation DL",
+    "Модуляция UL": "Modulation UL",
+    "Модуляция DL / UL": "Modulation DL / UL",
+    "Ширина канала": "Channel width",
+    "TAC (зона)": "TAC (area)",
+    "Мощность передатчика": "TX power",
+    "Режим MIMO": "MIMO mode",
+    "Трафик за месяц (↓/↑)": "Monthly traffic (↓/↑)",
     "Операции с роутером недоступны в тестовом режиме.":
         "Router operations are unavailable in test mode.",
     "← Назад": "← Back",
@@ -156,8 +164,7 @@ EN: Dict[str, str] = {
         "Poor ({pct}%) — will keep dropping!",
 
     # Джиттер (шаблон)
-    "Джиттер: {j:.1f} dB (стабильность сигнала)":
-        "Jitter: {j:.1f} dB (signal stability)",
+    "Джиттер: {j:.1f} dB": "Jitter: {j:.1f} dB",
 
     # --- Вкладка Сеть ---
     "Фиксация частот (Band Lock)": "Band Lock",
@@ -289,6 +296,73 @@ EN: Dict[str, str] = {
     "⚠ Белые списки ВКЛЮЧЕНЫ": "⚠ Whitelist ON",
     "Аномалия": "Anomaly",
     "Нет интернета": "No internet",
+
+    # Метки уровней сигнала (из SIGNAL_THRESHOLDS)
+    "Отличный": "Excellent",
+    "Хороший": "Good",
+    "Средний": "Fair",
+    "Плохой": "Poor",
+    "Идеальный": "Ideal",
+    "Шумный": "Noisy",
+    "Критичный": "Critical",
+    "Сильный": "Strong",
+    "Нормальный": "Normal",
+    "Слабый": "Weak",
+    "Очень слабый": "Very weak",
+    "Стабильный": "Stable",
+    "Потери": "Losses",
+    "Высокие потери": "High losses",
+
+    # Обозначения бэндов (для Band Lock)
+    "B1 (2100 МГц)": "B1 (2100 MHz)",
+    "B3 (1800 МГц)": "B3 (1800 MHz)",
+    "B5 (850 МГц)": "B5 (850 MHz)",
+    "B7 (2600 МГц)": "B7 (2600 MHz)",
+    "B8 (900 МГц)": "B8 (900 MHz)",
+    "B20 (800 МГц)": "B20 (800 MHz)",
+    "B38 (TDD 2600)": "B38 (TDD 2600)",
+    "B40 (TDD 2300)": "B40 (TDD 2300)",
+    "B41 (TDD 2500)": "B41 (TDD 2500)",
+
+    # Android-подсказки (Сеть)
+    ("ВНИМАНИЕ: фиксация диапазона может уменьшить покрытие. "
+     "Применяйте, чтобы привязаться к лучшей вышке — сначала "
+     "определите рабочий band на экране монитора."): (
+        "WARNING: locking a band may reduce coverage. Use it to bind to "
+        "the best tower — first identify the working band on the monitor "
+        "screen."),
+    ("⚠ Телефон должен быть подключён к Wi-Fi именно этого "
+     "роутера — иначе тест измерит чужой канал. Применимо только "
+     "для РФ."): (
+        "⚠ The phone must be connected to the Wi-Fi of this exact router "
+        "— otherwise the test measures a different link. Applies to "
+        "Russia only."),
+
+    # Детали вердикта белых списков (шаблоны с подстановкой счётчиков)
+    ("Обычный режим — открыт весь интернет "
+     "(белых: {w}/{wt}, нейтральных: {n}/{nt})."): (
+        "Normal mode — full internet is open "
+        "(whitelisted: {w}/{wt}, neutral: {n}/{nt})."),
+    ("Сейчас на БС работают ТОЛЬКО разрешённые сайты "
+     "(белых: {w}/{wt}, нейтральных: 0/{nt}). "
+     "Обычные сайты заблокированы оператором."): (
+        "Only allowed sites work on this cell right now "
+        "(whitelisted: {w}/{wt}, neutral: 0/{nt}). "
+        "Regular sites are blocked by the operator."),
+    ("Нейтральные сайты доступны, но «белые» не отвечают. "
+     "Скорее всего, вы вышли в интернет не через 4G "
+     "(другой Wi-Fi, провод, VPN). Подключитесь к Wi-Fi роутера "
+     "и повторите."): (
+        "Neutral sites are reachable but whitelisted ones are not. "
+        "You are likely online not via 4G (another Wi-Fi, cable, VPN). "
+        "Connect to the router's Wi-Fi and retry."),
+    ("Ни одна цель не отвечает. Либо у роутера нет связи с БС, "
+     "либо проблема с DNS/маршрутом. Проверьте RSRP и трафик."): (
+        "No target responds. Either the router has no cell link, or "
+        "there is a DNS/route problem. Check RSRP and traffic."),
+
+    # График (Windows)
+    "последние {n} точек": "last {n} points",
 }
 
 
