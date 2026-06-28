@@ -97,10 +97,12 @@ from core import (
     current_language,
     evaluate_signal,
     extract_number,
+    first_present,
     format_band_label,
     format_bytes_mb,
     format_rate_mbps,
     is_valid_ip,
+    mcs_to_modulation,
     parse_antenna_value,
     parse_cell_id,
     set_language,
@@ -121,6 +123,16 @@ _FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 def _unit(param: str) -> str:
     return "dBm" if param in ('rsrp', 'rssi') else "dB"
+
+
+def _first_present(data, keys):
+    return first_present(data, keys)
+
+
+def _mcs_label(mcs) -> str:
+    """'MCS N (~QAM)' — сырое значение MCS плюс ориентировочный тип."""
+    mod = mcs_to_modulation(mcs)
+    return f"MCS {mcs}" + (f"  (~{mod})" if mod else "")
 
 
 def _hex_to_rgba(hexcolor: str):
@@ -202,7 +214,7 @@ class SignalGraph(Widget):
                 py = y0 + plot_h * (v_cl - self._y_min) / rng
                 pts.extend([px, py])
             Color(0.0, 0.72, 0.58, 1)
-            Line(points=pts, width=1.5)
+            Line(points=pts, width=max(1.5, h / 110.0))
 
 
 def _graph_axes(param: str):
@@ -246,11 +258,11 @@ KV = """
             radius: [dp(12)]
 
 <SectionTitle@Label>:
-    font_size: dp(17)
+    font_size: dp(19)
     bold: True
     color: 1, 1, 1, 1
     size_hint_y: None
-    height: dp(30)
+    height: dp(34)
     text_size: self.width, None
     halign: 'left'
     valign: 'middle'
@@ -265,10 +277,11 @@ KV = """
     valign: 'top'
 
 <InfoLabel@Label>:
-    font_size: dp(14)
+    font_size: dp(16)
     color: 0.82, 0.85, 0.88, 1
+    line_height: 1.35
     size_hint_y: None
-    height: self.texture_size[1] + dp(6)
+    height: self.texture_size[1] + dp(8)
     text_size: self.width, None
     halign: 'left'
     valign: 'top'
@@ -483,32 +496,39 @@ ScreenManager:
                 pos: self.pos
                 size: self.size
 
-        # Топбар — фиксированный
+        # Топбар — кнопки равной ширины (статус вынесен ниже отдельно)
         BoxLayout:
             size_hint_y: None
             height: dp(48)
             spacing: dp(6)
-            Label:
-                id: status_lbl
-                text: ''
-                font_size: dp(14)
-                bold: True
-                color: 0.2, 0.8, 0.4, 1
             TopButton:
                 text: root.lbl_info
-                width: dp(86)
+                size_hint_x: 1
                 background_color: 0.2, 0.45, 0.4, 1
                 on_release: root.on_info()
             TopButton:
                 text: root.lbl_tools
-                width: dp(92)
+                size_hint_x: 1
                 background_color: 0.2, 0.35, 0.55, 1
                 on_release: root.on_tools()
             TopButton:
                 text: root.lbl_disconnect
-                width: dp(104)
+                size_hint_x: 1
                 background_color: 0.6, 0.2, 0.2, 1
                 on_release: root.on_disconnect()
+
+        # Статус подключения — отдельная строка, помещается на любом экране
+        Label:
+            id: status_lbl
+            text: ''
+            font_size: dp(14)
+            bold: True
+            color: 0.2, 0.8, 0.4, 1
+            size_hint_y: None
+            height: dp(24)
+            text_size: self.width, None
+            halign: 'center'
+            valign: 'middle'
 
         # Тенденция (стрелка) — компактнее: это подсказка, не главное
         BoxLayout:
@@ -921,7 +941,8 @@ class ToolsScreen(Screen):
             "роутера — иначе тест измерит чужой канал. Применимо только "
             "для РФ.")
         self.lbl_wl_check = t("Проверить сейчас")
-        self.antenna_values = list(ANTENNA_MODES.keys())
+        self.antenna_values = [t(k) for k in ANTENNA_MODES]
+        self.antenna_spinner.text = t("Авто")
         self._build_band_checkboxes()
 
     def _build_band_checkboxes(self) -> None:
@@ -938,7 +959,7 @@ class ToolsScreen(Screen):
             # В GridLayout с size_hint_y=None детям нужна явная высота,
             # иначе строки схлопываются и накладываются друг на друга.
             cb = CheckBox(size_hint=(None, None), width=dp(40), height=row_h)
-            lbl = KLabel(text=band_name, color=(0.85, 0.88, 0.9, 1),
+            lbl = KLabel(text=t(band_name), color=(0.85, 0.88, 0.9, 1),
                          halign='left', valign='middle',
                          size_hint_y=None, height=row_h)
             lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
@@ -1075,6 +1096,14 @@ class Hua4GMonApp(App):
                 'TotalUpload': 1048576 * (10 + i // 3),
                 'CurrentConnectTime': 60 + i,
                 'Temperature': '38',
+                'dl_mcs': 26,
+                'ul_mcs': 18,
+                'tac': '12345',
+                'ulbandwidth': '10MHz',
+                'txpower': 'PPusch:12dBm PPucch:6dBm',
+                'transmode': '2x2 MIMO',
+                'CurrentMonthDownload': 1048576 * 1024 * 8,
+                'CurrentMonthUpload': 1048576 * 1024,
             }
             enodeb, sector = parse_cell_id(data['cell_id'])
             data['enodeb'] = enodeb
@@ -1123,6 +1152,8 @@ class Hua4GMonApp(App):
             self._show_conn_error(str(e))
             return
 
+        tick = 0
+        month_cache: Dict[str, Any] = {}
         while not self._stop_event.is_set():
             client = self.client
             if client is None:
@@ -1132,8 +1163,19 @@ class Hua4GMonApp(App):
                 plmn = client.net.current_plmn()
                 status = client.monitoring.status()
                 traffic = client.monitoring.traffic_statistics()
+                # Месячная статистика меняется медленно и есть не на всех
+                # моделях (USB-стики часто без неё) — опрашиваем редко и
+                # молча игнорируем, если endpoint недоступен.
+                if tick % 30 == 0:
+                    try:
+                        ms = client.monitoring.month_statistics()
+                        if ms:
+                            month_cache = ms
+                    except Exception:
+                        pass
+                tick += 1
                 data = {**(sig or {}), **(plmn or {}),
-                        **(status or {}), **(traffic or {})}
+                        **(status or {}), **(traffic or {}), **month_cache}
                 data['plmn'] = (plmn or {}).get('Numeric',
                                                 data.get('plmn', ''))
                 enodeb, sector = parse_cell_id(data.get('cell_id'))
@@ -1242,7 +1284,7 @@ class Hua4GMonApp(App):
             jcol = ('green' if jitter < 3
                     else 'orange' if jitter < 7 else 'red')
             scr.jitter_lbl.text = t(
-                "Джиттер: {j:.1f} dB (стабильность сигнала)").format(j=jitter)
+                "Джиттер: {j:.1f} dB").format(j=jitter)
             scr.jitter_lbl.color = _hex_to_rgba(jcol)
 
         # График выбранного параметра (на мониторе и в fullscreen, если открыт)
@@ -1308,6 +1350,12 @@ class Hua4GMonApp(App):
             v = data.get(key, default)
             return v if v not in (None, '') else default
 
+        # Ширина канала: показываем DL и UL вместе, если есть UL
+        ul_bw = g('ulbandwidth', '')
+        bw = g('dlbandwidth')
+        if ul_bw not in ('', '-', None):
+            bw = f"DL {bw} / UL {ul_bw}"
+
         tower_lines = [
             f"{t('Оператор (PLMN)')}: {plmn}"
             f"{(' (' + op + ')') if op else ''}",
@@ -1315,11 +1363,15 @@ class Hua4GMonApp(App):
             f"{t('EARFCN (канал DL)')}: "
             f"{earfcn_raw if earfcn_raw not in (None, '', '-') else '-'}",
             f"{t('Агрегация (CA)')}: {t(str(g('aggregation')))}",
-            f"{t('Ширина канала (DL)')}: {g('dlbandwidth')}",
+            f"{t('Ширина канала')}: {bw}",
             f"{t('Сектор антенны (PCI)')}: {g('pci')}",
             f"{t('eNodeB (Вышка)')}: {g('enodeb')}",
             f"{t('Cell (Локальный сектор)')}: {g('sector')}",
         ]
+        # TAC (Tracking Area Code) — зона, в которой работает сота
+        tac = _first_present(data, ('tac', 'TAC'))
+        if tac is not None:
+            tower_lines.append(f"{t('TAC (зона)')}: {tac}")
         scr.tower_block.text = "\n".join(tower_lines)
 
         di = self.device_info or {}
@@ -1365,6 +1417,33 @@ class Hua4GMonApp(App):
             f"{t('SINR мин / макс')}: "
             + (f"{min(sinr_v):g} / {max(sinr_v):g} dB" if sinr_v else '-'),
         ]
+        # Модуляция DL/UL — двусторонняя. Показываем обе стороны, если
+        # роутер их отдаёт (имена полей варьируются между прошивками).
+        # Модуляция передаётся как MCS-индекс — расшифровываем в тип QAM.
+        dl = _first_present(data, ('dl_mcs', 'dlmcs', 'dlMcs'))
+        ul = _first_present(data, ('ul_mcs', 'ulmcs', 'ulMcs'))
+        if dl is not None:
+            status_lines.append(
+                f"{t('Модуляция DL')}: {_mcs_label(dl)}")
+        if ul is not None:
+            status_lines.append(
+                f"{t('Модуляция UL')}: {_mcs_label(ul)}")
+        # Мощность передатчика модема (txpower) — косвенный индикатор
+        # качества UL: чем выше, тем сильнее модем «вынужден кричать».
+        txp = _first_present(data, ('txpower', 'TxPower', 'tx_power'))
+        if txp is not None:
+            status_lines.append(f"{t('Мощность передатчика')}: {txp}")
+        # Режим MIMO (число потоков)
+        mimo = _first_present(data, ('transmode', 'TransMode', 'mimo'))
+        if mimo is not None:
+            status_lines.append(f"{t('Режим MIMO')}: {mimo}")
+        # Месячный трафик (если роутер отдаёт month_statistics)
+        m_dl = _first_present(data, ('CurrentMonthDownload',))
+        m_ul = _first_present(data, ('CurrentMonthUpload',))
+        if m_dl is not None or m_ul is not None:
+            status_lines.append(
+                f"{t('Трафик за месяц (↓/↑)')}: "
+                f"{format_bytes_mb(m_dl or 0)} / {format_bytes_mb(m_ul or 0)}")
         scr.status_block.text = "\n".join(status_lines)
 
     def _direction(self):
@@ -1444,7 +1523,10 @@ class Hua4GMonApp(App):
         if self.client is None:
             self.show_popup(t("Ошибка"), t("Сначала подключитесь к роутеру."))
             return
-        ant_val = parse_antenna_value(label)
+        # Спиннер показывает переведённую метку — вернём русский ключ,
+        # по которому работает parse_antenna_value.
+        rev = {t(k): k for k in ANTENNA_MODES}
+        ant_val = parse_antenna_value(rev.get(label, label))
         if ant_val is None:
             self.show_popup(t("Ошибка"), t("Неизвестный режим антенны."))
             return
