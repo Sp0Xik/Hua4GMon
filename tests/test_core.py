@@ -425,3 +425,29 @@ def test_android_main_reuses_core():
     for name in ("evaluate_signal", "format_band_label", "parse_cell_id",
                  "is_valid_ip", "t"):
         assert name in src, f"android_main должен использовать core.{name}"
+
+
+def test_android_on_pre_enter_does_not_touch_kv_ids_directly():
+    """on_pre_enter не должен обращаться к KV-виджетам напрямую.
+
+    Регрессия: ScreenManager выставляет `current` для первого экрана
+    ещё до применения KV-правила, поэтому `self.<id>` там ещё не
+    существует → AttributeError на старте. Обращаться нужно через
+    `self.ids.get(...)`.
+    """
+    src = _read_android_main()
+    if src is None:
+        import pytest
+        pytest.skip("android_main.py отсутствует")
+
+    import re
+    kv_ids = ('status_lbl', 'antenna_spinner', 'bands_grid', 'tower_block',
+              'sim_block', 'status_block', 'signal_graph', 'graph_param',
+              'ip_input', 'pw_input')
+    for m in re.finditer(r'def on_pre_enter\(self.*?(?=\n    def |\nclass |\Z)',
+                         src, re.DOTALL):
+        body = m.group(0)
+        for kv_id in kv_ids:
+            assert not re.search(rf'self\.{kv_id}\b', body), (
+                f"on_pre_enter обращается к self.{kv_id} напрямую — "
+                f"используйте self.ids.get('{kv_id}')")
