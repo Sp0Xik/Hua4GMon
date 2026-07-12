@@ -1,23 +1,25 @@
 [tool.ruff]
 target-version = "py310"
 line-length = 100
-exclude = ["dist", "build", ".venv"]
+exclude = ["dist", "build", ".venv", ".buildozer", "build-android"]
 
 [tool.ruff.lint]
-# Минимум полезных правил без агрессивных переписываний идиом:
-#   E/W — pycodestyle (стиль)
-#   F   — pyflakes (unused, undefined, etc.)
-#   I   — isort (порядок импортов)
-#   B   — flake8-bugbear (поведенческие баги, например mutable defaults)
-select = ["E", "W", "F", "I", "B"]
+# Набор правил:
+#   E/W  — pycodestyle (стиль)
+#   F    — pyflakes (unused, undefined)
+#   I    — isort (порядок импортов)
+#   B    — bugbear (поведенческие баги: mutable defaults и т.п.)
+#   UP   — pyupgrade (современный синтаксис для целевого Python)
+#   SIM  — flake8-simplify (упрощения)
+#   C4   — comprehensions (лишние генераторы/словари)
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4"]
 ignore = [
-    "E501",   # длина строки — мы переносим по смыслу, не по символам
-    "B008",   # function calls in default args (часто нужно для Optional)
+    "E501",   # длина строки — переносим по смыслу, не по символам
+    "B008",   # вызовы в аргументах по умолчанию (нужно для Optional)
 ]
 
 [tool.ruff.lint.isort]
-# main.py и core — first-party модули проекта, не путать с third-party
-known-first-party = ["main", "core"]
+known-first-party = ["main", "android_main", "core"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
