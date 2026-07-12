@@ -49,6 +49,7 @@ from core.i18n import (
     t,
 )
 from core.parsers import (
+    bands_from_mask,
     earfcn_to_band,
     extract_number,
     first_present,
@@ -78,8 +79,9 @@ __all__ = [
     "RECONNECT_DELAY_MAX", "SESSION_LOG_MAX", "SIGNAL_THRESHOLDS",
     "WHITELIST_HOSTS_RU", "WL_CHECK_TIMEOUT",
     # parsers
-    "earfcn_to_band", "extract_number", "first_present", "format_band_label",
-    "format_bytes_mb", "format_rate_mbps", "is_valid_ip", "mcs_to_modulation",
+    "bands_from_mask", "earfcn_to_band", "extract_number", "first_present",
+    "format_band_label", "format_bytes_mb", "format_rate_mbps",
+    "is_valid_ip", "mcs_to_modulation",
     "parse_antenna_value", "parse_cell_id",
     # signal_analysis
     "calculate_overall_health", "evaluate_signal",
