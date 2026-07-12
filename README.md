@@ -1,6 +1,7 @@
 # Hua4GMon — монитор LTE для роутеров Huawei
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-blue)
+![Version](https://img.shields.io/badge/version-1.3.0-brightgreen)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
