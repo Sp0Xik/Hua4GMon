@@ -451,3 +451,46 @@ def test_android_on_pre_enter_does_not_touch_kv_ids_directly():
             assert not re.search(rf'self\.{kv_id}\b', body), (
                 f"on_pre_enter обращается к self.{kv_id} напрямую — "
                 f"используйте self.ids.get('{kv_id}')")
+
+
+def _imported_core_names(source: str):
+    """Имена, импортируемые из core в данном исходнике."""
+    import re
+    m = re.search(r'from core import \(([^)]*)\)', source, re.DOTALL)
+    if not m:
+        return []
+    names = []
+    for line in m.group(1).split('\n'):
+        line = line.split('#')[0].strip().rstrip(',').strip()
+        if line:
+            names.append(line)
+    return names
+
+
+def test_main_imports_exist_in_core():
+    """Всё, что main.py импортирует из core, должно там существовать."""
+    import pathlib
+    p = pathlib.Path(__file__).resolve().parent.parent / "main.py"
+    if not p.exists():
+        import pytest
+        pytest.skip("main.py отсутствует")
+    for name in _imported_core_names(p.read_text(encoding="utf-8")):
+        assert hasattr(core, name), (
+            f"main.py импортирует core.{name}, но его нет в core "
+            f"(рассинхрон main.py и core/ — APK/EXE упадёт на старте)")
+
+
+def test_android_main_imports_exist_in_core():
+    """Всё, что android_main.py импортирует из core, должно там существовать.
+
+    Регрессия: android_main обновили, а core/ в репозитории остался
+    старым → ImportError на старте APK.
+    """
+    src = _read_android_main()
+    if src is None:
+        import pytest
+        pytest.skip("android_main.py отсутствует")
+    for name in _imported_core_names(src):
+        assert hasattr(core, name), (
+            f"android_main.py импортирует core.{name}, но его нет в core "
+            f"(рассинхрон android_main.py и core/ — APK упадёт на старте)")
