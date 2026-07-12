@@ -6,13 +6,11 @@
 """
 from __future__ import annotations
 
-from typing import Optional, Tuple
-
 from core.constants import SIGNAL_THRESHOLDS
 
 
 def evaluate_signal(param: str,
-                    val: Optional[float]) -> Tuple[str, str, int]:
+                    val: float | None) -> tuple[str, str, int]:
     """Возвращает (текст_статуса, цвет, процент_качества).
 
     Параметры
@@ -31,9 +29,9 @@ def evaluate_signal(param: str,
     return "Н/Д", "gray", 0
 
 
-def calculate_overall_health(rsrp: Optional[float],
-                              sinr: Optional[float]
-                              ) -> Tuple[int, str, str]:
+def calculate_overall_health(rsrp: float | None,
+                              sinr: float | None
+                              ) -> tuple[int, str, str]:
     """Общая оценка качества связи на основе RSRP и SINR.
 
     Формула: 70% веса от худшего параметра, 30% от лучшего.
