@@ -24,18 +24,17 @@
 from __future__ import annotations
 
 import socket
-from typing import List, Tuple
 
 from core.constants import WL_CHECK_TIMEOUT
 
 
 def tcp_reachable(host: str, port: int,
-                   timeout: float = WL_CHECK_TIMEOUT) -> Tuple[bool, str]:
+                   timeout: float = WL_CHECK_TIMEOUT) -> tuple[bool, str]:
     """Пытается открыть TCP-соединение. Возвращает (доступен, описание)."""
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True, "OK"
-    except socket.timeout:
+    except TimeoutError:
         return False, "таймаут"
     except socket.gaierror:
         return False, "DNS не отвечает"
@@ -46,8 +45,8 @@ def tcp_reachable(host: str, port: int,
 
 
 def analyze_whitelist_results(
-        white_results: List[Tuple[str, bool]],
-        neutral_results: List[Tuple[str, bool]]) -> Tuple[str, str, str]:
+        white_results: list[tuple[str, bool]],
+        neutral_results: list[tuple[str, bool]]) -> tuple[str, str, str]:
     """По таблице истинности возвращает (заголовок, описание, цвет).
 
     Строки переводятся на текущий язык (RU/EN) через core.i18n.
