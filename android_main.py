@@ -29,10 +29,11 @@ from __future__ import annotations
 import importlib
 import importlib.abc
 import importlib.util
+import logging
 import os
 import sys
 import threading
-from typing import Any, Dict, Optional
+from typing import Any
 
 # --- Android crypto-совместимость (ДО импорта huawei_lte_api) ---
 # huawei-lte-api требует pycryptodomex (неймспейс Cryptodome), но у него
@@ -111,8 +112,14 @@ from core import (
     tcp_reachable,
 )
 
-__version__ = "1.2"
+__version__ = "1.3"
 APP_NAME = "Hua4GMon"
+
+# Логи видны в logcat (adb logcat | grep python) — без них диагностика
+# проблем на реальном устройстве почти невозможна.
+logging.basicConfig(level=logging.INFO,
+                    format="%(name)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(APP_NAME)
 
 DYNAMIC_PARAMS = ['rsrp', 'rssi', 'sinr', 'rsrq']
 
@@ -1081,7 +1088,7 @@ class ToolsScreen(Screen):
         from kivy.uix.label import Label as KLabel
 
         row_h = dp(44)
-        self.band_vars: Dict[str, Any] = {}
+        self.band_vars: dict[str, Any] = {}
         for band_name in BANDS:
             # В GridLayout с size_hint_y=None детям нужна явная высота,
             # иначе строки схлопываются и накладываются друг на друга.
@@ -1140,8 +1147,8 @@ class Hua4GMonApp(App):
                                fn_bold=_FONT_PATH)
         self.title = f"{APP_NAME} v{__version__}"
         self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
-        self.client: Optional[Client] = None
+        self._thread: threading.Thread | None = None
+        self.client: Client | None = None
         self._cached_ip = ""
         self._cached_pw = ""
         self.connected = False
@@ -1149,10 +1156,10 @@ class Hua4GMonApp(App):
         self.demo_mode = False
         self.reconnect_delay = RECONNECT_DELAY_INITIAL
         self.dir_history: list = []
-        self.peak_values: Dict[str, Any] = {p: '-' for p in DYNAMIC_PARAMS}
-        self.values: Dict[str, list] = {p: [] for p in DYNAMIC_PARAMS}
-        self.device_info: Dict[str, Any] = {}
-        self.last_data: Dict[str, Any] = {}
+        self.peak_values: dict[str, Any] = dict.fromkeys(DYNAMIC_PARAMS, '-')
+        self.values: dict[str, list] = {p: [] for p in DYNAMIC_PARAMS}
+        self.device_info: dict[str, Any] = {}
+        self.last_data: dict[str, Any] = {}
         self._data_lock = threading.Lock()
         self.graph_param = 'rsrp'
         self._fs_graph = None
@@ -1166,12 +1173,17 @@ class Hua4GMonApp(App):
 
     def _reset_session(self) -> None:
         self.dir_history.clear()
-        self.peak_values = {p: '-' for p in DYNAMIC_PARAMS}
+        self.peak_values = dict.fromkeys(DYNAMIC_PARAMS, '-')
         self.values = {p: [] for p in DYNAMIC_PARAMS}
         with self._data_lock:
             self.last_data = {}
 
     def connect(self, ip: str, password: str) -> None:
+        # Защита от повторного нажатия: иначе поднимется второй воркер,
+        # и два потока начнут наперегонки переустанавливать self.client.
+        if self._thread is not None and self._thread.is_alive():
+            logger.info("Connect ignored: worker already running")
+            return
         self.demo_mode = False
         self._cached_ip = ip
         self._cached_pw = password
@@ -1184,6 +1196,9 @@ class Hua4GMonApp(App):
 
     def start_demo(self) -> None:
         """Тестовый режим: демо-данные без реального модема (для эмулятора)."""
+        if self._thread is not None and self._thread.is_alive():
+            logger.info("Demo ignored: worker already running")
+            return
         self.demo_mode = True
         self._stop_event.clear()
         self.auto_reconnect = False
@@ -1256,7 +1271,7 @@ class Hua4GMonApp(App):
             try:
                 self.client.user.logout()
             except Exception:
-                pass
+                logger.debug("Logout failed (ignored)", exc_info=True)
             self.client = None
         self.device_info = {}
         self._goto_connection()
@@ -1276,11 +1291,12 @@ class Hua4GMonApp(App):
             self.connected = True
             self._goto_monitor()
         except Exception as e:
+            logger.warning("Connect failed: %s", e)
             self._show_conn_error(str(e))
             return
 
         tick = 0
-        month_cache: Dict[str, Any] = {}
+        month_cache: dict[str, Any] = {}
         while not self._stop_event.is_set():
             client = self.client
             if client is None:
@@ -1299,7 +1315,9 @@ class Hua4GMonApp(App):
                         if ms:
                             month_cache = ms
                     except Exception:
-                        pass
+                        # Нет на части моделей (USB-стики) — это нормально.
+                        logger.debug("month_statistics unavailable",
+                                     exc_info=True)
                 tick += 1
                 data = {**(sig or {}), **(plmn or {}),
                         **(status or {}), **(traffic or {}), **month_cache}
@@ -1315,7 +1333,8 @@ class Hua4GMonApp(App):
                                        else "Нет (Single)")
                 self._update_ui(data)
                 self.reconnect_delay = RECONNECT_DELAY_INITIAL
-            except Exception:
+            except Exception as e:
+                logger.warning("Monitor tick failed: %s", e)
                 if self.auto_reconnect and not self._stop_event.is_set():
                     self._try_reconnect()
                 else:
@@ -1361,7 +1380,7 @@ class Hua4GMonApp(App):
         scr.status_lbl.color = color
 
     @mainthread
-    def _update_ui(self, data: Dict[str, Any]) -> None:
+    def _update_ui(self, data: dict[str, Any]) -> None:
         with self._data_lock:
             self.last_data = dict(data)
         scr = self.sm.get_screen('monitor')
@@ -1369,7 +1388,7 @@ class Hua4GMonApp(App):
             scr.status_lbl.text = t("Подключено")
             scr.status_lbl.color = (0.2, 0.8, 0.4, 1)
 
-        current_vals: Dict[str, Optional[float]] = {
+        current_vals: dict[str, float | None] = {
             p: extract_number(data.get(p)) for p in DYNAMIC_PARAMS}
 
         box_by_param = {'rsrp': scr.rsrp_box, 'rssi': scr.rssi_box,
@@ -1785,6 +1804,8 @@ class Hua4GMonApp(App):
                     try:
                         res = fn() or {}
                     except Exception:
+                        logger.debug("Antenna getter %s failed", getter,
+                                     exc_info=True)
                         continue
                     if isinstance(res, dict):
                         ant_raw = first_present(
