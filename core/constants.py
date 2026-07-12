@@ -8,13 +8,11 @@
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
-
 # =========================================================
 # Операторы (PLMN-коды)
 # =========================================================
 
-PLMN_MAP: Dict[str, str] = {
+PLMN_MAP: dict[str, str] = {
     # Russia (MCC=250)
     '25001': 'МТС', '25002': 'МегаФон', '25011': 'Yota',
     '25020': 'Tele2', '25027': 'Летай', '25035': 'Мотив',
@@ -32,7 +30,7 @@ PLMN_MAP: Dict[str, str] = {
 # LTE bitmask values used by Huawei set_net_mode()
 # =========================================================
 
-BANDS: Dict[str, int] = {
+BANDS: dict[str, int] = {
     'B1 (2100 МГц)':   0x1,
     'B3 (1800 МГц)':   0x4,
     'B5 (850 МГц)':    0x10,
@@ -44,7 +42,7 @@ BANDS: Dict[str, int] = {
     'B41 (TDD 2500)':  0x10000000000,
 }
 
-ANTENNA_MODES: Dict[str, int] = {
+ANTENNA_MODES: dict[str, int] = {
     "Авто": 0,
     "Внутренняя": 1,
     "Внешняя": 2,
@@ -52,7 +50,7 @@ ANTENNA_MODES: Dict[str, int] = {
 }
 
 # Расшифровка LTE-бандов: номер → краткое обозначение полосы
-BAND_FREQ_MAP: Dict[int, str] = {
+BAND_FREQ_MAP: dict[int, str] = {
     1: "2100", 2: "1900PCS", 3: "1800+", 4: "AWS-1", 5: "850",
     7: "2600", 8: "900", 12: "700a", 13: "700c", 17: "700b",
     18: "850Lower", 19: "850Upper", 20: "800DD", 25: "1900+",
@@ -62,7 +60,7 @@ BAND_FREQ_MAP: Dict[int, str] = {
 }
 
 # Диапазоны EARFCN (downlink) → band (3GPP TS 36.101). Главные ходовые полосы.
-EARFCN_RANGES: List[Tuple[int, int, int]] = [
+EARFCN_RANGES: list[tuple[int, int, int]] = [
     (0, 599, 1),       (600, 1199, 2),    (1200, 1949, 3),
     (1950, 2399, 4),   (2400, 2649, 5),   (2750, 3449, 7),
     (3450, 3799, 8),   (5010, 5179, 12),  (5180, 5279, 13),
@@ -80,14 +78,14 @@ EARFCN_RANGES: List[Tuple[int, int, int]] = [
 # =========================================================
 # Сайты, которые ВСЕГДА в белых списках операторов РФ
 # (госуслуги, банки, маркетплейсы). Доступны даже при включённой фильтрации.
-WHITELIST_HOSTS_RU: List[Tuple[str, int]] = [
+WHITELIST_HOSTS_RU: list[tuple[str, int]] = [
     ("gosuslugi.ru", 443),
     ("sber.ru", 443),
     ("mos.ru", 443),
 ]
 # Нейтральные сайты — НЕ блокированы Роскомнадзором,
 # но и НЕ входят в белые списки. Должны работать только в обычном режиме.
-CONTROL_HOSTS_NEUTRAL: List[Tuple[str, int]] = [
+CONTROL_HOSTS_NEUTRAL: list[tuple[str, int]] = [
     ("example.com", 443),
     ("duckduckgo.com", 443),
     ("httpbin.org", 443),
@@ -111,7 +109,7 @@ NETBAND_AUTO_MASK: str = '3FFFFFFF'           # GSM/WCDMA/LTE auto
 # Формат: [(min_value, label, color, percent_score), ...]
 # Последняя запись с min_value=None — fallback.
 
-SIGNAL_THRESHOLDS: Dict[str, List[Tuple[Optional[float], str, str, int]]] = {
+SIGNAL_THRESHOLDS: dict[str, list[tuple[float | None, str, str, int]]] = {
     'rsrp': [(-80,  "Отличный",       "#00b894", 100),
              (-90,  "Хороший",        "#2ecc71", 80),
              (-100, "Средний",        "#fdcb6e", 50),
@@ -130,7 +128,7 @@ SIGNAL_THRESHOLDS: Dict[str, List[Tuple[Optional[float], str, str, int]]] = {
              (None, "Высокие потери", "#d63031", 10)],
 }
 
-PARAM_RANGES: Dict[str, Tuple[int, int]] = {
+PARAM_RANGES: dict[str, tuple[int, int]] = {
     'rsrp': (-120, -50),
     'rssi': (-110, -50),
     'rsrq': (-20, -3),
