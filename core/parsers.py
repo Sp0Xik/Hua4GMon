@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from core.constants import ANTENNA_MODES, BAND_FREQ_MAP, BANDS, EARFCN_RANGES
 
@@ -22,7 +22,7 @@ def is_valid_ip(s: str) -> bool:
     return all(0 <= int(p) <= 255 for p in s.split('.'))
 
 
-def extract_number(val: Any) -> Optional[float]:
+def extract_number(val: Any) -> float | None:
     """Строгое извлечение числа. Не ведётся на строки вроде 'timeout 0'."""
     if val is None or isinstance(val, bool):
         return None
@@ -41,15 +41,13 @@ def extract_number(val: Any) -> Optional[float]:
         return None
 
 
-def parse_cell_id(raw: Any) -> Tuple[Optional[int], Optional[int]]:
+def parse_cell_id(raw: Any) -> tuple[int | None, int | None]:
     """Парсит cell_id из Huawei API. Возвращает (eNodeB_id, sector)."""
     if raw is None or raw == '':
         return None, None
     s = str(raw).strip()
     try:
-        if s.lower().startswith('0x'):
-            cid = int(s, 16)
-        elif any(c in 'abcdefABCDEF' for c in s):
+        if s.lower().startswith('0x') or any(c in 'abcdefABCDEF' for c in s):
             cid = int(s, 16)
         else:
             cid = int(s)
@@ -63,7 +61,7 @@ def parse_cell_id(raw: Any) -> Tuple[Optional[int], Optional[int]]:
     return cid // 256, cid % 256
 
 
-def parse_antenna_value(label: str) -> Optional[int]:
+def parse_antenna_value(label: str) -> int | None:
     """Достаёт целочисленный код режима антенны из локализованной метки."""
     base = label.split('(')[0].strip()
     if base in ANTENNA_MODES:
@@ -74,7 +72,7 @@ def parse_antenna_value(label: str) -> Optional[int]:
     return None
 
 
-def earfcn_to_band(earfcn: Any) -> Optional[int]:
+def earfcn_to_band(earfcn: Any) -> int | None:
     """EARFCN (DL channel) → номер LTE-band, или None если не определён."""
     try:
         e = int(earfcn)
@@ -124,7 +122,7 @@ def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
     return "-"
 
 
-def _format_band_list(bands: List[int]) -> str:
+def _format_band_list(bands: list[int]) -> str:
     """Форматирует список номеров бандов в строку."""
     bands = list(dict.fromkeys(bands))   # дедуп с сохранением порядка
     if len(bands) == 1:
@@ -170,7 +168,7 @@ def first_present(data: Any, keys: Any) -> Any:
     return None
 
 
-def mcs_to_modulation(mcs: Any) -> Optional[str]:
+def mcs_to_modulation(mcs: Any) -> str | None:
     """MCS-индекс → тип модуляции (LTE, 3GPP TS 36.213).
 
     Приближённо: точные границы зависят от используемой MCS-таблицы
@@ -194,7 +192,7 @@ def mcs_to_modulation(mcs: Any) -> Optional[str]:
     return None
 
 
-def bands_from_mask(mask: Any) -> Optional[List[str]]:
+def bands_from_mask(mask: Any) -> list[str] | None:
     """Маска LTE-бэндов роутера (hex-строка) → список имён из BANDS.
 
     Возвращает:
