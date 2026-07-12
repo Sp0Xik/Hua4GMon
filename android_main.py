@@ -831,7 +831,12 @@ class ConnectionScreen(Screen):
         self.refresh_texts()
         # Сбрасываем статус: иначе после отключения на экране остаётся
         # висеть «Подключение...» от прошлой попытки.
-        self.status_lbl.text = ""
+        # ВАЖНО: при самом первом входе ScreenManager выставляет current
+        # ещё до того, как правило KV привяжет id к атрибуту экрана —
+        # поэтому обращаемся через ids и не падаем, если его пока нет.
+        lbl = self.ids.get('status_lbl')
+        if lbl is not None:
+            lbl.text = ""
 
     def refresh_texts(self) -> None:
         self.subtitle = t("Портативный монитор LTE Huawei")
@@ -976,11 +981,16 @@ class ToolsScreen(Screen):
             "для РФ.")
         self.lbl_wl_check = t("Проверить сейчас")
         self.antenna_values = [t(k) for k in ANTENNA_MODES]
-        self.antenna_spinner.text = t("Авто")
+        spinner = self.ids.get('antenna_spinner')
+        if spinner is not None:
+            spinner.text = t("Авто")
         self._build_band_checkboxes()
 
     def _build_band_checkboxes(self) -> None:
         if self._bands_built:
+            return
+        grid = self.ids.get('bands_grid')
+        if grid is None:      # KV-правило ещё не применено
             return
         from kivy.metrics import dp
         from kivy.uix.checkbox import CheckBox
@@ -989,7 +999,6 @@ class ToolsScreen(Screen):
         row_h = dp(44)
         self.band_vars: Dict[str, Any] = {}
         for band_name in BANDS:
-            grid = self.bands_grid
             # В GridLayout с size_hint_y=None детям нужна явная высота,
             # иначе строки схлопываются и накладываются друг на друга.
             cb = CheckBox(size_hint=(None, None), width=dp(40), height=row_h)
