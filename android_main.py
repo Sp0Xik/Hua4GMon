@@ -214,7 +214,38 @@ class SignalGraph(Widget):
                 py = y0 + plot_h * (v_cl - self._y_min) / rng
                 pts.extend([px, py])
             Color(0.0, 0.72, 0.58, 1)
-            Line(points=pts, width=max(1.5, h / 110.0))
+            Line(points=pts, width=min(1.8, max(1.0, h / 300.0)))
+
+
+class RotatedGraphBox(Widget):
+    """Показывает SignalGraph повёрнутым на 90° (альбомная ориентация).
+
+    Телефон обычно держат вертикально, а график информативнее вдоль
+    длинной стороны. Поворачиваем canvas: внутренний график получает
+    размеры с переставленными сторонами и разворачивается на 90°, из-за
+    чего визуально занимает экран «в ландшафте», не требуя реального
+    поворота экрана.
+    """
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        from kivy.graphics import PopMatrix, PushMatrix, Rotate
+        self.graph = SignalGraph()
+        with self.canvas.before:
+            PushMatrix()
+            self._rot = Rotate(angle=90, origin=self.center)
+        self.add_widget(self.graph)
+        with self.canvas.after:
+            PopMatrix()
+        self.bind(pos=self._sync, size=self._sync)
+
+    def _sync(self, *a):
+        # Внутренний график: стороны меняются местами, центр общий.
+        self.graph.size = (self.height, self.width)
+        self.graph.center = self.center
+        self._rot.origin = self.center
+
+    def set_data(self, *a, **kw):
+        self.graph.set_data(*a, **kw)
 
 
 def _graph_axes(param: str):
@@ -798,6 +829,9 @@ class ConnectionScreen(Screen):
 
     def on_pre_enter(self, *args):
         self.refresh_texts()
+        # Сбрасываем статус: иначе после отключения на экране остаётся
+        # висеть «Подключение...» от прошлой попытки.
+        self.status_lbl.text = ""
 
     def refresh_texts(self) -> None:
         self.subtitle = t("Портативный монитор LTE Huawei")
@@ -1312,7 +1346,9 @@ class Hua4GMonApp(App):
         param = self.graph_param
         y_min, y_max, title, unit = _graph_axes(param)
         root = BL(orientation='vertical', spacing=8, padding=8)
-        graph = SignalGraph()
+        # Альбомная ориентация: график разворачивается вдоль длинной
+        # стороны экрана, поэтому по времени видно заметно больше точек.
+        graph = RotatedGraphBox()
         graph.set_data(self.values.get(param, []), y_min, y_max, title, unit)
         # Запоминаем график, чтобы _update_ui обновлял его в реальном
         # времени, пока Popup открыт.
@@ -1321,7 +1357,7 @@ class Hua4GMonApp(App):
         close = Btn(text=t("← Назад"), size_hint_y=None, height='48dp',
                     background_normal='', background_color=(0.2, 0.35, 0.55, 1))
         popup = Popup(title=f"{title} ({unit})", content=root,
-                      size_hint=(0.98, 0.9))
+                      size_hint=(0.98, 0.92))
 
         def _on_dismiss(*a):
             self._fs_graph = None
