@@ -192,3 +192,34 @@ def mcs_to_modulation(mcs: Any) -> Optional[str]:
     if n <= 31:
         return "256QAM"
     return None
+
+
+def bands_from_mask(mask: Any) -> Optional[List[str]]:
+    """Маска LTE-бэндов роутера (hex-строка) → список имён из BANDS.
+
+    Возвращает:
+        * список имён бэндов, отмеченных в маске;
+        * [] — если маска соответствует AUTO (включены все бэнды);
+        * None — если маску не удалось разобрать.
+
+    Роутер отдаёт маску в net/net-mode как hex-строку, напр. '44'
+    (B3+B7) или '7FFFFFFFFFFFFFFF' (все = AUTO).
+    """
+    if mask in (None, ''):
+        return None
+    s = str(mask).strip()
+    try:
+        val = int(s, 16)
+    except (TypeError, ValueError):
+        return None
+    if val <= 0:
+        return None
+    # AUTO: роутер вернул «все бэнды» — трактуем как отсутствие фиксации.
+    # Проверяем, что установлены все биты известных нам бэндов И маска
+    # заметно шире нашего набора (значит это общая AUTO-маска).
+    known = 0
+    for v in BANDS.values():
+        known |= v
+    if (val & known) == known and val > known:
+        return []
+    return [name for name, bit in BANDS.items() if val & bit]
