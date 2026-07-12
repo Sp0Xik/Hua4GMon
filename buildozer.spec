@@ -13,7 +13,7 @@ source.include_exts = py,png,jpg,svg,kv,atlas,ttf
 source.include_patterns = core/*.py,assets/*.png
 
 # Версия
-version = 1.2
+version = 1.3
 
 # Точка входа: Buildozer ищет main.py. Поскольку наш десктоп — main.py,
 # а Android — android_main.py, указываем явно через p4a entrypoint.
