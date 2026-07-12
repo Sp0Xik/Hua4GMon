@@ -35,6 +35,7 @@ Hua4GMon — Huawei 4G Monitor (portable, single-file).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import datetime
 import logging
@@ -44,7 +45,7 @@ import time
 import tkinter as tk
 import webbrowser
 from tkinter import filedialog, messagebox, ttk
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from huawei_lte_api.Client import Client
 from huawei_lte_api.Connection import Connection
@@ -97,7 +98,7 @@ except ImportError:
     HAS_WINSOUND = False
 
 
-__version__ = "1.2"
+__version__ = "1.3"
 APP_NAME = "Hua4GMon"
 
 logger = logging.getLogger(APP_NAME)
@@ -134,7 +135,7 @@ class CanvasGraph(tk.Canvas):
         super().__init__(parent, bg='white', highlightthickness=1,
                          highlightbackground='#cccccc', **kw)
         self.history = history
-        self.values: List[float] = []
+        self.values: list[float] = []
         self.y_min = -120.0
         self.y_max = -50.0
         self.unit = "dBm"
@@ -193,7 +194,7 @@ class CanvasGraph(tk.Canvas):
         # Точки
         span = max(self.history - 1, 1)
         rng = max(self.y_max - self.y_min, 1e-9)
-        pts: List[float] = []
+        pts: list[float] = []
         for i, v in enumerate(self.values):
             x = pl + plot_w * i / span
             v_cl = max(self.y_min, min(self.y_max, v))
@@ -226,17 +227,17 @@ class Hua4GMon:
         # ---- Thread sync primitives ----
         self._stop_event = threading.Event()
         self._data_lock = threading.Lock()
-        self.monitor_thread: Optional[threading.Thread] = None
+        self.monitor_thread: threading.Thread | None = None
         self._interval_seconds: float = 1.0
 
         # ---- Connection state ----
         self.connected = False
         self.is_monitoring = False
-        self.client: Optional[Client] = None
-        self.last_data: Dict[str, Any] = {}
-        self.device_info: Dict[str, Any] = {}
-        self.start_time: Optional[float] = None
-        self.roof_win: Optional[tk.Toplevel] = None
+        self.client: Client | None = None
+        self.last_data: dict[str, Any] = {}
+        self.device_info: dict[str, Any] = {}
+        self.start_time: float | None = None
+        self.roof_win: tk.Toplevel | None = None
 
         # Cached credentials (live only in RAM, never written to disk)
         self._cached_ip: str = ""
@@ -244,10 +245,10 @@ class Hua4GMon:
 
         # ---- Monitoring buffers ----
         self.dynamic_params = ['rsrp', 'rssi', 'sinr', 'rsrq']
-        self.peak_values: Dict[str, Any] = {p: '-' for p in self.dynamic_params}
-        self.values: Dict[str, List[float]] = {p: [] for p in self.dynamic_params}
-        self.session_log: List[Dict[str, Any]] = []
-        self.dir_history: List[float] = []
+        self.peak_values: dict[str, Any] = dict.fromkeys(self.dynamic_params, '-')
+        self.values: dict[str, list[float]] = {p: [] for p in self.dynamic_params}
+        self.session_log: list[dict[str, Any]] = []
+        self.dir_history: list[float] = []
 
         # ---- Reconnect ----
         self.auto_reconnect = True
@@ -273,10 +274,8 @@ class Hua4GMon:
 
     def setup_ui(self) -> None:
         style = ttk.Style()
-        try:
+        with contextlib.suppress(tk.TclError):
             style.theme_use('clam')
-        except tk.TclError:
-            pass
 
         # Верхняя строка статуса
         self.top_bar = ttk.Frame(self.root)
@@ -383,10 +382,8 @@ class Hua4GMon:
         for name, val in snap['bands'].items():
             if name in self.band_checkboxes:
                 self.band_checkboxes[name].set(val)
-        try:
+        with contextlib.suppress(tk.TclError):
             self.notebook.select(snap['tab'])
-        except tk.TclError:
-            pass
         if snap['ontop']:
             self.toggle_on_top()
 
@@ -479,7 +476,7 @@ class Hua4GMon:
         # 4 крупных индикатора (с пиком всегда)
         self.digits_frame = ttk.Frame(self.tab_monitor)
         self.digits_frame.pack(fill=tk.X, padx=10, pady=5)
-        self.lbl_vars: Dict[str, Dict[str, Any]] = {}
+        self.lbl_vars: dict[str, dict[str, Any]] = {}
         for i, param in enumerate(self.dynamic_params):
             f = ttk.LabelFrame(self.digits_frame, text=param.upper(),
                                padding=5)
@@ -562,7 +559,7 @@ class Hua4GMon:
             "определите рабочий band на вкладке «Вышка».")).grid(
             row=0, column=0, columnspan=3, sticky='w', pady=(0, 8))
 
-        self.band_checkboxes: Dict[str, tk.BooleanVar] = {}
+        self.band_checkboxes: dict[str, tk.BooleanVar] = {}
         row, col = 1, 0
         for band_name in BANDS:
             var = tk.BooleanVar(value=False)
@@ -615,7 +612,7 @@ class Hua4GMon:
         info_frame = ttk.LabelFrame(
             self.tab_tower, text=t("Информация о станции"), padding=10)
         info_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
-        self.tower_labels: Dict[str, ttk.Label] = {}
+        self.tower_labels: dict[str, ttk.Label] = {}
         fields = [
             ('plmn', 'Оператор (PLMN)'),
             ('band', 'Рабочий Band (LTE)'),
@@ -639,7 +636,7 @@ class Hua4GMon:
         sim_frame = ttk.LabelFrame(
             self.tab_tower, text=t("SIM / Устройство"), padding=10)
         sim_frame.pack(fill=tk.X, padx=10, pady=5)
-        self.sim_labels: Dict[str, ttk.Label] = {}
+        self.sim_labels: dict[str, ttk.Label] = {}
         sim_fields = [
             ('Imei', 'IMEI (роутер)'),
             ('Imsi', 'IMSI (SIM)'),
@@ -668,7 +665,7 @@ class Hua4GMon:
             self.tab_status, text=t("Мониторинг железа и трафика"),
             padding=10)
         stat_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        self.stat_labels: Dict[str, ttk.Label] = {}
+        self.stat_labels: dict[str, ttk.Label] = {}
         fields = [
             ('uptime', 'Время сессии'),
             ('temp', 'Температура чипа'),
@@ -732,7 +729,7 @@ class Hua4GMon:
                                       padding=8)
         white_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
                          padx=(0, 5))
-        self.wl_white_labels: Dict[str, tk.Label] = {}
+        self.wl_white_labels: dict[str, tk.Label] = {}
         for host, port in WHITELIST_HOSTS_RU:
             lbl = tk.Label(white_frame,
                            text=f"{host}:{port} — ⏳ {t('не проверено')}",
@@ -744,7 +741,7 @@ class Hua4GMon:
                                      padding=8)
         neut_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
                         padx=(5, 0))
-        self.wl_neut_labels: Dict[str, tk.Label] = {}
+        self.wl_neut_labels: dict[str, tk.Label] = {}
         for host, port in CONTROL_HOSTS_NEUTRAL:
             lbl = tk.Label(neut_frame,
                            text=f"{host}:{port} — ⏳ {t('не проверено')}",
@@ -765,15 +762,15 @@ class Hua4GMon:
 
     def _whitelist_task(self) -> None:
         """В фоне опрашивает все цели и шлёт результаты обратно в UI."""
-        white_results: List[Tuple[str, bool]] = []
-        white_details: Dict[str, str] = {}
+        white_results: list[tuple[str, bool]] = []
+        white_details: dict[str, str] = {}
         for host, port in WHITELIST_HOSTS_RU:
             ok, detail = tcp_reachable(host, port)
             white_results.append((host, ok))
             white_details[host] = detail
 
-        neutral_results: List[Tuple[str, bool]] = []
-        neutral_details: Dict[str, str] = {}
+        neutral_results: list[tuple[str, bool]] = []
+        neutral_details: dict[str, str] = {}
         for host, port in CONTROL_HOSTS_NEUTRAL:
             ok, detail = tcp_reachable(host, port)
             neutral_results.append((host, ok))
@@ -785,10 +782,10 @@ class Hua4GMon:
 
     def _render_whitelist_results(
             self,
-            white_results: List[Tuple[str, bool]],
-            white_details: Dict[str, str],
-            neutral_results: List[Tuple[str, bool]],
-            neutral_details: Dict[str, str]) -> None:
+            white_results: list[tuple[str, bool]],
+            white_details: dict[str, str],
+            neutral_results: list[tuple[str, bool]],
+            neutral_details: dict[str, str]) -> None:
         self.wl_progress.stop()
         self.wl_button.config(state='normal')
 
@@ -871,7 +868,7 @@ class Hua4GMon:
         self.reset_graph()
         self.session_log.clear()
         self.dir_history.clear()
-        self.peak_values = {p: '-' for p in self.dynamic_params}
+        self.peak_values = dict.fromkeys(self.dynamic_params, '-')
         # Заполняем SIM/Device-лейблы из закешированного device.information()
         for key, lbl in self.sim_labels.items():
             raw = self.device_info.get(key, '')
@@ -920,7 +917,7 @@ class Hua4GMon:
 
     def _monitor_loop(self) -> None:
         tick = 0
-        month_cache: Dict[str, Any] = {}
+        month_cache: dict[str, Any] = {}
         while not self._stop_event.is_set():
             client = self.client
             if client is None:
@@ -1010,7 +1007,7 @@ class Hua4GMon:
         with self._data_lock:
             data = dict(self.last_data)
 
-        current_vals: Dict[str, Optional[float]] = {
+        current_vals: dict[str, float | None] = {
             p: extract_number(data.get(p)) for p in self.dynamic_params
         }
 
@@ -1199,7 +1196,7 @@ class Hua4GMon:
         self.dir_label.config(text=arrow, fg=color)
         self.dir_text.config(text=text, fg=color)
 
-    def _direction_glyph(self) -> Tuple[str, str]:
+    def _direction_glyph(self) -> tuple[str, str]:
         if len(self.dir_history) < DIRECTION_LOOKBACK * 2:
             return "—", "gray"
         recent = self.dir_history[-DIRECTION_LOOKBACK:]
@@ -1449,7 +1446,7 @@ class Hua4GMon:
         self.setup_graph()
 
     def reset_peaks(self) -> None:
-        self.peak_values = {p: '-' for p in self.dynamic_params}
+        self.peak_values = dict.fromkeys(self.dynamic_params, '-')
         for p in self.dynamic_params:
             self.lbl_vars[p]['peak'].config(text=t("Пик: -"))
 
@@ -1468,10 +1465,8 @@ class Hua4GMon:
         try:
             self.root.quit()
         finally:
-            try:
+            with contextlib.suppress(tk.TclError):
                 self.root.destroy()
-            except tk.TclError:
-                pass
 
 
 # =========================================================
