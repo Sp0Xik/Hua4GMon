@@ -23,10 +23,8 @@
 """
 from __future__ import annotations
 
-from typing import Dict, List
-
 # Поддерживаемые языки: код → человекочитаемое имя (для меню выбора).
-LANGUAGES: Dict[str, str] = {
+LANGUAGES: dict[str, str] = {
     "ru": "Русский",
     "en": "English",
 }
@@ -36,7 +34,7 @@ _current_lang = _DEFAULT_LANG
 
 # RU → EN. Ключ — исходная русская строка (ровно как в коде).
 # Если строки здесь нет, t() вернёт ключ (т.е. русский вариант).
-EN: Dict[str, str] = {
+EN: dict[str, str] = {
     # --- Вкладки ---
     "⚙️ Подключение": "⚙️ Connection",
     "📈 Монитор": "📈 Monitor",
@@ -72,6 +70,17 @@ EN: Dict[str, str] = {
     "ТЕСТОВЫЙ РЕЖИМ — демо-данные": "TEST MODE — demo data",
     "ДЕМО": "DEMO",
     "Во весь экран": "Fullscreen",
+    "Читаю настройки модема…": "Reading modem settings…",
+    "Band Lock: AUTO (все диапазоны)": "Band Lock: AUTO (all bands)",
+    "Band Lock: {bands}": "Band Lock: {bands}",
+    "Band Lock: не удалось прочитать": "Band Lock: could not read",
+    "Band Lock: не поддерживается моделью": "Band Lock: not supported by model",
+    "Антенна: {mode}": "Antenna: {mode}",
+    "Антенна: не удалось прочитать": "Antenna: could not read",
+    "Антенна: не поддерживается моделью": "Antenna: not supported by model",
+    "Нет подключения к роутеру.": "Not connected to the router.",
+    "Тестовый режим — настройки модема не читаются.":
+        "Test mode — modem settings are not read.",
     "Модуляция DL": "Modulation DL",
     "Модуляция UL": "Modulation UL",
     "Модуляция DL / UL": "Modulation DL / UL",
@@ -378,7 +387,7 @@ def current_language() -> str:
     return _current_lang
 
 
-def available_languages() -> List[str]:
+def available_languages() -> list[str]:
     """Список кодов поддерживаемых языков."""
     return list(LANGUAGES.keys())
 
