@@ -94,6 +94,7 @@ from core import (
     RECONNECT_DELAY_MAX,
     WHITELIST_HOSTS_RU,
     analyze_whitelist_results,
+    bands_from_mask,
     current_language,
     evaluate_signal,
     extract_number,
@@ -186,25 +187,67 @@ class SignalGraph(Widget):
         self._redraw()
 
     def _redraw(self) -> None:
-        from kivy.graphics import Color, Line, Rectangle
+        from kivy.core.text import Label as CoreLabel
+        from kivy.graphics import Color, Ellipse, Line, Rectangle
         self.canvas.clear()
         w, h = self.width, self.height
-        if w < 40 or h < 40:
+        if w < 60 or h < 60:
             return
-        pl, pr, pt, pb = 8, 8, 8, 8
+
+        def _text(txt, size=12, color=(0.62, 0.68, 0.74, 1), bold=False):
+            lbl = CoreLabel(text=str(txt), font_size=size, bold=bold,
+                            color=color)
+            lbl.refresh()
+            return lbl.texture
+
+        # Отступы: слева — под подписи оси Y, сверху — под заголовок,
+        # снизу — под подпись оси X.
+        pl, pr, pt, pb = 46, 12, 22, 22
         plot_w, plot_h = w - pl - pr, h - pt - pb
+        if plot_w <= 10 or plot_h <= 10:
+            return
         x0, y0 = self.x + pl, self.y + pb
+
         with self.canvas:
-            # фон
+            # Фон
             Color(0.1, 0.12, 0.16, 1)
             Rectangle(pos=(self.x, self.y), size=(w, h))
-            # сетка (4 линии)
-            Color(0.2, 0.23, 0.27, 1)
+
+            # Сетка + подписи значений оси Y (5 уровней)
             for i in range(5):
                 gy = y0 + plot_h * i / 4
+                Color(0.2, 0.23, 0.27, 1)
                 Line(points=[x0, gy, x0 + plot_w, gy], width=1)
+                val = self._y_min + (self._y_max - self._y_min) * i / 4
+                tex = _text(f"{val:g}", size=12)
+                Color(1, 1, 1, 1)
+                Rectangle(texture=tex,
+                          pos=(x0 - tex.width - 6, gy - tex.height / 2),
+                          size=tex.size)
+
+            # Ось X (базовая линия)
+            Color(0.35, 0.4, 0.45, 1)
+            Line(points=[x0, y0, x0 + plot_w, y0], width=1)
+
+            # Заголовок графика (верх-лево)
+            tex = _text(f"{self._title} ({self._unit})", size=14,
+                        color=(0.9, 0.93, 0.96, 1), bold=True)
+            Color(1, 1, 1, 1)
+            Rectangle(texture=tex,
+                      pos=(x0, self.y + h - pt + 3), size=tex.size)
+
+            # Подпись оси X (низ-центр)
+            tex = _text(t("последние {n} точек").format(n=len(self._values)),
+                        size=11, color=(0.5, 0.55, 0.6, 1))
+            Color(1, 1, 1, 1)
+            Rectangle(texture=tex,
+                      pos=(x0 + (plot_w - tex.width) / 2,
+                           self.y + 4), size=tex.size)
+
             if len(self._values) < 2:
                 return
+
+            # Линия графика
             rng = max(self._y_max - self._y_min, 1e-9)
             span = max(len(self._values) - 1, 1)
             pts = []
@@ -216,36 +259,47 @@ class SignalGraph(Widget):
             Color(0.0, 0.72, 0.58, 1)
             Line(points=pts, width=min(1.8, max(1.0, h / 300.0)))
 
+            # Маркер и значение последней точки (верх-право)
+            lx, ly = pts[-2], pts[-1]
+            Ellipse(pos=(lx - 4, ly - 4), size=(8, 8))
+            tex = _text(f"{self._values[-1]:g} {self._unit}", size=14,
+                        color=(0.0, 0.85, 0.68, 1), bold=True)
+            Color(1, 1, 1, 1)
+            Rectangle(texture=tex,
+                      pos=(self.x + w - pr - tex.width,
+                           self.y + h - pt + 3), size=tex.size)
 
-class RotatedGraphBox(Widget):
-    """Показывает SignalGraph повёрнутым на 90° (альбомная ориентация).
 
-    Телефон обычно держат вертикально, а график информативнее вдоль
-    длинной стороны. Поворачиваем canvas: внутренний график получает
-    размеры с переставленными сторонами и разворачивается на 90°, из-за
-    чего визуально занимает экран «в ландшафте», не требуя реального
-    поворота экрана.
+class RotatedBox(Widget):
+    """Показывает вложенный layout повёрнутым на 90° (альбомно).
+
+    Телефон держат вертикально, а график информативнее вдоль длинной
+    стороны. Разворачиваем ВЕСЬ контент (график и кнопку), чтобы всё
+    читалось в одной ориентации — иначе подписи графика и кнопка
+    смотрят в разные стороны.
+
+    Используем Scatter, а не голый Rotate по canvas: Scatter применяет
+    ту же трансформацию к координатам касаний, поэтому кнопка внутри
+    остаётся кликабельной там, где она нарисована.
     """
-    def __init__(self, **kw):
+    def __init__(self, inner, **kw):
         super().__init__(**kw)
-        from kivy.graphics import PopMatrix, PushMatrix, Rotate
-        self.graph = SignalGraph()
-        with self.canvas.before:
-            PushMatrix()
-            self._rot = Rotate(angle=90, origin=self.center)
-        self.add_widget(self.graph)
-        with self.canvas.after:
-            PopMatrix()
+        from kivy.uix.scatter import Scatter
+        self._inner = inner
+        inner.size_hint = (None, None)
+        self._scatter = Scatter(do_rotation=False, do_scale=False,
+                                do_translation=False, size_hint=(None, None))
+        self._scatter.add_widget(inner)
+        self.add_widget(self._scatter)
         self.bind(pos=self._sync, size=self._sync)
 
     def _sync(self, *a):
-        # Внутренний график: стороны меняются местами, центр общий.
-        self.graph.size = (self.height, self.width)
-        self.graph.center = self.center
-        self._rot.origin = self.center
-
-    def set_data(self, *a, **kw):
-        self.graph.set_data(*a, **kw)
+        # Внутренний layout — «в ландшафте»: стороны меняются местами.
+        land = (self.height, self.width)
+        self._scatter.size = land
+        self._inner.size = land
+        self._scatter.rotation = 90
+        self._scatter.center = self.center
 
 
 def _graph_axes(param: str):
@@ -746,6 +800,20 @@ ScreenManager:
                         text: root.lbl_bandlock
                     HintLabel:
                         text: root.hint_bandlock
+                    # Показывается ТОЛЬКО если настройки прочитать не
+                    # удалось (иначе пустые чекбоксы выглядели бы как
+                    # «фиксации нет»). При успехе — пусто, всё видно
+                    # прямо в чекбоксах и в выборе антенны.
+                    Label:
+                        text: root.current_cfg
+                        font_size: dp(13)
+                        color: 0.95, 0.62, 0.25, 1
+                        size_hint_y: None
+                        height: (self.texture_size[1] + dp(6)) if self.text else 0
+                        opacity: 1 if self.text else 0
+                        text_size: self.width, None
+                        halign: 'left'
+                        valign: 'top'
                     GridLayout:
                         id: bands_grid
                         cols: 2
@@ -957,6 +1025,7 @@ class ToolsScreen(Screen):
     wl_detail = StringProperty("")
     wl_color = ListProperty([0.5, 0.5, 0.5, 1])
     antenna_values = ListProperty([])
+    current_cfg = StringProperty("")
 
     _bands_built = False
 
@@ -985,6 +1054,21 @@ class ToolsScreen(Screen):
         if spinner is not None:
             spinner.text = t("Авто")
         self._build_band_checkboxes()
+        # Подтягиваем текущие настройки модема (ТОЛЬКО чтение).
+        self.current_cfg = ""
+        App.get_running_app().load_router_config()
+
+    def apply_router_config(self, band_names, antenna_label,
+                            summary: str) -> None:
+        """Отмечает в UI то, что реально настроено на модеме сейчас."""
+        if band_names is not None:
+            for name, cb in self.band_vars.items():
+                cb.active = name in band_names
+        if antenna_label is not None:
+            spinner = self.ids.get('antenna_spinner')
+            if spinner is not None:
+                spinner.text = t(antenna_label)
+        self.current_cfg = summary
 
     def _build_band_checkboxes(self) -> None:
         if self._bands_built:
@@ -1351,29 +1435,38 @@ class Hua4GMonApp(App):
     def open_fullscreen_graph(self) -> None:
         from kivy.uix.boxlayout import BoxLayout as BL
         from kivy.uix.button import Button as Btn
+        from kivy.uix.label import Label as KLabel
 
         param = self.graph_param
         y_min, y_max, title, unit = _graph_axes(param)
-        root = BL(orientation='vertical', spacing=8, padding=8)
-        # Альбомная ориентация: график разворачивается вдоль длинной
-        # стороны экрана, поэтому по времени видно заметно больше точек.
-        graph = RotatedGraphBox()
+
+        # Вся начинка (заголовок, график, кнопка) лежит в одном layout и
+        # разворачивается целиком — иначе подписи графика и кнопка
+        # смотрят в разные стороны и читать график неудобно.
+        inner = BL(orientation='vertical', spacing=6, padding=8)
+        head = KLabel(text=f"{title} ({unit})", bold=True, font_size='17sp',
+                      size_hint_y=None, height='34dp')
+        graph = SignalGraph()
         graph.set_data(self.values.get(param, []), y_min, y_max, title, unit)
-        # Запоминаем график, чтобы _update_ui обновлял его в реальном
-        # времени, пока Popup открыт.
-        self._fs_graph = graph
-        root.add_widget(graph)
         close = Btn(text=t("← Назад"), size_hint_y=None, height='48dp',
-                    background_normal='', background_color=(0.2, 0.35, 0.55, 1))
-        popup = Popup(title=f"{title} ({unit})", content=root,
-                      size_hint=(0.98, 0.92))
+                    background_normal='',
+                    background_color=(0.2, 0.35, 0.55, 1))
+        inner.add_widget(head)
+        inner.add_widget(graph)
+        inner.add_widget(close)
+
+        # Запоминаем именно график — его обновляет _update_ui, пока
+        # Popup открыт.
+        self._fs_graph = graph
+
+        popup = Popup(title='', separator_height=0,
+                      content=RotatedBox(inner), size_hint=(0.98, 0.96))
 
         def _on_dismiss(*a):
             self._fs_graph = None
 
         popup.bind(on_dismiss=_on_dismiss)
         close.bind(on_release=lambda *a: popup.dismiss())
-        root.add_widget(close)
         popup.open()
 
     @mainthread
@@ -1645,6 +1738,83 @@ class Hua4GMonApp(App):
                                 t("Не удалось перезагрузить:\n{err}").format(
                                     err=str(e)))
         self._run_bg(task)
+
+    def load_router_config(self) -> None:
+        """Читает ТЕКУЩИЕ настройки модема: Band Lock и режим антенны.
+
+        Только GET-запросы — ничего не изменяем. Прочитанное сразу
+        подставляется в сами элементы управления (чекбоксы бэндов и
+        выбор антенны), а не выводится отдельными строками.
+
+        Если модель не отдаёт endpoint (частый случай на USB-стиках),
+        показываем короткое предупреждение: пустые чекбоксы иначе
+        выглядели бы как «фиксации нет», что вводило бы в заблуждение.
+        Существующая фиксация на модеме при этом не затрагивается.
+        """
+        if self.demo_mode:
+            self._deliver_router_config([], "Авто", "")
+            return
+        client = self.client
+        if client is None:
+            self._deliver_router_config(
+                None, None, t("Нет подключения к роутеру."))
+            return
+
+        def task():
+            warns = []
+            band_names = None
+            antenna_label = None
+
+            # --- Band Lock: net/net-mode (GET) ---
+            try:
+                nm = client.net.net_mode() or {}
+                band_names = bands_from_mask(nm.get('LTEBand'))
+                if band_names is None:
+                    warns.append(t("Band Lock: не удалось прочитать"))
+            except Exception:
+                warns.append(t("Band Lock: не поддерживается моделью"))
+
+            # --- Антенна: device/antenna_settings или antenna_type (GET) ---
+            try:
+                ant_raw = None
+                for getter in ('get_antenna_settings', 'antenna_type',
+                               'antenna_status'):
+                    fn = getattr(client.device, getter, None)
+                    if fn is None:
+                        continue
+                    try:
+                        res = fn() or {}
+                    except Exception:
+                        continue
+                    if isinstance(res, dict):
+                        ant_raw = first_present(
+                            res, ('antennatype', 'AntennaType', 'antenna_type',
+                                  'type', 'Type'))
+                    else:
+                        ant_raw = res
+                    if ant_raw is not None:
+                        break
+                code = extract_number(ant_raw)
+                if code is not None:
+                    rev = {v: k for k, v in ANTENNA_MODES.items()}
+                    antenna_label = rev.get(int(code))
+                if antenna_label is None:
+                    warns.append(t("Антенна: не удалось прочитать"))
+            except Exception:
+                warns.append(t("Антенна: не поддерживается моделью"))
+
+            self._deliver_router_config(band_names, antenna_label,
+                                        "\n".join(warns))
+        self._run_bg(task)
+
+    @mainthread
+    def _deliver_router_config(self, band_names, antenna_label,
+                               summary: str) -> None:
+        try:
+            scr = self.sm.get_screen('tools')
+        except Exception:
+            return
+        scr.apply_router_config(band_names, antenna_label, summary)
 
     def whitelist_check(self) -> None:
         def task():
