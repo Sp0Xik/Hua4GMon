@@ -81,9 +81,10 @@ from core import (
     first_present,
     format_band_label,
     format_bytes_mb,
+    format_mimo,
+    format_modulation,
     format_rate_mbps,
     is_valid_ip,
-    mcs_to_modulation,
     parse_antenna_value,
     parse_cell_id,
     set_language,
@@ -684,7 +685,10 @@ class Hua4GMon:
             ttk.Label(stat_frame, text=f"{t(name)}:",
                       font=("", 10, "bold")).grid(
                 row=i, column=0, sticky='e', pady=6, padx=5)
-            lbl = ttk.Label(stat_frame, text="-", font=("", 10))
+            # Модуляция может быть длинной (DL+UL) — разрешаем перенос.
+            wrap = 600 if key == 'mod' else 0
+            lbl = ttk.Label(stat_frame, text="-", font=("", 10),
+                            wraplength=wrap, justify='left')
             lbl.grid(row=i, column=1, sticky='w', pady=6, padx=5)
             self.stat_labels[key] = lbl
 
@@ -1145,15 +1149,15 @@ class Hua4GMon:
 
         # Доп. поля из signal()/month_statistics (могут отсутствовать на
         # части моделей — тогда показываем прочерк).
-        dl_mcs = first_present(data, ('dl_mcs', 'dlmcs', 'dlMcs'))
-        ul_mcs = first_present(data, ('ul_mcs', 'ulmcs', 'ulMcs'))
+        dl_mod = format_modulation(
+            first_present(data, ('dl_mcs', 'dlmcs', 'dlMcs')))
+        ul_mod = format_modulation(
+            first_present(data, ('ul_mcs', 'ulmcs', 'ulMcs')))
         mod_parts = []
-        if dl_mcs is not None:
-            m = mcs_to_modulation(dl_mcs)
-            mod_parts.append(f"DL MCS {dl_mcs}" + (f" (~{m})" if m else ""))
-        if ul_mcs is not None:
-            m = mcs_to_modulation(ul_mcs)
-            mod_parts.append(f"UL MCS {ul_mcs}" + (f" (~{m})" if m else ""))
+        if dl_mod:
+            mod_parts.append(f"DL {dl_mod}")
+        if ul_mod:
+            mod_parts.append(f"UL {ul_mod}")
         self.stat_labels['mod'].config(
             text=" / ".join(mod_parts) if mod_parts else "-")
 
@@ -1162,7 +1166,7 @@ class Hua4GMon:
             text=str(txp) if txp is not None else "-")
         mimo = first_present(data, ('transmode', 'TransMode', 'mimo'))
         self.stat_labels['mimo'].config(
-            text=str(mimo) if mimo is not None else "-")
+            text=format_mimo(mimo) if mimo is not None else "-")
 
         m_dl = first_present(data, ('CurrentMonthDownload',))
         m_ul = first_present(data, ('CurrentMonthUpload',))
