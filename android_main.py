@@ -102,9 +102,11 @@ from core import (
     first_present,
     format_band_label,
     format_bytes_mb,
+    format_mimo,
+    format_modulation,
     format_rate_mbps,
     is_valid_ip,
-    mcs_to_modulation,
+    parse_antenna_response,
     parse_antenna_value,
     parse_cell_id,
     set_language,
@@ -135,12 +137,6 @@ def _unit(param: str) -> str:
 
 def _first_present(data, keys):
     return first_present(data, keys)
-
-
-def _mcs_label(mcs) -> str:
-    """'MCS N (~QAM)' — сырое значение MCS плюс ориентировочный тип."""
-    mod = mcs_to_modulation(mcs)
-    return f"MCS {mcs}" + (f"  (~{mod})" if mod else "")
 
 
 def _hex_to_rgba(hexcolor: str):
@@ -1579,12 +1575,12 @@ class Hua4GMonApp(App):
         # Модуляция передаётся как MCS-индекс — расшифровываем в тип QAM.
         dl = _first_present(data, ('dl_mcs', 'dlmcs', 'dlMcs'))
         ul = _first_present(data, ('ul_mcs', 'ulmcs', 'ulMcs'))
-        if dl is not None:
-            status_lines.append(
-                f"{t('Модуляция DL')}: {_mcs_label(dl)}")
-        if ul is not None:
-            status_lines.append(
-                f"{t('Модуляция UL')}: {_mcs_label(ul)}")
+        dl_mod = format_modulation(dl)
+        ul_mod = format_modulation(ul)
+        if dl_mod is not None:
+            status_lines.append(f"{t('Модуляция DL')}: {dl_mod}")
+        if ul_mod is not None:
+            status_lines.append(f"{t('Модуляция UL')}: {ul_mod}")
         # Мощность передатчика модема (txpower) — косвенный индикатор
         # качества UL: чем выше, тем сильнее модем «вынужден кричать».
         txp = _first_present(data, ('txpower', 'TxPower', 'tx_power'))
@@ -1593,7 +1589,7 @@ class Hua4GMonApp(App):
         # Режим MIMO (число потоков)
         mimo = _first_present(data, ('transmode', 'TransMode', 'mimo'))
         if mimo is not None:
-            status_lines.append(f"{t('Режим MIMO')}: {mimo}")
+            status_lines.append(f"{t('Режим MIMO')}: {format_mimo(mimo)}")
         # Месячный трафик (если роутер отдаёт month_statistics)
         m_dl = _first_present(data, ('CurrentMonthDownload',))
         m_ul = _first_present(data, ('CurrentMonthUpload',))
@@ -1795,30 +1791,27 @@ class Hua4GMonApp(App):
 
             # --- Антенна: device/antenna_settings или antenna_type (GET) ---
             try:
-                ant_raw = None
+                code = None
                 for getter in ('get_antenna_settings', 'antenna_type',
-                               'antenna_status'):
+                               'antenna_status', 'antenna_set_type'):
                     fn = getattr(client.device, getter, None)
                     if fn is None:
                         continue
                     try:
-                        res = fn() or {}
+                        res = fn()
                     except Exception:
                         logger.debug("Antenna getter %s failed", getter,
                                      exc_info=True)
                         continue
-                    if isinstance(res, dict):
-                        ant_raw = first_present(
-                            res, ('antennatype', 'AntennaType', 'antenna_type',
-                                  'type', 'Type'))
-                    else:
-                        ant_raw = res
-                    if ant_raw is not None:
+                    # Логируем сырой ответ — помогает подогнать разбор
+                    # под конкретную модель, если что-то не считалось.
+                    logger.info("Antenna %s -> %r", getter, res)
+                    code = parse_antenna_response(res)
+                    if code is not None:
                         break
-                code = extract_number(ant_raw)
                 if code is not None:
                     rev = {v: k for k, v in ANTENNA_MODES.items()}
-                    antenna_label = rev.get(int(code))
+                    antenna_label = rev.get(code)
                 if antenna_label is None:
                     warns.append(t("Антенна: не удалось прочитать"))
             except Exception:
