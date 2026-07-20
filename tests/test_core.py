@@ -196,28 +196,49 @@ def test_antenna_unknown():
 # =========================================================
 
 def test_band_single_label():
+    # Без EARFCN — по полю band
     assert core.format_band_label('7') == "B7 (2600 МГц)"
     assert core.format_band_label('LTE BAND 20') == "B20 (800DD МГц)"
     assert core.format_band_label('B3') == "B3 (1800+ МГц)"
 
 
 def test_band_carrier_aggregation():
+    # Без EARFCN строка с '+' разбирается как CA
     assert core.format_band_label('7+20') == "CA: B7/2600 + B20/800DD"
     assert core.format_band_label('B3+B7') == "CA: B3/1800+ + B7/2600"
 
 
 def test_band_hex_bitmask():
     assert core.format_band_label('0x40') == "B7 (2600 МГц)"
-    # 0x80044 = 0x4 (B3) + 0x40 (B7) + 0x80000 (B20)
     assert core.format_band_label('0x80044') == \
            "CA: B3/1800+ + B7/2600 + B20/800DD"
 
 
-def test_band_fallback_by_earfcn():
-    """Если band пустой, но есть EARFCN — определяем band по нему."""
-    assert core.format_band_label(None, 6300).startswith("≈ B20")
-    assert core.format_band_label('', 1300).startswith("≈ B3")
-    assert core.format_band_label('-', 3000).startswith("≈ B7")
+def test_band_earfcn_priority():
+    """EARFCN определяет АКТИВНЫЙ primary-band и имеет приоритет над
+    полем band (которое у части роутеров = список поддерживаемых)."""
+    assert core.format_band_label(None, 6300) == "B20 (800DD МГц)"
+    assert core.format_band_label('', 1300) == "B3 (1800+ МГц)"
+    assert core.format_band_label('-', 3000) == "B7 (2600 МГц)"
+
+
+def test_band_earfcn_string_format():
+    """Роутер (B636) отдаёт EARFCN строкой 'DL:200 UL:18200' — берём DL."""
+    assert core.format_band_label('', 'DL:200 UL:18200') == "B1 (2100 МГц)"
+    assert core.format_band_label('', 'DL:1725 UL:19725') == "B3 (1800+ МГц)"
+
+
+def test_band_ignores_supported_list_when_earfcn_present():
+    """Реальный кейс B636: поле band = список поддерживаемых бэндов,
+    но EARFCN даёт настоящий активный primary — доверяем EARFCN."""
+    # Android-скриншот: band-мусор, EARFCN DL:200 -> B1
+    assert core.format_band_label(
+        'CA: B10 + B1/2100 + B15 + B3/1800+', 'DL:200 UL:18200'
+    ) == "B1 (2100 МГц)"
+    # Windows-скриншот: тот же мусор, EARFCN DL:1725 -> B3
+    assert core.format_band_label(
+        'CA: B15 + B3/1800+ + B10 + B1/2100', 'DL:1725 UL:19725'
+    ) == "B3 (1800+ МГц)"
 
 
 @pytest.mark.parametrize("missing", [None, '', '-'])
@@ -494,3 +515,72 @@ def test_android_main_imports_exist_in_core():
         assert hasattr(core, name), (
             f"android_main.py импортирует core.{name}, но его нет в core "
             f"(рассинхрон android_main.py и core/ — APK упадёт на старте)")
+
+
+# =========================================================
+# format_mimo (TM -> схема MIMO)
+# =========================================================
+
+def test_mimo_tm_labels():
+    assert core.format_mimo('TM[4]') == "2x2 (closed-loop) [TM4]"
+    assert core.format_mimo('4') == "2x2 (closed-loop) [TM4]"
+    assert core.format_mimo('TM[2]') == "2x2 (Tx div) [TM2]"
+
+
+def test_mimo_unknown_and_empty():
+    assert core.format_mimo('') == "-"
+    assert core.format_mimo(None) == "-"
+    assert core.format_mimo('weird') == "weird"
+
+
+# =========================================================
+# format_modulation (MCS/строка роутера -> компактный вид)
+# =========================================================
+
+def test_modulation_verbose_string():
+    """B636 отдаёт подробную строку по carrier/codeword."""
+    assert core.format_modulation(
+        'mcsDownCarrier1Code0:27@256QAM mcsDownCarrier1Code1:27@256QAM'
+    ) == "256QAM (MCS 27)"
+    assert core.format_modulation('mcsUpCarrier1:20@64QAM') == \
+        "64QAM (MCS 20)"
+
+
+def test_modulation_mixed_mcs():
+    assert core.format_modulation(
+        'mcsDownCarrier1Code0:23@256QAM mcsDownCarrier1Code1:26@256QAM'
+    ) == "256QAM (MCS 23/26)"
+
+
+def test_modulation_plain_index():
+    assert core.format_modulation(26) == "64QAM (MCS 26)"
+
+
+def test_modulation_none():
+    assert core.format_modulation(None) is None
+    assert core.format_modulation('') is None
+    assert core.format_modulation('garbage') is None
+
+
+# =========================================================
+# parse_antenna_response (код антенны из ответа API)
+# =========================================================
+
+@pytest.mark.parametrize("res, code", [
+    ({'antennatype': '2'}, 2),
+    ({'antenna_type': 0}, 0),
+    ({'AntennaType': '3'}, 3),
+    ({'curtype': '1', 'other': 'x'}, 1),
+    ({'mode': '0'}, 0),
+    ('2', 2),
+    (2, 2),
+])
+def test_antenna_response_parsed(res, code):
+    assert core.parse_antenna_response(res) == code
+
+
+@pytest.mark.parametrize("res", [
+    {'unrelated': '5'}, {}, None, {'type': '9'},  # 9 вне диапазона 0..3
+])
+def test_antenna_response_none(res):
+    assert core.parse_antenna_response(res) is None
