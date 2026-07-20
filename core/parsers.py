@@ -84,20 +84,44 @@ def earfcn_to_band(earfcn: Any) -> int | None:
     return None
 
 
-def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
-    """Человекочитаемая метка LTE-band.
+def _earfcn_dl(earfcn: Any) -> Any:
+    """Достаёт DL-EARFCN. Роутер может отдать число (200) или строку
+    вида 'DL:200 UL:18200' — берём именно DL."""
+    if earfcn in (None, '', '-'):
+        return None
+    s = str(earfcn)
+    m = re.search(r'DL[:\s]*(\d+)', s, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'\d+', s)
+    return int(m.group(0)) if m else None
 
-    Понимает форматы:
-      "LTE BAND 7", "7", "B7", "B7+B20", "7+20", "0x40".
-    Если band недоступен — пытается определить по EARFCN.
+
+def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
+    """Человекочитаемая метка активного LTE-band.
+
+    ВАЖНО: primary-band определяется в первую очередь по EARFCN — это
+    надёжный признак АКТИВНОГО канала. Поле ``band`` у части роутеров
+    (например Huawei B636) содержит список поддерживаемых/сконфигуриро-
+    ванных бэндов, а не активную агрегацию, поэтому доверять ему для
+    определения рабочего бэнда нельзя. Факт агрегации показывается
+    отдельно (поле «Агрегация (CA)»).
+
+    Понимает форматы band: "LTE BAND 7", "7", "B7", "B7+B20", "0x40".
     """
+    # 1. EARFCN — приоритет (активный primary-band).
+    b = earfcn_to_band(_earfcn_dl(earfcn))
+    if b is not None:
+        freq = BAND_FREQ_MAP.get(b, '')
+        return f"B{b}" + (f" ({freq} МГц)" if freq else "")
+
+    # 2. EARFCN недоступен — разбираем поле band как раньше.
     if band_raw not in (None, '', '-'):
         s = str(band_raw).strip()
         # Hex-маска вида 0x40
         if s.lower().startswith('0x'):
             try:
                 mask = int(s, 16)
-                # Перебираем известные одиночные биты
                 hits = [b for name, val in BANDS.items()
                         for b in [int(re.search(r'B(\d+)', name).group(1))]
                         if mask & val]
@@ -105,20 +129,11 @@ def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
                     return _format_band_list(hits)
             except (ValueError, AttributeError):
                 pass
-        # Извлекаем все номера 1..100 (B1..B71, без false-positives).
-        # Без \b — иначе не матчит "B3+B7" (B и 3 оба word-character).
         nums = [int(n) for n in re.findall(r'\d+', s)
                 if 1 <= int(n) <= 100]
         if nums:
             return _format_band_list(nums)
-        return s   # вернём как есть
-    # Fallback по EARFCN
-    if earfcn not in (None, '', '-'):
-        b = earfcn_to_band(earfcn)
-        if b is not None:
-            freq = BAND_FREQ_MAP.get(b, '')
-            tail = f" ({freq} МГц)" if freq else ""
-            return f"≈ B{b}{tail} [по EARFCN={earfcn}]"
+        return s
     return "-"
 
 
@@ -221,3 +236,92 @@ def bands_from_mask(mask: Any) -> list[str] | None:
     if (val & known) == known and val > known:
         return []
     return [name for name, bit in BANDS.items() if val & bit]
+
+
+# TM (Transmission Mode, 3GPP TS 36.213) → человекочитаемая схема MIMO.
+# Роутер Huawei отдаёт режим как "TM[4]" / "4".
+_TM_MIMO = {
+    1: "1x1 (SISO)",
+    2: "2x2 (Tx div)",
+    3: "2x2 (open-loop)",
+    4: "2x2 (closed-loop)",
+    5: "MU-MIMO",
+    6: "1-layer",
+    7: "single-layer",
+    8: "2-layer",
+    9: "4x4",
+    10: "4x4",
+}
+
+
+def format_mimo(value: Any) -> str:
+    """'TM[4]' / '4' → '2x2 (closed-loop) [TM4]'. Неизвестное — как есть."""
+    if value in (None, ''):
+        return "-"
+    s = str(value)
+    m = re.search(r'\d+', s)
+    if not m:
+        return s
+    tm = int(m.group(0))
+    label = _TM_MIMO.get(tm)
+    return f"{label} [TM{tm}]" if label else f"TM{tm}"
+
+
+def format_modulation(raw: Any) -> str | None:
+    """Модуляция → компактный вид.
+
+    Роутер отдаёт либо MCS-индекс числом (5, 27), либо подробную строку
+    вида 'mcsDownCarrier1Code0:27@256QAM mcsDownCarrier1Code1:27@256QAM'
+    (несколько carrier/codeword). Приводим к короткому '256QAM (MCS 27)'
+    или '256QAM (MCS 23/27)', если MCS разные. None — если не разобрать.
+    """
+    if raw in (None, ''):
+        return None
+    s = str(raw)
+    # Строка с парами MCS@модуляция
+    pairs = re.findall(r'(\d+)@(\w*QAM)', s, re.IGNORECASE)
+    if pairs:
+        mcs = sorted({int(m) for m, _ in pairs})
+        qam = list(dict.fromkeys(q.upper() for _, q in pairs))  # уник, порядок
+        qam_str = " + ".join(qam)
+        mcs_str = "/".join(str(m) for m in mcs)
+        return f"{qam_str} (MCS {mcs_str})"
+    # Просто MCS-индекс числом
+    mod = mcs_to_modulation(raw)
+    if mod is not None:
+        return f"{mod} (MCS {int(extract_number(raw))})"
+    return None
+
+
+def parse_antenna_response(res: Any) -> int | None:
+    """Извлекает код режима антенны (0..3) из ответа Huawei API.
+
+    Имена полей различаются между моделями/endpoint (antennatype,
+    antenna_type, antennaType, type, mode, curtype…), поэтому:
+      1. пробуем известные ключи;
+      2. затем — любой ключ, содержащий 'antenna' или 'type'/'mode',
+         значение которого приводится к числу 0..3.
+    Возвращает код или None.
+    """
+    if res is None:
+        return None
+    # Не-dict (число/строка) — пробуем напрямую
+    if not isinstance(res, dict):
+        n = extract_number(res)
+        return int(n) if n is not None and 0 <= n <= 3 else None
+
+    known = ('antennatype', 'antenna_type', 'antennaType', 'AntennaType',
+             'curtype', 'type', 'Type', 'mode', 'Mode', 'antennamode')
+    for k in known:
+        if k in res:
+            n = extract_number(res[k])
+            if n is not None and 0 <= n <= 3:
+                return int(n)
+    # Эвристика: любой «antenna/type/mode» ключ с числом 0..3
+    for k, v in res.items():
+        kl = str(k).lower()
+        if 'antenna' in kl or 'type' in kl or 'mode' in kl:
+            n = extract_number(v)
+            if n is not None and 0 <= n <= 3:
+                return int(n)
+    return None
