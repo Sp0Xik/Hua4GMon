@@ -73,6 +73,7 @@ from core import (
     SESSION_LOG_MAX,
     WHITELIST_HOSTS_RU,
     analyze_whitelist_results,
+    bands_from_mask,
     calculate_overall_health,
     current_language,
     earfcn_to_band,  # noqa: F401  (доступно для отладки/расширений)
@@ -85,6 +86,7 @@ from core import (
     format_modulation,
     format_rate_mbps,
     is_valid_ip,
+    parse_antenna_response,
     parse_antenna_value,
     parse_cell_id,
     set_language,
@@ -877,6 +879,62 @@ class Hua4GMon:
         for key, lbl in self.sim_labels.items():
             raw = self.device_info.get(key, '')
             lbl.config(text=str(raw) if raw not in (None, '') else t("Н/Д"))
+        # Подтягиваем текущие Band Lock и антенну с модема в контролы.
+        self.load_router_config()
+
+    def load_router_config(self) -> None:
+        """Читает ТЕКУЩИЕ Band Lock и режим антенны с модема (только GET)
+        и подставляет их в чекбоксы/выбор антенны на вкладке «Сеть».
+
+        Ничего не изменяет на роутере. Если модель не отдаёт endpoint,
+        молча оставляет контролы как есть (существующая фиксация на
+        модеме не затрагивается).
+        """
+        client = self.client
+        if client is None:
+            return
+
+        def task():
+            band_names = None
+            antenna_code = None
+            try:
+                nm = client.net.net_mode() or {}
+                band_names = bands_from_mask(nm.get('LTEBand'))
+            except Exception:
+                logger.debug("net_mode() unavailable", exc_info=True)
+            try:
+                for getter in ('get_antenna_settings', 'antenna_type',
+                               'antenna_status', 'antenna_set_type'):
+                    fn = getattr(client.device, getter, None)
+                    if fn is None:
+                        continue
+                    try:
+                        res = fn()
+                    except Exception:
+                        logger.debug("Antenna getter %s failed", getter,
+                                     exc_info=True)
+                        continue
+                    logger.info("Antenna %s -> %r", getter, res)
+                    antenna_code = parse_antenna_response(res)
+                    if antenna_code is not None:
+                        break
+            except Exception:
+                logger.debug("antenna read failed", exc_info=True)
+            self.root.after(
+                0, lambda: self._apply_router_config(band_names, antenna_code))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _apply_router_config(self, band_names, antenna_code) -> None:
+        """Подставляет прочитанные с модема настройки в контролы (main
+        thread)."""
+        if band_names is not None:
+            for name, var in self.band_checkboxes.items():
+                var.set(name in band_names)
+        if antenna_code is not None:
+            rev = {v: k for k, v in ANTENNA_MODES.items()}
+            label = rev.get(antenna_code)
+            if label is not None:
+                self.antenna_var.set(t(label))
 
     def _on_connected_fail(self, error: str) -> None:
         self.connect_button.config(state='normal', text=t("🚀 Подключиться"))
