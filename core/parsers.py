@@ -97,43 +97,62 @@ def _earfcn_dl(earfcn: Any) -> Any:
     return int(m.group(0)) if m else None
 
 
-def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
-    """Человекочитаемая метка активного LTE-band.
+def _known_band_numbers() -> set:
+    """Номера бэндов, реально используемых в РФ/СНГ (из BANDS)."""
+    return {int(re.search(r'B(\d+)', name).group(1)) for name in BANDS}
 
-    ВАЖНО: primary-band определяется в первую очередь по EARFCN — это
-    надёжный признак АКТИВНОГО канала. Поле ``band`` у части роутеров
-    (например Huawei B636) содержит список поддерживаемых/сконфигуриро-
-    ванных бэндов, а не активную агрегацию, поэтому доверять ему для
-    определения рабочего бэнда нельзя. Факт агрегации показывается
-    отдельно (поле «Агрегация (CA)»).
+
+def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
+    """Человекочитаемая метка активного(-ых) LTE-band.
+
+    primary-band определяется по EARFCN — это надёжный признак активного
+    канала. Поле ``band`` у части роутеров (Huawei B636) содержит СПИСОК
+    поддерживаемых бэндов вперемешку (напр. "B15 + B3 + B10 + B1"), где
+    есть и реально агрегированные, и невозможные для региона (B10, B15).
+    Поэтому из этого списка берём только бэнды, известные для РФ/СНГ
+    (см. BANDS) — так мусор отсеивается, а реальные carrier'ы CA
+    остаются. primary (по EARFCN) всегда идёт первым.
 
     Понимает форматы band: "LTE BAND 7", "7", "B7", "B7+B20", "0x40".
     """
-    # 1. EARFCN — приоритет (активный primary-band).
-    b = earfcn_to_band(_earfcn_dl(earfcn))
-    if b is not None:
-        freq = BAND_FREQ_MAP.get(b, '')
-        return f"B{b}" + (f" ({freq} МГц)" if freq else "")
+    known = _known_band_numbers()
+    primary = earfcn_to_band(_earfcn_dl(earfcn))
 
-    # 2. EARFCN недоступен — разбираем поле band как раньше.
+    # Собираем бэнды из поля band.
+    from_band: list[int] = []
     if band_raw not in (None, '', '-'):
         s = str(band_raw).strip()
-        # Hex-маска вида 0x40
         if s.lower().startswith('0x'):
             try:
                 mask = int(s, 16)
-                hits = [b for name, val in BANDS.items()
-                        for b in [int(re.search(r'B(\d+)', name).group(1))]
-                        if mask & val]
-                if hits:
-                    return _format_band_list(hits)
+                from_band = [
+                    int(re.search(r'B(\d+)', name).group(1))
+                    for name, val in BANDS.items() if mask & val]
             except (ValueError, AttributeError):
-                pass
-        nums = [int(n) for n in re.findall(r'\d+', s)
-                if 1 <= int(n) <= 100]
-        if nums:
-            return _format_band_list(nums)
-        return s
+                from_band = []
+        else:
+            # Только номера после 'B' (чтобы не хватать частоты типа 2100),
+            # оставляем известные РФ/СНГ бэнды — мусор (B10/B15) отсеивается.
+            from_band = [int(n) for n in re.findall(r'B(\d+)', s)
+                         if int(n) in known]
+            if not from_band:
+                # Форматы без 'B': "7", "7+20", "LTE BAND 20".
+                from_band = [int(n) for n in re.findall(r'\d+', s)
+                             if int(n) in known]
+
+    # Активные бэнды: primary первым, затем остальные известные из band.
+    active: list[int] = []
+    if primary is not None:
+        active.append(primary)
+    for n in from_band:
+        if n not in active:
+            active.append(n)
+
+    if active:
+        return _format_band_list(active)
+    # Ни EARFCN, ни распознанных бэндов — вернём сырьё как есть.
+    if band_raw not in (None, '', '-'):
+        return str(band_raw).strip()
     return "-"
 
 
