@@ -175,16 +175,18 @@ def test_parse_cell_id_invalid(bad):
 # =========================================================
 
 def test_antenna_known_labels():
-    assert core.parse_antenna_value("Авто") == 0
-    assert core.parse_antenna_value("Внутренняя") == 1
-    assert core.parse_antenna_value("Внешняя") == 2
-    assert core.parse_antenna_value("Смешанная") == 3
+    assert core.parse_antenna_value("Авто") == 3
+    assert core.parse_antenna_value("Внутренняя") == 0
+    assert core.parse_antenna_value("Внешняя") == 1
+    assert core.parse_antenna_value("Смешанная") == 2
 
 
 def test_antenna_numeric_hint():
-    """Legacy-метки вида 'Auto (0)' должны парситься."""
+    """Число в скобках парсится, когда метка неизвестна (legacy-формат)."""
     assert core.parse_antenna_value("Auto (0)") == 0
-    assert core.parse_antenna_value("Внешняя (2)") == 2
+    assert core.parse_antenna_value("External (2)") == 2
+    # Известная русская метка имеет приоритет над скобкой
+    assert core.parse_antenna_value("Внешняя") == 1
 
 
 def test_antenna_unknown():
@@ -215,8 +217,7 @@ def test_band_hex_bitmask():
 
 
 def test_band_earfcn_priority():
-    """EARFCN определяет АКТИВНЫЙ primary-band и имеет приоритет над
-    полем band (которое у части роутеров = список поддерживаемых)."""
+    """EARFCN определяет primary-band; без поля band показывается один."""
     assert core.format_band_label(None, 6300) == "B20 (800DD МГц)"
     assert core.format_band_label('', 1300) == "B3 (1800+ МГц)"
     assert core.format_band_label('-', 3000) == "B7 (2600 МГц)"
@@ -228,17 +229,24 @@ def test_band_earfcn_string_format():
     assert core.format_band_label('', 'DL:1725 UL:19725') == "B3 (1800+ МГц)"
 
 
-def test_band_ignores_supported_list_when_earfcn_present():
-    """Реальный кейс B636: поле band = список поддерживаемых бэндов,
-    но EARFCN даёт настоящий активный primary — доверяем EARFCN."""
-    # Android-скриншот: band-мусор, EARFCN DL:200 -> B1
+def test_band_ca_filters_garbage_keeps_real():
+    """Реальный кейс B636: поле band = список с мусором (B10, B15 —
+    невозможны в РФ). Оставляем известные бэнды + primary по EARFCN,
+    показываем реальную агрегацию B1+B3."""
+    # Android: EARFCN DL:200 -> primary B1, из band добавляется B3
     assert core.format_band_label(
         'CA: B10 + B1/2100 + B15 + B3/1800+', 'DL:200 UL:18200'
-    ) == "B1 (2100 МГц)"
-    # Windows-скриншот: тот же мусор, EARFCN DL:1725 -> B3
+    ) == "CA: B1/2100 + B3/1800+"
+    # Windows: EARFCN DL:1725 -> primary B3, из band добавляется B1
     assert core.format_band_label(
         'CA: B15 + B3/1800+ + B10 + B1/2100', 'DL:1725 UL:19725'
-    ) == "B3 (1800+ МГц)"
+    ) == "CA: B3/1800+ + B1/2100"
+
+
+def test_band_single_no_aggregation():
+    """Один активный бэнд без CA (band совпадает с primary)."""
+    assert core.format_band_label('B3', 'DL:1725 UL:19725') == \
+        "B3 (1800+ МГц)"
 
 
 @pytest.mark.parametrize("missing", [None, '', '-'])
