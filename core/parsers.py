@@ -1,353 +1,404 @@
 """
-Разбор и форматирование сырых строк от роутера Huawei.
+Простая система локализации для Hua4GMon.
 
-Эти функции — чистые. Никаких побочных эффектов, никакого Tk.
-Принимают сырое значение из API и возвращают типизированный результат.
+Подход «русский-как-ключ»:
+    * исходные строки в коде остаются на русском и используются как ключи;
+    * для английского хранится словарь RU → EN;
+    * если перевода нет — возвращается сам ключ (русский), ничего не падает.
+
+Это позволяет добавить второй язык в уже существующий русский UI с
+минимальным риском: достаточно обернуть строку в t("..."), а её перевод
+добавить в EN ниже. Отсутствие перевода не ломает интерфейс.
+
+Модуль НЕ зависит от Tkinter/Kivy — пригоден и для Windows, и для Android.
+
+Использование:
+    from core.i18n import t, set_language, current_language
+
+    set_language("en")
+    label = t("Подключиться")        # -> "Connect"
+
+Строки с подстановкой переводятся как шаблоны:
+    t("Отличный сигнал ({pct}%)").format(pct=90)
 """
 from __future__ import annotations
 
-import functools
-import re
-from typing import Any
+# Поддерживаемые языки: код → человекочитаемое имя (для меню выбора).
+LANGUAGES: dict[str, str] = {
+    "ru": "Русский",
+    "en": "English",
+}
 
-from core.constants import ANTENNA_MODES, BAND_FREQ_MAP, BANDS, EARFCN_RANGES
+_DEFAULT_LANG = "ru"
+_current_lang = _DEFAULT_LANG
 
-# Регулярка для базовой валидации IPv4. Полная проверка диапазона — в is_valid_ip.
-_IP_RE = re.compile(r'^\d{1,3}(\.\d{1,3}){3}$')
+# RU → EN. Ключ — исходная русская строка (ровно как в коде).
+# Если строки здесь нет, t() вернёт ключ (т.е. русский вариант).
+EN: dict[str, str] = {
+    # --- Вкладки ---
+    "⚙️ Подключение": "⚙️ Connection",
+    "📈 Монитор": "📈 Monitor",
+    "🎛️ Сеть": "🎛️ Network",
+    "🗼 Вышка": "🗼 Tower",
+    "📊 Состояние": "📊 Status",
+    "🛡 Белые списки (РФ)": "🛡 Whitelist (RU)",
 
+    # --- Верхняя панель ---
+    "Отключено": "Disconnected",
+    "Подключено": "Connected",
+    "Подключение...": "Connecting...",
+    "Ошибка": "Error",
+    "Поверх окон": "Always on top",
+    "Язык:": "Language:",
+    "Портативный монитор LTE Huawei": "Portable Huawei LTE monitor",
+    "Тестовый режим (без модема)": "Test mode (no modem)",
+    "Тестовый режим": "Test mode",
+    # Чистые подписи без эмодзи (для Android: эмодзи не рендерятся)
+    "Подключиться": "Connect",
+    "Отключиться": "Disconnect",
+    "Сеть": "Network",
+    "Перезагрузить роутер": "Reboot router",
+    "Проверить сейчас": "Check now",
+    "Белые списки (РФ)": "Whitelist (RU)",
+    "Информация": "Information",
+    "Инфо": "Info",
+    "Подсказка": "Help",
+    "Состояние": "Status",
+    "Вышка": "Tower",
+    "Назад": "Back",
+    "Качество связи": "Link quality",
+    "ТЕСТОВЫЙ РЕЖИМ — демо-данные": "TEST MODE — demo data",
+    "ДЕМО": "DEMO",
+    "Во весь экран": "Fullscreen",
+    "Читаю настройки модема…": "Reading modem settings…",
+    "Band Lock: AUTO (все диапазоны)": "Band Lock: AUTO (all bands)",
+    "Band Lock: {bands}": "Band Lock: {bands}",
+    "Band Lock: не удалось прочитать": "Band Lock: could not read",
+    "Band Lock: не поддерживается моделью": "Band Lock: not supported by model",
+    "Антенна: {mode}": "Antenna: {mode}",
+    "Антенна: не удалось прочитать": "Antenna: could not read",
+    "Антенна: не поддерживается моделью": "Antenna: not supported by model",
+    "Нет подключения к роутеру.": "Not connected to the router.",
+    "Тестовый режим — настройки модема не читаются.":
+        "Test mode — modem settings are not read.",
+    "Модуляция DL": "Modulation DL",
+    "Модуляция UL": "Modulation UL",
+    "Модуляция DL / UL": "Modulation DL / UL",
+    "Ширина канала": "Channel width",
+    "TAC (зона)": "TAC (area)",
+    "Мощность передатчика": "TX power",
+    "Режим MIMO": "MIMO mode",
+    "Трафик за месяц (↓/↑)": "Monthly traffic (↓/↑)",
+    "Операции с роутером недоступны в тестовом режиме.":
+        "Router operations are unavailable in test mode.",
+    "← Назад": "← Back",
 
-def is_valid_ip(s: str) -> bool:
-    """Базовая валидация IPv4."""
-    if not s or not _IP_RE.match(s):
-        return False
-    return all(0 <= int(p) <= 255 for p in s.split('.'))
+    # --- Вкладка Подключение ---
+    "Параметры роутера": "Router settings",
+    "IP адрес:": "IP address:",
+    "Пароль:": "Password:",
+    "Опрос (сек):": "Polling (sec):",
+    "Авто-переподключение при обрыве": "Auto-reconnect on drop",
+    "🚀 Подключиться": "🚀 Connect",
+    "⏹ Отключиться": "⏹ Disconnect",
+    "Подключение и частые ошибки": "Connection & common errors",
+    (
+        "IP по умолчанию: 192.168.8.1 (для B315/B525 — 192.168.1.1 "
+        "или 192.168.3.1). Логин: admin, пароль — на наклейке роутера.\n"
+        "\n"
+        "Частые ошибки и что делать:\n"
+        "• 401 Unauthorized — неверный пароль, либо в веб-морду уже "
+        "вошли с другого устройства. Закройте веб-интерфейс роутера "
+        "и проверьте пароль.\n"
+        "• 108003 / 108006 — превышено число сессий или уже выполнен "
+        "вход. Перезагрузите роутер или подождите 1–2 минуты.\n"
+        "• 100002 / 100003 — функция не поддерживается этой моделью "
+        "или прошивкой. Часть возможностей будет недоступна — это "
+        "нормально.\n"
+        "• 125002 / 125003 — устарел токен сессии. Переподключитесь.\n"
+        "• Таймаут / нет ответа — проверьте, что ноутбук подключён "
+        "к Wi-Fi или USB именно этого роутера и IP введён верно."
+    ): (
+        "Default IP: 192.168.8.1 (for B315/B525 — 192.168.1.1 "
+        "or 192.168.3.1). Login: admin, password is on the router label.\n"
+        "\n"
+        "Common errors and fixes:\n"
+        "• 401 Unauthorized — wrong password, or the web UI is already "
+        "open on another device. Close the router web interface and "
+        "check the password.\n"
+        "• 108003 / 108006 — too many sessions or already logged in. "
+        "Reboot the router or wait 1–2 minutes.\n"
+        "• 100002 / 100003 — feature not supported by this model or "
+        "firmware. Some functions will be unavailable — this is normal.\n"
+        "• 125002 / 125003 — session token expired. Reconnect.\n"
+        "• Timeout / no response — make sure the laptop is connected to "
+        "the Wi-Fi or USB of this exact router and the IP is correct."
+    ),
 
+    # --- Вкладка Монитор ---
+    "Общее качество связи": "Overall link quality",
+    "Подключитесь к роутеру": "Connect to the router",
+    "Нет данных": "No data",
+    "Н/Д": "N/A",
+    "Пик: -": "Peak: -",
+    "Пик: {v}": "Peak: {v}",
+    "Тенденция RSRP (поворачивайте антенну)":
+        "RSRP trend (rotate the antenna)",
+    "Накапливаю данные...": "Collecting data...",
+    "Джиттер: -": "Jitter: -",
+    "🔊 Аудио-помощник": "🔊 Audio assistant",
+    "🔊 Аудио (ОС не поддерживается)": "🔊 Audio (OS not supported)",
+    "🖥 Крышный режим": "🖥 Rooftop mode",
+    "График:": "Chart:",
+    "Сбросить пики": "Reset peaks",
+    "💾 Экспорт CSV": "💾 Export CSV",
+    "[ESC] для выхода": "[ESC] to exit",
 
-def extract_number(val: Any) -> float | None:
-    """Строгое извлечение числа. Не ведётся на строки вроде 'timeout 0'."""
-    if val is None or isinstance(val, bool):
-        return None
-    if isinstance(val, (int, float)):
-        return float(val)
-    s = str(val).strip()
-    if not s or s in ('-', 'None', 'N/A', 'NA'):
-        return None
-    # Допускаем знак, дробную часть и опциональный суффикс (dBm, %, dB и т.п.)
-    m = re.fullmatch(r'(-?\d+(?:\.\d+)?)\s*[a-zA-Z%/]*', s)
-    if not m:
-        return None
-    try:
-        return float(m.group(1))
-    except ValueError:
-        return None
+    # Направление сигнала
+    "Сигнал улучшается — продолжайте в том же направлении":
+        "Signal improving — keep turning that way",
+    "Сигнал ухудшается — поверните обратно":
+        "Signal getting worse — turn back",
+    "Сигнал стабилен — зафиксируйте антенну":
+        "Signal stable — fix the antenna",
 
+    # Оценка радиокачества (шаблоны с {pct})
+    "Отличный сигнал ({pct}%)": "Excellent signal ({pct}%)",
+    "Хороший сигнал ({pct}%)": "Good signal ({pct}%)",
+    "Средний сигнал — крутите антенну ({pct}%)":
+        "Fair signal — adjust the antenna ({pct}%)",
+    "Слабый сигнал — ищите лучше ({pct}%)":
+        "Weak signal — look for a better spot ({pct}%)",
 
-def parse_cell_id(raw: Any) -> tuple[int | None, int | None]:
-    """Парсит cell_id из Huawei API. Возвращает (eNodeB_id, sector)."""
-    if raw is None or raw == '':
-        return None, None
-    s = str(raw).strip()
-    try:
-        if s.lower().startswith('0x') or any(c in 'abcdefABCDEF' for c in s):
-            cid = int(s, 16)
-        else:
-            cid = int(s)
-    except (ValueError, TypeError):
-        return None, None
-    # Отбрасываем явные "плохие" значения
-    if cid <= 0 or cid >= 0xFFFFFFFF:
-        return None, None
-    if cid > 0x0FFFFFFF:     # > 28 бит — не LTE CID
-        return None, None
-    return cid // 256, cid % 256
+    # Джиттер (шаблон)
+    "Джиттер: {j:.1f} dB": "Jitter: {j:.1f} dB",
 
+    # --- Вкладка Сеть ---
+    "Фиксация частот (Band Lock)": "Band Lock",
+    (
+        "ВНИМАНИЕ: фиксация диапазона может уменьшить покрытие. "
+        "Применяйте, чтобы привязаться к лучшей вышке — сначала "
+        "определите рабочий band на вкладке «Вышка»."
+    ): (
+        "WARNING: locking a band may reduce coverage. Use it to pin to "
+        "the best cell — first identify the working band on the «Tower» tab."
+    ),
+    "Применить Band Lock": "Apply Band Lock",
+    "Сбросить в AUTO": "Reset to AUTO",
+    "Переключение антенн": "Antenna switching",
+    "Режим:": "Mode:",
+    "Применить": "Apply",
+    "Управление роутером": "Router management",
+    (
+        "Перезагрузка иногда нужна после Band Lock, переключения "
+        "антенн или при «зависании» сетевой части. Через 1–2 минуты "
+        "переподключитесь вручную."
+    ): (
+        "A reboot is sometimes needed after Band Lock, antenna switching "
+        "or when the network stack hangs. Reconnect manually after "
+        "1–2 minutes."
+    ),
+    "🔄 Перезагрузить роутер": "🔄 Reboot router",
 
-def parse_antenna_value(label: str) -> int | None:
-    """Достаёт целочисленный код режима антенны из локализованной метки."""
-    base = label.split('(')[0].strip()
-    if base in ANTENNA_MODES:
-        return ANTENNA_MODES[base]
-    m = re.search(r'\((\d+)\)', label)
-    if m:
-        return int(m.group(1))
-    return None
+    # Антенна (режимы)
+    "Авто": "Auto",
+    "Внутренняя": "Internal",
+    "Внешняя": "External",
+    "Смешанная": "Mixed",
 
+    # --- Вкладка Вышка ---
+    "Информация о станции": "Cell info",
+    "Оператор (PLMN)": "Operator (PLMN)",
+    "Рабочий Band (LTE)": "Working band (LTE)",
+    "EARFCN (канал DL)": "EARFCN (DL channel)",
+    "Агрегация (CA)": "Aggregation (CA)",
+    "Ширина канала (DL)": "Channel width (DL)",
+    "Сектор антенны (PCI)": "Antenna sector (PCI)",
+    "eNodeB (Вышка)": "eNodeB (Tower)",
+    "Cell (Локальный сектор)": "Cell (local sector)",
+    "SIM / Устройство": "SIM / Device",
+    "IMEI (роутер)": "IMEI (router)",
+    "IMSI (SIM)": "IMSI (SIM)",
+    "ICCID (SIM-карта)": "ICCID (SIM card)",
+    "Номер телефона": "Phone number",
+    "Серийный номер": "Serial number",
+    "Модель": "Model",
+    "Прошивка": "Firmware",
+    "🗺 Открыть на CellMapper": "🗺 Open in CellMapper",
+    "Неизвестный оператор": "Unknown operator",
+    "Активна": "Active",
+    "Нет (Single)": "No (Single)",
 
-def earfcn_to_band(earfcn: Any) -> int | None:
-    """EARFCN (DL channel) → номер LTE-band, или None если не определён."""
-    try:
-        e = int(earfcn)
-    except (TypeError, ValueError):
-        return None
-    for lo, hi, band in EARFCN_RANGES:
-        if lo <= e <= hi:
-            return band
-    return None
+    # --- Вкладка Состояние ---
+    "Мониторинг железа и трафика": "Hardware & traffic monitor",
+    "Время сессии": "Session time",
+    "Температура чипа": "Chip temperature",
+    "Скорость (Download)": "Speed (Download)",
+    "Скорость (Upload)": "Speed (Upload)",
+    "Скачано за сессию": "Downloaded this session",
+    "Отдано за сессию": "Uploaded this session",
+    "RSRP мин / макс": "RSRP min / max",
+    "SINR мин / макс": "SINR min / max",
 
+    # --- Вкладка Белые списки ---
+    "Перед проверкой": "Before testing",
+    (
+        "⚠ Ноутбук должен быть подключён к Wi-Fi или USB именно этого "
+        "роутера — иначе тест измерит чужой канал.\n"
+        "• Применимо только для РФ."
+    ): (
+        "⚠ The laptop must be connected to the Wi-Fi or USB of this exact "
+        "router — otherwise the test measures a different link.\n"
+        "• Applies to Russia only."
+    ),
+    "🔍 Проверить сейчас": "🔍 Check now",
+    "Проверка…": "Checking…",
+    "Подождите 1–3 секунды.": "Please wait 1–3 seconds.",
+    "Вердикт": "Verdict",
+    "Не проверялось": "Not tested",
+    "✅ В белых списках": "✅ In whitelist",
+    "⚪ Нейтральные": "⚪ Neutral",
+    "не проверено": "not tested",
 
-def _earfcn_dl(earfcn: Any) -> Any:
-    """Достаёт DL-EARFCN. Роутер может отдать число (200) или строку
-    вида 'DL:200 UL:18200' — берём именно DL."""
-    if earfcn in (None, '', '-'):
-        return None
-    s = str(earfcn)
-    m = re.search(r'DL[:\s]*(\d+)', s, re.IGNORECASE)
-    if m:
-        return int(m.group(1))
-    m = re.search(r'\d+', s)
-    return int(m.group(0)) if m else None
+    # --- messagebox: заголовки и тексты ---
+    "Успех": "Success",
+    "Внимание": "Warning",
+    "Подтверждение": "Confirm",
+    "Ошибка подключения": "Connection error",
+    "Экспорт": "Export",
+    "Перезагрузка": "Reboot",
+    "Сначала подключитесь к роутеру.": "Connect to the router first.",
+    "Выберите хотя бы один диапазон!": "Select at least one band!",
+    "Неизвестный режим антенны.": "Unknown antenna mode.",
+    "Сеть сброшена в AUTO.": "Network reset to AUTO.",
+    "Неверный IP-адрес: {ip}\nПример: 192.168.8.1":
+        "Invalid IP address: {ip}\nExample: 192.168.8.1",
+    "Связь с роутером не удалась:\n\n{err}":
+        "Failed to reach the router:\n\n{err}",
+    "Band Lock применён (mask: {mask}).":
+        "Band Lock applied (mask: {mask}).",
+    "Роутер отклонил команду:\n{err}":
+        "The router rejected the command:\n{err}",
+    "Тип антенны изменён: {mode}": "Antenna type changed: {mode}",
+    "Перезагрузить роутер?\n\nСоединение с интернетом прервётся на 1–2 "
+    "минуты. После загрузки переподключитесь вручную.":
+        "Reboot the router?\n\nInternet will drop for 1–2 minutes. "
+        "Reconnect manually after it boots.",
+    "Команда отправлена. Роутер вернётся через 1–2 минуты.":
+        "Command sent. The router will be back in 1–2 minutes.",
+    "Не удалось перезагрузить:\n{err}": "Failed to reboot:\n{err}",
+    "Недостаточно данных о вышке (нужны PLMN и eNodeB).":
+        "Not enough cell data (PLMN and eNodeB required).",
+    "Не открыть браузер: {e}": "Cannot open browser: {e}",
+    "Лог сессии пуст. Подключитесь и подождите, пока соберутся данные.":
+        "Session log is empty. Connect and wait for data to accumulate.",
+    "Сохранено {n} записей в:\n{path}":
+        "Saved {n} records to:\n{path}",
+    "Не удалось записать файл: {e}": "Failed to write file: {e}",
+    "Таймаут API...": "API timeout...",
+    "Переподключение через {d:.0f}с...": "Reconnecting in {d:.0f}s...",
 
+    # Вердикты белых списков (заголовки)
+    "Белые списки ВЫКЛЮЧЕНЫ": "Whitelist OFF",
+    "⚠ Вероятна фильтрация (белые списки)":
+        "⚠ Filtering likely (whitelist)",
+    "Аномалия": "Anomaly",
+    "Нет интернета": "No internet",
 
-@functools.lru_cache(maxsize=1)
-def _known_band_numbers() -> frozenset:
-    """Номера бэндов, реально используемых в РФ/СНГ (из BANDS).
+    # Метки уровней сигнала (из SIGNAL_THRESHOLDS)
+    "Отличный": "Excellent",
+    "Хороший": "Good",
+    "Средний": "Fair",
+    "Плохой": "Poor",
+    "Идеальный": "Ideal",
+    "Шумный": "Noisy",
+    "Критичный": "Critical",
+    "Сильный": "Strong",
+    "Нормальный": "Normal",
+    "Слабый": "Weak",
+    "Очень слабый": "Very weak",
+    "Стабильный": "Stable",
+    "Потери": "Losses",
+    "Высокие потери": "High losses",
 
-    BANDS неизменен на время работы — кэшируем, чтобы не пересчитывать
-    множество на каждый тик мониторинга.
-    """
-    return frozenset(
-        int(re.search(r'B(\d+)', name).group(1)) for name in BANDS)
+    # Обозначения бэндов (для Band Lock)
+    "B1 (2100 МГц)": "B1 (2100 MHz)",
+    "B3 (1800 МГц)": "B3 (1800 MHz)",
+    "B5 (850 МГц)": "B5 (850 MHz)",
+    "B7 (2600 МГц)": "B7 (2600 MHz)",
+    "B8 (900 МГц)": "B8 (900 MHz)",
+    "B20 (800 МГц)": "B20 (800 MHz)",
+    "B38 (TDD 2600)": "B38 (TDD 2600)",
+    "B40 (TDD 2300)": "B40 (TDD 2300)",
+    "B41 (TDD 2500)": "B41 (TDD 2500)",
 
+    # Android-подсказки (Сеть)
+    ("ВНИМАНИЕ: фиксация диапазона может уменьшить покрытие. "
+     "Применяйте, чтобы привязаться к лучшей вышке — сначала "
+     "определите рабочий band на экране монитора."): (
+        "WARNING: locking a band may reduce coverage. Use it to bind to "
+        "the best tower — first identify the working band on the monitor "
+        "screen."),
+    ("⚠ Телефон должен быть подключён к Wi-Fi именно этого "
+     "роутера — иначе тест измерит чужой канал. Применимо только "
+     "для РФ."): (
+        "⚠ The phone must be connected to the Wi-Fi of this exact router "
+        "— otherwise the test measures a different link. Applies to "
+        "Russia only."),
 
-def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
-    """Человекочитаемая метка активного(-ых) LTE-band.
+    # Детали вердикта белых списков (шаблоны с подстановкой счётчиков)
+    ("Обычный режим — открыт весь интернет "
+     "(белых: {w}/{wt}, нейтральных: {n}/{nt})."): (
+        "Normal mode — full internet is open "
+        "(whitelisted: {w}/{wt}, neutral: {n}/{nt})."),
+    ("Разрешённые сайты отвечают, а нейтральные — нет "
+     "(белых: {w}/{wt}, нейтральных: 0/{nt}). Похоже на режим "
+     "белых списков оператора. Для точности проверьте "
+     "открытие обычного сайта в браузере."): (
+        "Allowed sites respond but neutral ones do not "
+        "(whitelisted: {w}/{wt}, neutral: 0/{nt}). Looks like the "
+        "operator's whitelist mode. To be sure, try opening a regular "
+        "site in a browser."),
+    ("Нейтральные сайты доступны, но «белые» не отвечают. "
+     "Скорее всего, вы вышли в интернет не через 4G "
+     "(другой Wi-Fi, провод, VPN). Подключитесь к Wi-Fi роутера "
+     "и повторите."): (
+        "Neutral sites are reachable but whitelisted ones are not. "
+        "You are likely online not via 4G (another Wi-Fi, cable, VPN). "
+        "Connect to the router's Wi-Fi and retry."),
+    ("Ни одна цель не отвечает. Либо у роутера нет связи с БС, "
+     "либо проблема с DNS/маршрутом. Проверьте RSRP и трафик."): (
+        "No target responds. Either the router has no cell link, or "
+        "there is a DNS/route problem. Check RSRP and traffic."),
 
-    primary-band определяется по EARFCN — это надёжный признак активного
-    канала. Поле ``band`` у части роутеров (Huawei B636) содержит СПИСОК
-    поддерживаемых бэндов вперемешку (напр. "B15 + B3 + B10 + B1"), где
-    есть и реально агрегированные, и невозможные для региона (B10, B15).
-    Поэтому из этого списка берём только бэнды, известные для РФ/СНГ
-    (см. BANDS) — так мусор отсеивается, а реальные carrier'ы CA
-    остаются. primary (по EARFCN) всегда идёт первым.
-
-    Понимает форматы band: "LTE BAND 7", "7", "B7", "B7+B20", "0x40".
-    """
-    known = _known_band_numbers()
-    primary = earfcn_to_band(_earfcn_dl(earfcn))
-
-    # Собираем бэнды из поля band.
-    from_band: list[int] = []
-    if band_raw not in (None, '', '-'):
-        s = str(band_raw).strip()
-        if s.lower().startswith('0x'):
-            try:
-                mask = int(s, 16)
-                from_band = [
-                    int(re.search(r'B(\d+)', name).group(1))
-                    for name, val in BANDS.items() if mask & val]
-            except (ValueError, AttributeError):
-                from_band = []
-        else:
-            # Только номера после 'B' (чтобы не хватать частоты типа 2100),
-            # оставляем известные РФ/СНГ бэнды — мусор (B10/B15) отсеивается.
-            from_band = [int(n) for n in re.findall(r'B(\d+)', s)
-                         if int(n) in known]
-            if not from_band:
-                # Форматы без 'B': "7", "7+20", "LTE BAND 20".
-                from_band = [int(n) for n in re.findall(r'\d+', s)
-                             if int(n) in known]
-
-    # Активные бэнды: primary первым, затем остальные известные из band.
-    active: list[int] = []
-    if primary is not None:
-        active.append(primary)
-    for n in from_band:
-        if n not in active:
-            active.append(n)
-
-    if active:
-        return _format_band_list(active)
-    # Ни EARFCN, ни распознанных бэндов — вернём сырьё как есть.
-    if band_raw not in (None, '', '-'):
-        return str(band_raw).strip()
-    return "-"
-
-
-def _format_band_list(bands: list[int]) -> str:
-    """Форматирует список номеров бандов в строку."""
-    bands = list(dict.fromkeys(bands))   # дедуп с сохранением порядка
-    if len(bands) == 1:
-        b = bands[0]
-        freq = BAND_FREQ_MAP.get(b, '')
-        return f"B{b}" + (f" ({freq} МГц)" if freq else "")
-    parts = []
-    for b in bands:
-        freq = BAND_FREQ_MAP.get(b, '')
-        parts.append(f"B{b}" + (f"/{freq}" if freq else ""))
-    return "CA: " + " + ".join(parts)
-
-
-def format_bytes_mb(b: Any) -> str:
-    """Сырые байты → '123.4 МБ' для UI."""
-    try:
-        return f"{int(b) / 1048576:.1f} МБ"
-    except (TypeError, ValueError):
-        return "-"
-
-
-def format_rate_mbps(bps: Any) -> str:
-    """Bytes/sec → 'X.YZ Мбит/с' для UI."""
-    try:
-        return f"{int(bps) * 8 / 1_000_000:.2f} Мбит/с"
-    except (TypeError, ValueError):
-        return "-"
-
-
-def first_present(data: Any, keys: Any) -> Any:
-    """Возвращает первое непустое значение по списку возможных ключей.
-
-    Имена полей в ответе Huawei device/signal различаются между
-    прошивками (dl_mcs / dlmcs / dlMcs и т.п.) — перебираем варианты.
-    """
-    try:
-        for k in keys:
-            v = data.get(k)
-            if v not in (None, ''):
-                return v
-    except AttributeError:
-        return None
-    return None
-
-
-def mcs_to_modulation(mcs: Any) -> str | None:
-    """MCS-индекс → тип модуляции (LTE, 3GPP TS 36.213).
-
-    Приближённо: точные границы зависят от используемой MCS-таблицы
-    (с 256QAM они сдвинуты), поэтому тип помечается как ориентировочный
-    на стороне вызывающего кода. None — если MCS не распознан.
-    """
-    n = extract_number(mcs)
-    if n is None:
-        return None
-    n = int(n)
-    if n < 0:
-        return None
-    if n <= 9:
-        return "QPSK"
-    if n <= 16:
-        return "16QAM"
-    if n <= 28:
-        return "64QAM"
-    if n <= 31:
-        return "256QAM"
-    return None
-
-
-def bands_from_mask(mask: Any) -> list[str] | None:
-    """Маска LTE-бэндов роутера (hex-строка) → список имён из BANDS.
-
-    Возвращает:
-        * список имён бэндов, отмеченных в маске;
-        * [] — если маска соответствует AUTO (включены все бэнды);
-        * None — если маску не удалось разобрать.
-
-    Роутер отдаёт маску в net/net-mode как hex-строку, напр. '44'
-    (B3+B7) или '7FFFFFFFFFFFFFFF' (все = AUTO).
-    """
-    if mask in (None, ''):
-        return None
-    s = str(mask).strip()
-    try:
-        val = int(s, 16)
-    except (TypeError, ValueError):
-        return None
-    if val <= 0:
-        return None
-    # AUTO: роутер вернул «все бэнды» — трактуем как отсутствие фиксации.
-    # Проверяем, что установлены все биты известных нам бэндов И маска
-    # заметно шире нашего набора (значит это общая AUTO-маска).
-    known = 0
-    for v in BANDS.values():
-        known |= v
-    if (val & known) == known and val > known:
-        return []
-    return [name for name, bit in BANDS.items() if val & bit]
-
-
-# TM (Transmission Mode, 3GPP TS 36.213) → человекочитаемая схема MIMO.
-# Роутер Huawei отдаёт режим как "TM[4]" / "4".
-_TM_MIMO = {
-    1: "1x1 (SISO)",
-    2: "2x2 (Tx div)",
-    3: "2x2 (open-loop)",
-    4: "2x2 (closed-loop)",
-    5: "MU-MIMO",
-    6: "1-layer",
-    7: "single-layer",
-    8: "2-layer",
-    9: "4x4",
-    10: "4x4",
+    # График (Windows)
+    "последние {n} точек": "last {n} points",
 }
 
 
-def format_mimo(value: Any) -> str:
-    """'TM[4]' / '4' → '2x2 (closed-loop) [TM4]'. Неизвестное — как есть."""
-    if value in (None, ''):
-        return "-"
-    s = str(value)
-    m = re.search(r'\d+', s)
-    if not m:
-        return s
-    tm = int(m.group(0))
-    label = _TM_MIMO.get(tm)
-    return f"{label} [TM{tm}]" if label else f"TM{tm}"
+def set_language(lang: str) -> None:
+    """Устанавливает текущий язык ('ru' или 'en'). Неизвестный — игнор."""
+    global _current_lang
+    if lang in LANGUAGES:
+        _current_lang = lang
 
 
-def format_modulation(raw: Any) -> str | None:
-    """Модуляция → компактный вид.
+def current_language() -> str:
+    """Возвращает код текущего языка."""
+    return _current_lang
 
-    Роутер отдаёт либо MCS-индекс числом (5, 27), либо подробную строку
-    вида 'mcsDownCarrier1Code0:27@256QAM mcsDownCarrier1Code1:27@256QAM'
-    (несколько carrier/codeword). Приводим к короткому '256QAM (MCS 27)'
-    или '256QAM (MCS 23/27)', если MCS разные. None — если не разобрать.
+
+def available_languages() -> list[str]:
+    """Список кодов поддерживаемых языков."""
+    return list(LANGUAGES.keys())
+
+
+def t(text: str) -> str:
+    """Переводит строку на текущий язык.
+
+    Русский — возвращает ключ как есть. Английский — ищет в EN,
+    при отсутствии возвращает ключ (русский) как fallback.
     """
-    if raw in (None, ''):
-        return None
-    s = str(raw)
-    # Строка с парами MCS@модуляция
-    pairs = re.findall(r'(\d+)@(\w*QAM)', s, re.IGNORECASE)
-    if pairs:
-        mcs = sorted({int(m) for m, _ in pairs})
-        qam = list(dict.fromkeys(q.upper() for _, q in pairs))  # уник, порядок
-        qam_str = " + ".join(qam)
-        mcs_str = "/".join(str(m) for m in mcs)
-        return f"{qam_str} (MCS {mcs_str})"
-    # Просто MCS-индекс числом
-    mod = mcs_to_modulation(raw)
-    if mod is not None:
-        return f"{mod} (MCS {int(extract_number(raw))})"
-    return None
-
-
-def parse_antenna_response(res: Any) -> int | None:
-    """Извлекает код режима антенны (0..3) из ответа Huawei API.
-
-    Имена полей различаются между моделями/endpoint (antennatype,
-    antenna_type, antennaType, type, mode, curtype…), поэтому:
-      1. пробуем известные ключи;
-      2. затем — любой ключ, содержащий 'antenna' или 'type'/'mode',
-         значение которого приводится к числу 0..3.
-    Возвращает код или None.
-    """
-    if res is None:
-        return None
-    # Не-dict (число/строка) — пробуем напрямую
-    if not isinstance(res, dict):
-        n = extract_number(res)
-        return int(n) if n is not None and 0 <= n <= 3 else None
-
-    known = ('antennatype', 'antenna_type', 'antennaType', 'AntennaType',
-             'curtype', 'type', 'Type', 'mode', 'Mode', 'antennamode')
-    for k in known:
-        if k in res:
-            n = extract_number(res[k])
-            if n is not None and 0 <= n <= 3:
-                return int(n)
-    # Эвристика: любой «antenna/type/mode» ключ с числом 0..3
-    for k, v in res.items():
-        kl = str(k).lower()
-        if 'antenna' in kl or 'type' in kl or 'mode' in kl:
-            n = extract_number(v)
-            if n is not None and 0 <= n <= 3:
-                return int(n)
-    return None
+    if _current_lang == "ru":
+        return text
+    return EN.get(text, text)
