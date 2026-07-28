@@ -101,7 +101,8 @@ def test_health_missing_data():
 def test_health_excellent():
     score, msg, _ = core.calculate_overall_health(-70, 25)
     assert score >= 85
-    assert "Идеально" in msg
+    assert "Отличный" in msg
+    assert "{pct}" in msg      # шаблон для локализации сохранён
 
 
 def test_health_poor():
@@ -287,7 +288,7 @@ def test_filter_on_only_whitelist():
     title, _, color = core.analyze_whitelist_results(
         [('a', True), ('b', True), ('c', True)],
         [('d', False), ('e', False), ('f', False)])
-    assert "ВКЛЮЧЕНЫ" in title
+    assert "фильтрация" in title.lower()
     assert color == "#d63031"
 
 
@@ -309,7 +310,7 @@ def test_partial_whitelist_still_counts():
     title, _, _ = core.analyze_whitelist_results(
         [('a', False), ('b', True), ('c', False)],   # 1 из 3
         [('d', False), ('e', False), ('f', False)])
-    assert "ВКЛЮЧЕНЫ" in title
+    assert "фильтрация" in title.lower()
 
 
 # =========================================================
@@ -409,7 +410,8 @@ def test_i18n_health_template_translatable():
     core.set_language("en")
     score, tmpl, _ = core.calculate_overall_health(-70, 25)
     rendered = core.t(tmpl).format(pct=score)
-    assert "Perfect" in rendered
+    assert "Excellent" in rendered
+    assert "signal" in rendered
     assert str(score) in rendered
     core.set_language("ru")
 
