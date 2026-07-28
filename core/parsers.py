@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import functools
 import re
 from typing import Any
 
@@ -97,9 +98,15 @@ def _earfcn_dl(earfcn: Any) -> Any:
     return int(m.group(0)) if m else None
 
 
-def _known_band_numbers() -> set:
-    """Номера бэндов, реально используемых в РФ/СНГ (из BANDS)."""
-    return {int(re.search(r'B(\d+)', name).group(1)) for name in BANDS}
+@functools.lru_cache(maxsize=1)
+def _known_band_numbers() -> frozenset:
+    """Номера бэндов, реально используемых в РФ/СНГ (из BANDS).
+
+    BANDS неизменен на время работы — кэшируем, чтобы не пересчитывать
+    множество на каждый тик мониторинга.
+    """
+    return frozenset(
+        int(re.search(r'B(\d+)', name).group(1)) for name in BANDS)
 
 
 def format_band_label(band_raw: Any, earfcn: Any = None) -> str:
