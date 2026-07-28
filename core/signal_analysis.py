@@ -51,9 +51,9 @@ def calculate_overall_health(rsrp: float | None,
     # (template.format(pct=overall)). Так health-сообщение тоже
     # локализуется. Подстрока с названием оценки сохранена для тестов.
     if overall >= 85:
-        return overall, "Идеально ({pct}%) — 4K/онлайн-игры", "#00b894"
+        return overall, "Отличный сигнал ({pct}%)", "#00b894"
     if overall >= 65:
-        return overall, "Хорошо ({pct}%) — стабильный FullHD", "#2ecc71"
+        return overall, "Хороший сигнал ({pct}%)", "#2ecc71"
     if overall >= 35:
-        return overall, "Умеренно ({pct}%) — крутите антенну", "#fdcb6e"
-    return overall, "Плохо ({pct}%) — будет рваться!", "#d63031"
+        return overall, "Средний сигнал — крутите антенну ({pct}%)", "#fdcb6e"
+    return overall, "Слабый сигнал — ищите лучше ({pct}%)", "#d63031"
