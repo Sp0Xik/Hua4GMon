@@ -19,7 +19,7 @@
     label = t("Подключиться")        # -> "Connect"
 
 Строки с подстановкой переводятся как шаблоны:
-    t("Идеально ({pct}%) — 4K/онлайн-игры").format(pct=90)
+    t("Отличный сигнал ({pct}%)").format(pct=90)
 """
 from __future__ import annotations
 
@@ -162,15 +162,13 @@ EN: dict[str, str] = {
     "Сигнал стабилен — зафиксируйте антенну":
         "Signal stable — fix the antenna",
 
-    # Здоровье связи (шаблоны с {pct})
-    "Идеально ({pct}%) — 4K/онлайн-игры":
-        "Perfect ({pct}%) — 4K/online gaming",
-    "Хорошо ({pct}%) — стабильный FullHD":
-        "Good ({pct}%) — stable FullHD",
-    "Умеренно ({pct}%) — крутите антенну":
-        "Moderate ({pct}%) — adjust the antenna",
-    "Плохо ({pct}%) — будет рваться!":
-        "Poor ({pct}%) — will keep dropping!",
+    # Оценка радиокачества (шаблоны с {pct})
+    "Отличный сигнал ({pct}%)": "Excellent signal ({pct}%)",
+    "Хороший сигнал ({pct}%)": "Good signal ({pct}%)",
+    "Средний сигнал — крутите антенну ({pct}%)":
+        "Fair signal — adjust the antenna ({pct}%)",
+    "Слабый сигнал — ищите лучше ({pct}%)":
+        "Weak signal — look for a better spot ({pct}%)",
 
     # Джиттер (шаблон)
     "Джиттер: {j:.1f} dB": "Jitter: {j:.1f} dB",
@@ -302,7 +300,8 @@ EN: dict[str, str] = {
 
     # Вердикты белых списков (заголовки)
     "Белые списки ВЫКЛЮЧЕНЫ": "Whitelist OFF",
-    "⚠ Белые списки ВКЛЮЧЕНЫ": "⚠ Whitelist ON",
+    "⚠ Вероятна фильтрация (белые списки)":
+        "⚠ Filtering likely (whitelist)",
     "Аномалия": "Anomaly",
     "Нет интернета": "No internet",
 
@@ -352,12 +351,14 @@ EN: dict[str, str] = {
      "(белых: {w}/{wt}, нейтральных: {n}/{nt})."): (
         "Normal mode — full internet is open "
         "(whitelisted: {w}/{wt}, neutral: {n}/{nt})."),
-    ("Сейчас на БС работают ТОЛЬКО разрешённые сайты "
-     "(белых: {w}/{wt}, нейтральных: 0/{nt}). "
-     "Обычные сайты заблокированы оператором."): (
-        "Only allowed sites work on this cell right now "
-        "(whitelisted: {w}/{wt}, neutral: 0/{nt}). "
-        "Regular sites are blocked by the operator."),
+    ("Разрешённые сайты отвечают, а нейтральные — нет "
+     "(белых: {w}/{wt}, нейтральных: 0/{nt}). Похоже на режим "
+     "белых списков оператора. Для точности проверьте "
+     "открытие обычного сайта в браузере."): (
+        "Allowed sites respond but neutral ones do not "
+        "(whitelisted: {w}/{wt}, neutral: 0/{nt}). Looks like the "
+        "operator's whitelist mode. To be sure, try opening a regular "
+        "site in a browser."),
     ("Нейтральные сайты доступны, но «белые» не отвечают. "
      "Скорее всего, вы вышли в интернет не через 4G "
      "(другой Wi-Fi, провод, VPN). Подключитесь к Wi-Fi роутера "
