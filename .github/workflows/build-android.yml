@@ -102,7 +102,8 @@ jobs:
         shell: bash
         run: |
           VER=$(python3 -c "import re;print(re.search(r'__version__ = \"(.*)\"', open('core/__init__.py').read()).group(1))")
-          SRC=$(find build-android/bin -name '*.apk' | head -n1)
+          SRC=$(find build-android/bin -name '*.apk' -print -quit)
+          [ -n "$SRC" ] || { echo "::error::APK не найден в build-android/bin"; exit 1; }
           if [ "${{ steps.mode.outputs.mode }}" = "release" ]; then
             NAME="Hua4GMon-v$VER.apk"
             APKSIGNER=$(ls ~/.buildozer/android/platform/android-sdk/build-tools/*/apksigner | sort -V | tail -n1)

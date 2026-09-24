@@ -68,4 +68,9 @@ runs:
       working-directory: build-android
       run: |
         export ANDROID_ACCEPT_SDK_LICENSE=yes
+        # `shell: bash` в GitHub Actions включает pipefail. Когда buildozer
+        # завершается, `yes` получает EPIPE и возвращает ошибку — успешная
+        # сборка помечалась бы как упавшая. Без pipefail статус шага —
+        # статус buildozer (ошибка сборки по-прежнему роняет шаг).
+        set +o pipefail
         yes | buildozer -v android ${{ inputs.mode }}

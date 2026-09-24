@@ -32,22 +32,59 @@ def pump(app, cond, timeout=10.0):
     return False
 
 
+def _create_root():
+    """Один интерпретатор Tk на весь модуль — как в самой программе.
+
+    На Windows-раннерах GitHub повторное создание Tk() в одном процессе
+    изредка падает на чтении собственных скриптов Tcl (TclError
+    «couldn't read file …init.tcl: No error»). Приложение создаёт Tk
+    один раз, поэтому тесты делают так же; повтор с паузой — на случай
+    такого же разового сбоя при единственном создании.
+    """
+    for attempt in range(3):
+        try:
+            return tk.Tk()
+        except tk.TclError:
+            if attempt == 2:
+                raise
+            time.sleep(0.5)
+    raise AssertionError("unreachable")
+
+
+@pytest.fixture(scope="module")
+def shared_app():
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(router_mod, "RECONNECT_DELAY_INITIAL", 0.05)
+        mp.setattr(router_mod, "RECONNECT_DELAY_MAX", 0.1)
+        mp.setattr(demo_mod, "REBOOT_SECONDS", 0.5)
+        mp.setattr(demo_mod, "REREGISTER_SECONDS", 0.1)
+        mp.setattr(main.messagebox, "askyesno", lambda *a, **k: True)
+        mp.setattr(main.messagebox, "showinfo", lambda *a, **k: None)
+        mp.setattr(main.messagebox, "showwarning", lambda *a, **k: None)
+        core.set_language("ru")
+        a = main.Hua4GMon(_create_root())
+        yield a
+        a.on_closing()
+        core.set_language("ru")
+
+
 @pytest.fixture
-def app(monkeypatch):
-    monkeypatch.setattr(router_mod, "RECONNECT_DELAY_INITIAL", 0.05)
-    monkeypatch.setattr(router_mod, "RECONNECT_DELAY_MAX", 0.1)
-    monkeypatch.setattr(demo_mod, "REBOOT_SECONDS", 0.5)
-    monkeypatch.setattr(demo_mod, "REREGISTER_SECONDS", 0.1)
-    monkeypatch.setattr(main.messagebox, "askyesno", lambda *a, **k: True)
-    monkeypatch.setattr(main.messagebox, "showinfo", lambda *a, **k: None)
-    monkeypatch.setattr(main.messagebox, "showwarning", lambda *a, **k: None)
+def app(shared_app):
+    """Общее окно, приведённое к исходному состоянию перед каждым тестом."""
+    a = shared_app
+    a.disconnect()
+    a._close_roof()
     core.set_language("ru")
-    root = tk.Tk()
-    a = main.Hua4GMon(root)
+    if a.lang_var.get() != core.LANGUAGES["ru"]:
+        a.rebuild_ui()
+    a.reconnect_var.set(True)
     a.update_interval.set('0.5')
+    a.graph_param.set('sinr')
+    a._on_graph_param()
+    a.root.update()
     yield a
-    a.on_closing()
-    core.set_language("ru")
+    a.disconnect()
+    a._close_roof()
 
 
 def online(app):

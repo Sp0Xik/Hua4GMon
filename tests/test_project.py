@@ -145,6 +145,15 @@ def test_android_toolchain_pinned():
     assert '"cython==0.29.36"' in action
 
 
+def test_apk_build_step_survives_yes_pipe():
+    """`yes | buildozer` под pipefail роняет успешную сборку (EPIPE у yes)."""
+    action = read(".github/actions/buildozer-apk/action.yml")
+    step = action[action.index("- name: Build APK"):]
+    assert step.index("set +o pipefail") < step.index("yes | buildozer")
+    wf = read(".github/workflows/build-android.yml")
+    assert "| head" not in wf, "head в конвейере под pipefail может уронить шаг"
+
+
 def test_windows_build_uses_version_file():
     wf = read(".github/workflows/build.yml")
     assert "tools/make_version_info.py" in wf and "'--version-file'" in wf
