@@ -360,8 +360,11 @@ def test_core_does_not_pull_in_tkinter():
     # Проверяем именно что core не зависит от tk: tk может быть в sys.modules
     # из других тестов или conftest — это нормально. Проверяем сами модули:
     import inspect
-    for mod_name in ('core.constants', 'core.parsers',
-                     'core.signal_analysis', 'core.whitelist', 'core.i18n'):
+    for mod_name in ('core.constants', 'core.parsers', 'core.models',
+                     'core.signal_analysis', 'core.rf', 'core.state',
+                     'core.band_lock', 'core.errors', 'core.router',
+                     'core.demo', 'core.discovery', 'core.whitelist',
+                     'core.export', 'core.i18n'):
         mod = sys.modules.get(mod_name)
         if mod is None:
             continue
@@ -370,6 +373,8 @@ def test_core_does_not_pull_in_tkinter():
             f"{mod_name} тянет tkinter — Android-сборка сломается!"
         assert 'from tkinter' not in src, \
             f"{mod_name} тянет from tkinter — Android-сборка сломается!"
+        assert 'import kivy' not in src and 'from kivy' not in src, \
+            f"{mod_name} тянет kivy — Windows-сборка сломается!"
 
 
 # =========================================================
@@ -452,9 +457,9 @@ def test_android_main_reuses_core():
         import pytest
         pytest.skip("android_main.py отсутствует")
     assert "from core import" in src
-    # Ключевые общие функции должны импортироваться, а не дублироваться
-    for name in ("evaluate_signal", "format_band_label", "parse_cell_id",
-                 "is_valid_ip", "t"):
+    # Сессия, состояние и разбор — общие, а не продублированные в UI
+    for name in ("RouterSession", "SessionWorker", "SignalState",
+                 "evaluate_signal", "is_valid_ip", "t"):
         assert name in src, f"android_main должен использовать core.{name}"
 
 
@@ -532,9 +537,11 @@ def test_android_main_imports_exist_in_core():
 # =========================================================
 
 def test_mimo_tm_labels():
-    assert core.format_mimo('TM[4]') == "2x2 (closed-loop) [TM4]"
-    assert core.format_mimo('4') == "2x2 (closed-loop) [TM4]"
-    assert core.format_mimo('TM[2]') == "2x2 (Tx div) [TM2]"
+    """TM — схема передачи, а не число антенн (TM3/TM4 бывают и 2x2, и 4x4)."""
+    assert core.format_mimo('TM[4]') == "MIMO closed-loop [TM4]"
+    assert core.format_mimo('4') == "MIMO closed-loop [TM4]"
+    assert core.format_mimo('TM[2]') == "Tx diversity [TM2]"
+    assert core.format_mimo('TM[9]') == "MIMO up to 8 layers [TM9]"
 
 
 def test_mimo_unknown_and_empty():

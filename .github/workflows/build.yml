@@ -8,69 +8,107 @@ on:
     branches: [ main ]
   workflow_dispatch:            # ручной запуск из UI GitHub
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   # =================================================================
-  # LINT — быстрая проверка стиля на Ubuntu
+  # LINT — ruff закреплённой версии (requirements-dev.txt)
   # =================================================================
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version: '3.13'
           cache: 'pip'
-      - name: Install ruff
-        run: pip install ruff
-      - name: Run ruff
-        run: ruff check main.py android_main.py core/ tests/
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
 
   # =================================================================
-  # TEST — pytest для пакета core (быстро, без GUI/роутера)
+  # TEST — core + интеграция с huawei-lte-api + UI в тестовом режиме.
+  # Python 3.11 — версия Android-сборки; 3.14 — самая новая.
+  # UI-тесты идут под Xvfb; Kivy ставится только на 3.11 (версия
+  # рецепта python-for-android), на остальных Android-UI пропускается.
   # =================================================================
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: [ '3.11', '3.12', '3.13', '3.14' ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python }}
           cache: 'pip'
-      - name: Install deps + pytest
+          cache-dependency-path: requirements-dev.txt
+      - name: Install system packages for UI tests
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1 libegl1 libmtdev1
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-      - name: Run pytest
-        run: pytest
+          pip install -r requirements-dev.txt
+      - name: Install Kivy (Android UI tests)
+        if: matrix.python == '3.11'
+        run: pip install "kivy==2.3.0"
+      - name: Run pytest (with coverage of core)
+        run: xvfb-run -a pytest -q --cov=core --cov-report=term --cov-fail-under=90
 
   # =================================================================
-  # BUILD — единый Windows .exe, только после lint+test
+  # BUILD — portable Windows .exe, только после lint + test
   # =================================================================
   build-windows:
     needs: [ lint, test ]
     runs-on: windows-latest
     permissions:
       contents: write           # нужно для создания Release
-
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
-        python-version: '3.12'
+        python-version: '3.13'
         cache: 'pip'
+        cache-dependency-path: requirements-build.txt
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install "pyinstaller>=6.21,<7"
+        pip install -r requirements-build.txt -r requirements-dev.txt
+
+    # Те же тесты на настоящей Windows: Tk-интерфейс, winsound, пути.
+    - name: Run pytest on Windows
+      run: pytest -q
+
+    - name: Resolve version
+      shell: pwsh
+      run: |
+        $ver = python -c "import core; print(core.__version__)"
+        if ($env:GITHUB_REF -like 'refs/tags/v*') {
+          if ("v$ver" -ne $env:GITHUB_REF_NAME) {
+            Write-Error "Тег $env:GITHUB_REF_NAME не совпадает с core.__version__ = $ver"
+            exit 1
+          }
+          $exeName = "Hua4GMon-v$ver.exe"
+        } else {
+          $exeName = "Hua4GMon-v$ver-dev-$($env:GITHUB_SHA.Substring(0, 7)).exe"
+        }
+        "EXE_NAME=$exeName" | Out-File -FilePath $env:GITHUB_ENV -Append
 
     - name: Build single-file EXE
       shell: pwsh
       run: |
+        # VERSIONINFO (свойства файла в Проводнике) — из core.__version__.
+        python tools/make_version_info.py version_info.txt
         # --onefile: всё внутри одного бинарника, всегда portable.
         # --noupx: не давим UPX-ом — это снижает false-positive у AV.
         # --collect-submodules core: страховка, чтобы PyInstaller
@@ -82,8 +120,10 @@ jobs:
             '--windowed',
             '--noupx',
             '--name', 'Hua4GMon',
+            '--version-file', 'version_info.txt',
             '--collect-submodules', 'core',
             '--exclude-module', 'pytest',
+            '--exclude-module', 'kivy',
             '--exclude-module', 'numpy',
             '--exclude-module', 'matplotlib',
             '--exclude-module', 'PIL',
@@ -96,29 +136,27 @@ jobs:
         $pyiArgs += 'main.py'
         pyinstaller @pyiArgs
 
+    - name: Smoke-test EXE
+      shell: pwsh
+      timeout-minutes: 3
+      run: |
+        # --version печатает версию и завершается: проверяет, что все
+        # модули упакованы и .exe вообще запускается.
+        $p = Start-Process dist/Hua4GMon.exe -ArgumentList '--version' -PassThru -Wait
+        if ($p.ExitCode -ne 0) { Write-Error "EXE завершился с кодом $($p.ExitCode)"; exit 1 }
+
     - name: Stage release assets
       shell: pwsh
       run: |
-        # dist/Hua4GMon.exe — единственный обязательный файл.
-        # Считаем SHA256, копируем README и LICENSE рядом для удобства.
-        $version = if ($env:GITHUB_REF -like 'refs/tags/v*') {
-          $env:GITHUB_REF -replace 'refs/tags/',''
-        } else {
-          "dev-$(Get-Date -Format yyyyMMdd-HHmmss)"
-        }
-        $exeName = "Hua4GMon-$version.exe"
-        Copy-Item dist/Hua4GMon.exe $exeName
-
-        $hash = (Get-FileHash $exeName -Algorithm SHA256).Hash
-        "$hash  $exeName" | Out-File -Encoding ascii "$exeName.sha256"
-
-        "EXE_NAME=$exeName" | Out-File -FilePath $env:GITHUB_ENV -Append
-        "EXE_HASH=$hash"    | Out-File -FilePath $env:GITHUB_ENV -Append
-        "EXE_SIZE=$([math]::Round((Get-Item $exeName).Length / 1MB, 1)) МБ" |
+        Copy-Item dist/Hua4GMon.exe $env:EXE_NAME
+        $hash = (Get-FileHash $env:EXE_NAME -Algorithm SHA256).Hash
+        "$hash  $env:EXE_NAME" | Out-File -Encoding ascii "$env:EXE_NAME.sha256"
+        "EXE_HASH=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "EXE_SIZE=$([math]::Round((Get-Item $env:EXE_NAME).Length / 1MB, 1)) МБ" |
             Out-File -FilePath $env:GITHUB_ENV -Append
 
     - name: Upload artifact (для push и PR)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: Hua4GMon-Windows
         path: |
@@ -127,21 +165,27 @@ jobs:
 
     - name: Create GitHub Release (только на тегах vX.Y.Z)
       if: startsWith(github.ref, 'refs/tags/v')
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         files: |
           ${{ env.EXE_NAME }}
           ${{ env.EXE_NAME }}.sha256
           README.md
           LICENSE
+          LICENSES/LGPL-3.0.txt
+          LICENSES/GPL-3.0.txt
+          LICENSES/DejaVu-Fonts.txt
         body: |
-          **Hua4GMon ${{ github.ref_name }}** — portable Windows .exe.
+          **Hua4GMon ${{ github.ref_name }}** — portable Windows .exe и Android APK.
 
-          Просто скачайте `${{ env.EXE_NAME }}` и запустите. Установка
+          **Windows:** скачайте `${{ env.EXE_NAME }}` и запустите. Установка
           не требуется, ничего не пишется на диск.
 
-          **Размер:** ${{ env.EXE_SIZE }}
-          **SHA256:**
+          **Android:** установите `Hua4GMon-${{ github.ref_name }}.apk`
+          (Android 7–16).
+
+          **Размер .exe:** ${{ env.EXE_SIZE }}
+          **SHA256 .exe:**
           ```
           ${{ env.EXE_HASH }}
           ```

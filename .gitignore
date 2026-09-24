@@ -65,3 +65,8 @@ Thumbs.db
 # ==== Артефакты запуска ====
 *.log
 hua4gmon-*.csv
+hua4gmon-diag-*.json
+
+# ==== Сборка Windows (генерируется в CI) ====
+version_info.txt
+Hua4GMon.spec

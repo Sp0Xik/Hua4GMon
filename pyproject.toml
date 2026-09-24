@@ -1,5 +1,9 @@
+# Конфигурация инструментов. Проект не публикуется как пакет: версия —
+# в core/__init__.py (__version__), зависимости — в requirements*.txt.
+# Минимальная версия Python — 3.11 (Android-сборка использует 3.11).
+
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 exclude = ["dist", "build", ".venv", ".buildozer", "build-android"]
 
@@ -19,7 +23,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["main", "android_main", "core"]
+known-first-party = ["main", "android_main", "core", "tools"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
@@ -31,3 +35,11 @@ known-first-party = ["main", "android_main", "core"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["core"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

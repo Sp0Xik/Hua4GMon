@@ -1,0 +1,3 @@
+# Сборка portable .exe для Windows.
+-r requirements.txt
+pyinstaller==6.22.3

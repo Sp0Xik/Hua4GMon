@@ -1,0 +1,28 @@
+# Автоматические предложения обновлений зависимостей.
+#
+# Важно: версии Python-пакетов закреплены в двух местах —
+# requirements.txt (Windows/тесты) и buildozer.spec (Android).
+# Тест tests/test_project.py::test_android_pins_match_requirements
+# упадёт, пока версия в buildozer.spec не обновлена так же — это
+# намеренно: Android-сборка не должна отставать незаметно.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      runtime:
+        patterns: [ "huawei-lte-api", "requests", "urllib3", "certifi",
+                    "idna", "charset-normalizer", "xmltodict", "pycryptodomex" ]
+      dev-tools:
+        patterns: [ "pytest", "pytest-cov", "ruff", "pyinstaller" ]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: [ "*" ]

@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from core.constants import SIGNAL_THRESHOLDS
+from core.constants import HEALTH_CURVES, SIGNAL_THRESHOLDS
 
 
 def evaluate_signal(param: str,
@@ -29,27 +29,39 @@ def evaluate_signal(param: str,
     return "Н/Д", "gray", 0
 
 
+def curve_score(param: str, val: float | None) -> float:
+    """Непрерывная оценка 0..100 по опорным точкам HEALTH_CURVES."""
+    points = HEALTH_CURVES.get(param)
+    if val is None or not points:
+        return 0.0
+    if val <= points[0][0]:
+        return points[0][1]
+    for (x0, y0), (x1, y1) in zip(points, points[1:], strict=False):
+        if val <= x1:
+            return y0 + (y1 - y0) * (val - x0) / (x1 - x0)
+    return points[-1][1]
+
+
 def calculate_overall_health(rsrp: float | None,
-                              sinr: float | None
-                              ) -> tuple[int, str, str]:
+                             sinr: float | None
+                             ) -> tuple[int, str, str]:
     """Общая оценка качества связи на основе RSRP и SINR.
 
-    Формула: 70% веса от худшего параметра, 30% от лучшего.
-    Это даёт реалистичную оценку: один отличный показатель не
-    компенсирует один плохой.
+    Формула: 70% веса от худшего параметра, 30% от лучшего — один
+    отличный показатель не компенсирует один плохой. Внутри порогов
+    оценка непрерывна, поэтому прогресс-бар откликается на поворот
+    антенны даже на 1–2 дБ.
 
-    Возвращает (процент 0..100, описание для UI, цвет).
+    Возвращает (процент 0..100, шаблон описания с {pct}, цвет).
     """
     if rsrp is None or sinr is None:
         return 0, "Нет данных", "gray"
-    _, _, r_pct = evaluate_signal('rsrp', rsrp)
-    _, _, s_pct = evaluate_signal('sinr', sinr)
-    overall = int(min(r_pct, s_pct) * 0.7 + max(r_pct, s_pct) * 0.3)
+    r_pct = curve_score('rsrp', rsrp)
+    s_pct = curve_score('sinr', sinr)
+    overall = int(round(min(r_pct, s_pct) * 0.7 + max(r_pct, s_pct) * 0.3))
     overall = max(0, min(100, overall))
-    # Возвращаем ШАБЛОН с плейсхолдером {pct}, а не готовую строку:
-    # слой отображения переводит его через i18n и подставляет число
-    # (template.format(pct=overall)). Так health-сообщение тоже
-    # локализуется. Подстрока с названием оценки сохранена для тестов.
+    # Возвращаем ШАБЛОН с плейсхолдером {pct}: слой отображения переводит
+    # его через i18n и подставляет число.
     if overall >= 85:
         return overall, "Отличный сигнал ({pct}%)", "#00b894"
     if overall >= 65:

@@ -4,95 +4,141 @@ on:
   push:
     branches: [ main ]
     tags:     [ 'v*.*.*' ]
+    # Для тегов фильтр путей не применяется — релиз собирается всегда.
+    paths:
+      - 'android_main.py'
+      - 'core/**'
+      - 'assets/**'
+      - 'LICENSES/**'
+      - 'buildozer.spec'
+      - 'requirements.txt'
+      - '.github/workflows/build-android.yml'
+      - '.github/actions/buildozer-apk/**'
   workflow_dispatch:
+    inputs:
+      canary:
+        description: 'Дополнительно проверить сборку на buildozer 1.6.0 (на релиз не влияет)'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 3 * * 1'     # еженедельная проверка buildozer 1.6.0 (canary)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  build-android:
-    # Фиксируем 22.04: там есть libtinfo5, нужный Android SDK build-tools
-    # (aidl/aapt), и стабильный набор пакетов для python-for-android.
-    # Не используем сторонний buildozer-action — его Docker-образ ломается
-    # на устаревшем PPA openjdk-r (apt 404). Ставим всё вручную.
-    runs-on: ubuntu-22.04
+  # APK собирается только из кода, прошедшего тесты.
+  test:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      # Десктопный main.py — Tkinter-версия, она НЕ должна быть точкой
-      # входа на Android. Собираем в отдельной папке, где android_main.py
-      # становится main.py. Десктопный main.py в репозитории не трогаем.
-      - name: Stage Android sources
-        run: |
-          mkdir -p build-android
-          cp android_main.py build-android/main.py
-          cp -r core build-android/core
-          cp -r assets build-android/assets
-          cp buildozer.spec build-android/buildozer.spec
-          ls -la build-android
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
 
-      # Android Gradle Plugin требует Java 17. На раннере по умолчанию
-      # активна Java 11 (Gradle берёт именно её и падает). setup-java
-      # ставит JDK 17 и прокидывает JAVA_HOME на него для всех шагов.
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+  build:
+    needs: test
+    # 22.04: там есть libtinfo5, нужный Android SDK build-tools (aidl/aapt).
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write        # прикрепление APK к Release на тегах
+    env:
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Release-подпись постоянным ключом из секретов репозитория.
+      # Без секретов (форки, PR) собирается debug APK только как артефакт;
+      # на тегах без секретов сборка падает — неподписанный релиз не выходит.
+      - name: Select build mode and signing
+        id: mode
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            {
+              echo "P4A_RELEASE_KEYSTORE=$RUNNER_TEMP/release.keystore"
+              echo "P4A_RELEASE_KEYSTORE_PASSWD=$KEYSTORE_PASSWORD"
+              echo "P4A_RELEASE_KEYALIAS=$KEY_ALIAS"
+              echo "P4A_RELEASE_KEYALIAS_PASSWD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "::error::Секреты подписи ANDROID_* не заданы — релизный APK не собирается."
+            exit 1
+          else
+            echo "::warning::Секреты подписи не заданы — собирается debug APK (только артефакт)."
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check tag matches core.__version__
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VER=$(python3 -c "import re;print(re.search(r'__version__ = \"(.*)\"', open('core/__init__.py').read()).group(1))")
+          [ "v$VER" = "$GITHUB_REF_NAME" ] || { echo "::error::Тег $GITHUB_REF_NAME != v$VER"; exit 1; }
+
+      - uses: ./.github/actions/buildozer-apk
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          buildozer-version: '1.5.0'
+          mode: ${{ steps.mode.outputs.mode }}
+          cache-prefix: buildozer-v3
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git zip unzip autoconf libtool \
-            pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev \
-            libtinfo5 cmake libffi-dev libssl-dev build-essential ccache
-
-      - name: Install buildozer + cython
-        run: |
-          python -m pip install --upgrade pip
-          # Фиксированные версии: buildozer 1.5.0 совместим с p4a
-          # v2024.01.21 (задан в buildozer.spec) и NDK 25b. Свежий
-          # buildozer тянул бы Python 3.14 + NDK r28c, где ломается pyjnius.
-          pip install "buildozer==1.5.0"
-          pip install "cython==0.29.36"
-
-      # Кэшируем тяжёлые скачивания SDK/NDK между сборками, иначе каждый
-      # прогон качает несколько ГБ и занимает 30-40 минут.
-      # Префикс v2 — чтобы сбросить старый кэш от сломанных сборок
-      # (там осел NDK r28c / Python 3.14).
-      - name: Cache buildozer global dir
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: buildozer-v2-${{ hashFiles('build-android/buildozer.spec') }}
-          restore-keys: |
-            buildozer-v2-
-
-      - name: Build APK (debug)
-        working-directory: build-android
-        run: |
-          export ANDROID_ACCEPT_SDK_LICENSE=yes
-          # yes | — автоприём лицензий SDK при первой загрузке
-          yes | buildozer -v android debug
-
-      - name: Locate built APK
+      - name: Name, verify and hash APK
         id: apk
+        shell: bash
         run: |
-          APK=$(find build-android/bin -name '*.apk' | head -n1)
-          echo "Found APK: $APK"
-          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          VER=$(python3 -c "import re;print(re.search(r'__version__ = \"(.*)\"', open('core/__init__.py').read()).group(1))")
+          SRC=$(find build-android/bin -name '*.apk' | head -n1)
+          if [ "${{ steps.mode.outputs.mode }}" = "release" ]; then
+            NAME="Hua4GMon-v$VER.apk"
+            APKSIGNER=$(ls ~/.buildozer/android/platform/android-sdk/build-tools/*/apksigner | sort -V | tail -n1)
+            "$APKSIGNER" verify --print-certs "$SRC"
+          else
+            NAME="Hua4GMon-v$VER-debug-${GITHUB_SHA::7}.apk"
+          fi
+          cp "$SRC" "$NAME"
+          sha256sum "$NAME" > "$NAME.sha256"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Hua4GMon-Android
-          path: ${{ steps.apk.outputs.apk_path }}
+          path: |
+            ${{ steps.apk.outputs.name }}
+            ${{ steps.apk.outputs.name }}.sha256
 
-      - name: Attach APK to Release (на тегах vX.Y.Z)
+      - name: Attach APK to Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
-          files: ${{ steps.apk.outputs.apk_path }}
+          files: |
+            ${{ steps.apk.outputs.name }}
+            ${{ steps.apk.outputs.name }}.sha256
+
+  # Проверка обновления инструментов без риска для релиза: тот же p4a
+  # v2024.01.21, но buildozer 1.6.0. Результат не влияет на сборку.
+  canary:
+    if: github.event_name == 'schedule' || inputs.canary
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/buildozer-apk
+        with:
+          buildozer-version: '1.6.0'
+          mode: debug
+          cache-prefix: buildozer-canary-v1

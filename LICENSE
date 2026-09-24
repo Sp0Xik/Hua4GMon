@@ -24,17 +24,28 @@ SOFTWARE.
 THIRD-PARTY COMPONENTS
 ================================================================================
 
-This software builds upon the following open-source projects. Full credit
-and gratitude to their authors.
+The Windows .exe and the Android APK bundle the following open-source
+components. Full license texts are in the LICENSES/ directory of the source
+repository and are attached to every release.
 
 * huawei-lte-api — https://github.com/Salamek/huawei-lte-api
   Copyright (c) Adam Schubert (Salamek) and contributors.
-  Licensed under LGPL-3.0. Performs all low-level communication with the
-  Huawei router web API; Hua4GMon would not be possible without it.
+  Licensed under LGPL-3.0 (LICENSES/LGPL-3.0.txt, which refers to
+  LICENSES/GPL-3.0.txt). Used unmodified as a separate library; its source
+  code is available at the URL above and on PyPI. Performs all low-level
+  communication with the Huawei router web API.
 
-* Kivy (Android version) — https://kivy.org/
-  Licensed under the MIT License.
+* requests (Apache-2.0), urllib3 (MIT), idna (BSD-3-Clause),
+  charset-normalizer (MIT), certifi (MPL-2.0, source on PyPI),
+  xmltodict (MIT), pycryptodome / pycryptodomex (BSD-2-Clause and public
+  domain) — dependencies of huawei-lte-api.
 
-* DejaVu Sans font (bundled in assets/, Android version) —
-  Licensed under the DejaVu Fonts License (a permissive, Bitstream Vera
-  derived license).
+* Python (PSF License), Tcl/Tk (Tcl license) — Windows version runtime,
+  packaged with PyInstaller (bootloader: GPL-2.0 with an exception that
+  permits distributing packaged applications under any license).
+
+* Kivy (MIT), python-for-android (MIT), pyjnius (MIT), SDL2 (zlib) —
+  Android version runtime.
+
+* DejaVu Sans font (assets/DejaVuSans.ttf, Android version) — Bitstream Vera
+  derived license, see LICENSES/DejaVu-Fonts.txt.

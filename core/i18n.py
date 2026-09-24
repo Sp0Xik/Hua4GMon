@@ -35,344 +35,684 @@ _current_lang = _DEFAULT_LANG
 # RU → EN. Ключ — исходная русская строка (ровно как в коде).
 # Если строки здесь нет, t() вернёт ключ (т.е. русский вариант).
 EN: dict[str, str] = {
-    # --- Вкладки ---
-    "⚙️ Подключение": "⚙️ Connection",
-    "📈 Монитор": "📈 Monitor",
-    "🎛️ Сеть": "🎛️ Network",
-    "🗼 Вышка": "🗼 Tower",
-    "📊 Состояние": "📊 Status",
-    "🛡 Белые списки (РФ)": "🛡 Whitelist (RU)",
+    # --- Ядро (core): статусы сигнала, ошибки, RF-подсказки, Band Lock, белые списки ---
+    "1 поток":
+        "1 stream",
+    "2 потока":
+        "2 streams",
+    "DNS не отвечает":
+        "DNS not responding",
+    "TCP есть, TLS оборван ({reason})":
+        "TCP ok, TLS dropped ({reason})",
+    "Авто":
+        "Auto",
+    "Агрегация пропадёт: не выбраны {bands}.":
+        "Carrier aggregation will stop: {bands} not selected.",
+    "Аномалия":
+        "Anomaly",
+    "Белые списки ВЫКЛЮЧЕНЫ":
+        "Whitelist OFF",
+    "Внешняя":
+        "External",
+    "Внутренняя":
+        "Internal",
+    "Загрузка/помехи":
+        "Load/interference",
+    "Идеальный":
+        "Ideal",
+    "Критичный":
+        "Critical",
+    ("Модем передаёт почти на максимуме мощности: отдача ограничена — нужна "
+     "антенна точнее или выше."):
+        ("The modem transmits near maximum power: upload is limited — aim the "
+         "antenna better or mount it higher."),
+    "Н/Д":
+        "N/A",
+    "Неверное имя пользователя.":
+        "Wrong username.",
+    "Неверный логин или пароль. Пароль — на наклейке роутера.":
+        "Wrong username or password. The password is on the router's label.",
+    "Неверный пароль.":
+        "Wrong password.",
+    ("Нейтральные сайты доступны, но «белые» не отвечают. Скорее всего, вы "
+     "вышли в интернет не через 4G (другой Wi-Fi, провод, VPN). "
+     "Подключитесь к Wi-Fi роутера и повторите."):
+        ("Neutral sites are reachable but whitelisted ones are not. You are "
+         "likely online not via 4G (another Wi-Fi, cable, VPN). Connect to the "
+         "router's Wi-Fi and retry."),
+    "Нет данных":
+        "No data",
+    "Нет интернета":
+        "No internet",
+    "Нет сети":
+        "No service",
+    ("Ни одна цель не отвечает. Либо у роутера нет связи с БС, либо "
+     "проблема с DNS/маршрутом. Проверьте RSRP и трафик."):
+        ("No target responds. Either the router has no cell link, or there is a "
+         "DNS/route problem. Check RSRP and traffic."),
+    "Нормальный":
+        "Normal",
+    ("Обычный режим — открыт весь интернет (белых: {w}/{wt}, нейтральных: "
+     "{n}/{nt})."):
+        ("Normal mode — full internet is open (whitelisted: {w}/{wt}, neutral: "
+         "{n}/{nt})."),
+    "Отличный":
+        "Excellent",
+    "Отличный сигнал ({pct}%)":
+        "Excellent signal ({pct}%)",
+    "Очень слабый":
+        "Very weak",
+    "Плохой":
+        "Poor",
+    "Потоки MIMO неравны: проверьте разъёмы и кабели обоих портов.":
+        "MIMO streams are unequal: check connectors and cables of both ports.",
+    "Похоже на фильтрацию по SNI: TCP проходит, TLS — нет.":
+        "Looks like SNI filtering: TCP passes, TLS does not.",
+    ("Работает один поток MIMO: проверьте второй кабель и поляризацию "
+     "второго порта."):
+        ("Only one MIMO stream is active: check the second cable and the second "
+         "port's polarization."),
+    ("Разрешённые сайты отвечают, а нейтральные — нет (белых: {w}/{wt}, "
+     "нейтральных: 0/{nt}). Похоже на режим белых списков оператора. Для "
+     "точности проверьте открытие обычного сайта в браузере."):
+        ("Allowed sites respond but neutral ones do not (whitelisted: {w}/{wt}, "
+         "neutral: 0/{nt}). Looks like the operator's whitelist mode. To be "
+         "sure, try opening a regular site in a browser."),
+    "Роутер занят — повторите через несколько секунд.":
+        "Router is busy — retry in a few seconds.",
+    "Роутер не отвечает: проверьте подключение к его Wi-Fi/USB и IP-адрес.":
+        "Router is not responding: check the Wi-Fi/USB link and the IP address.",
+    "Роутер требует сменить пароль — сделайте это в веб-интерфейсе.":
+        "The router requires a password change — do it in the web interface.",
+    "Сессия истекла — нужно войти заново.":
+        "Session expired — log in again.",
+    "Сессия устарела — нужно войти заново.":
+        "Session is stale — log in again.",
+    "Сигнал «гуляет»: проверьте крепление антенны и переотражения.":
+        "The signal fluctuates: check the antenna mount and reflections.",
+    ("Сигнал чистый, но слабый: поднимите антенну выше, возьмите антенну с "
+     "большим усилением или укоротите кабель."):
+        ("Signal is clean but weak: mount the antenna higher, use a higher-gain "
+         "antenna or a shorter cable."),
+    "Сильный":
+        "Strong",
+    "Слабый":
+        "Weak",
+    "Слабый сигнал — ищите лучше ({pct}%)":
+        "Weak signal — look for a better spot ({pct}%)",
+    ("Слишком много неудачных попыток входа — роутер временно заблокировал "
+     "вход. Подождите несколько минут и проверьте пароль."):
+        ("Too many failed login attempts — the router has temporarily blocked "
+         "logins. Wait a few minutes and check the password."),
+    "Смешанная":
+        "Mixed",
+    "Сота загружена: сравните с соседней сотой или другим бэндом.":
+        "The cell is loaded: compare with a neighbor cell or another band.",
+    "Средний":
+        "Fair",
+    "Средний сигнал — крутите антенну ({pct}%)":
+        "Fair signal — adjust the antenna ({pct}%)",
+    ("Текущий бэнд B{band} исключён — связь пропадёт до перерегистрации "
+     "модема."):
+        ("The current band B{band} is excluded — the link will drop until the "
+         "modem re-registers."),
+    ("Уже выполнен вход с другого устройства — закройте веб-интерфейс "
+     "роутера и повторите."):
+        ("Already logged in from another device — close the router's web "
+         "interface and retry."),
+    ("Уровень есть, но много помех: сместите азимут, попробуйте другой "
+     "сектор или проверьте поляризацию."):
+        ("Level is fine but interference is high: shift the azimuth, try "
+         "another sector or check polarization."),
+    "Функция не поддерживается этой моделью или прошивкой.":
+        "Not supported by this model or firmware.",
+    "Хороший":
+        "Good",
+    "Хороший сигнал ({pct}%)":
+        "Good signal ({pct}%)",
+    "Шумный":
+        "Noisy",
+    "на пределе":
+        "at the limit",
+    "норма":
+        "normal",
+    "ошибка ({code})":
+        "error ({code})",
+    "повышенная":
+        "elevated",
+    "потоки неравны":
+        "streams unequal",
+    "соединение отклонено":
+        "connection refused",
+    "соединение сброшено":
+        "connection reset",
+    "таймаут":
+        "timeout",
+    "⚠ Вероятна фильтрация (белые списки)":
+        "⚠ Filtering likely (whitelist)",
 
-    # --- Верхняя панель ---
-    "Отключено": "Disconnected",
-    "Подключено": "Connected",
-    "Подключение...": "Connecting...",
-    "Ошибка": "Error",
-    "Поверх окон": "Always on top",
-    "Язык:": "Language:",
-    "Портативный монитор LTE Huawei": "Portable Huawei LTE monitor",
-    "Тестовый режим (без модема)": "Test mode (no modem)",
-    "Тестовый режим": "Test mode",
-    # Чистые подписи без эмодзи (для Android: эмодзи не рендерятся)
-    "Подключиться": "Connect",
-    "Отключиться": "Disconnect",
-    "Сеть": "Network",
-    "Перезагрузить роутер": "Reboot router",
-    "Проверить сейчас": "Check now",
-    "Белые списки (РФ)": "Whitelist (RU)",
-    "Информация": "Information",
-    "Инфо": "Info",
-    "Подсказка": "Help",
-    "Состояние": "Status",
-    "Вышка": "Tower",
-    "Назад": "Back",
-    "Качество связи": "Link quality",
-    "ТЕСТОВЫЙ РЕЖИМ — демо-данные": "TEST MODE — demo data",
-    "ДЕМО": "DEMO",
-    "Во весь экран": "Fullscreen",
-    "Читаю настройки модема…": "Reading modem settings…",
-    "Band Lock: AUTO (все диапазоны)": "Band Lock: AUTO (all bands)",
-    "Band Lock: {bands}": "Band Lock: {bands}",
-    "Band Lock: не удалось прочитать": "Band Lock: could not read",
-    "Band Lock: не поддерживается моделью": "Band Lock: not supported by model",
-    "Антенна: {mode}": "Antenna: {mode}",
-    "Антенна: не удалось прочитать": "Antenna: could not read",
-    "Антенна: не поддерживается моделью": "Antenna: not supported by model",
-    "Нет подключения к роутеру.": "Not connected to the router.",
-    "Тестовый режим — настройки модема не читаются.":
-        "Test mode — modem settings are not read.",
-    "Модуляция DL": "Modulation DL",
-    "Модуляция UL": "Modulation UL",
-    "Модуляция DL / UL": "Modulation DL / UL",
-    "Ширина канала": "Channel width",
-    "TAC (зона)": "TAC (area)",
-    "Мощность передатчика": "TX power",
-    "Режим MIMO": "MIMO mode",
-    "Трафик за месяц (↓/↑)": "Monthly traffic (↓/↑)",
-    "Операции с роутером недоступны в тестовом режиме.":
-        "Router operations are unavailable in test mode.",
-    "← Назад": "← Back",
+    # --- Общие строки Windows и Android ---
+    "Band Lock применён: {bands}.":
+        "Band Lock applied: {bands}.",
+    "CQI (потоки)":
+        "CQI (streams)",
+    "Cell (Локальный сектор)":
+        "Cell (local sector)",
+    "EARFCN (канал DL)":
+        "EARFCN (DL channel)",
+    "ICCID (SIM-карта)":
+        "ICCID (SIM card)",
+    "IMEI (роутер)":
+        "IMEI (router)",
+    "IP адрес:":
+        "IP address:",
+    "RSRP мин / макс":
+        "RSRP min / max",
+    "SIM / Устройство":
+        "SIM / Device",
+    "SINR мин / макс":
+        "SINR min / max",
+    "TAC (зона)":
+        "TAC (area)",
+    "eNodeB (Вышка)":
+        "eNodeB (Tower)",
+    "{at} смена соты: {old} → {new}":
+        "{at} cell change: {old} → {new}",
+    "Агрегация (CA)":
+        "Aggregation (CA)",
+    "Активна":
+        "Active",
+    "ВЫКЛЮЧЕНЫ":
+        "OFF",
+    "Включаю все бэнды…":
+        "Enabling all bands…",
+    "Включены все бэнды (AUTO).":
+        "All bands enabled (AUTO).",
+    "Восстанавливаю настройки…":
+        "Restoring settings…",
+    "Восстановлены настройки, прочитанные при подключении.":
+        "Settings read at connection time have been restored.",
+    "Время сессии":
+        "Session time",
+    "Выберите хотя бы один диапазон!":
+        "Select at least one band!",
+    "Зафиксировать бэнды: {bands}?":
+        "Lock bands: {bands}?",
+    "Информация о станции":
+        "Cell info",
+    "Исходные настройки не прочитаны — роутер не отдал net-mode.":
+        "Original settings were not read — the router did not return net-mode.",
+    "Ищу роутер…":
+        "Looking for the router…",
+    ("Команда отправлена, но роутер вернул другие настройки — проверьте "
+     "строку «Сейчас на модеме»."):
+        ("Command sent, but the router reports different settings — check the "
+         "“Now on the modem” line."),
+    "Лучшие соты за сессию":
+        "Best cells this session",
+    "МГц":
+        "MHz",
+    "Мобильные данные":
+        "Mobile data",
+    "Мобильные данные на роутере выключены.":
+        "Mobile data is turned off on the router.",
+    "Модель":
+        "Model",
+    "Модем перерегистрируется в сети (до ~30 с).":
+        "The modem is re-registering on the network (up to ~30 s).",
+    "Модуляция DL / UL":
+        "Modulation DL / UL",
+    "Мощность передатчика":
+        "TX power",
+    "Найден роутер {model} на {ip}":
+        "Found router {model} at {ip}",
+    "Накапливаю данные...":
+        "Collecting data...",
+    ("Не удалось включить мобильные данные — включите их в веб-интерфейсе "
+     "роутера."):
+        ("Could not turn mobile data back on — enable it in the router's web "
+         "interface."),
+    ("Неверный IP-адрес: {ip}\n"
+     "Пример: 192.168.8.1"):
+        ("Invalid IP address: {ip}\n"
+         "Example: 192.168.8.1"),
+    "Неизвестный оператор":
+        "Unknown operator",
+    "Неизвестный режим антенны.":
+        "Unknown antenna mode.",
+    "Нет":
+        "No",
+    "Нет связи с роутером — переподключаюсь…":
+        "No link to the router — reconnecting…",
+    "Номер телефона":
+        "Phone number",
+    "Оператор (PLMN)":
+        "Operator (PLMN)",
+    "Отдано за сессию":
+        "Uploaded this session",
+    "Отметить текущие":
+        "Mark current",
+    "Отмечены текущие бэнды: {bands}":
+        "Current bands marked: {bands}",
+    "Отправляю команду перезагрузки…":
+        "Sending the reboot command…",
+    "Ошибка":
+        "Error",
+    "Пароль:":
+        "Password:",
+    ("Перезагрузить роутер?\n"
+     "\n"
+     "Соединение с интернетом прервётся на 1–2 минуты. Программа "
+     "переподключится автоматически."):
+        ("Reboot the router?\n"
+         "\n"
+         "The internet connection will drop for 1–2 minutes. The app will "
+         "reconnect automatically."),
+    "Переключаю антенну…":
+        "Switching the antenna…",
+    "Переключение антенн":
+        "Antenna switching",
+    "Переподключаю связь…":
+        "Reconnecting the link…",
+    ("Переподключить мобильную связь?\n"
+     "\n"
+     "Интернет пропадёт примерно на 5–10 секунд."):
+        ("Reconnect the mobile link?\n"
+         "\n"
+         "The internet will drop for about 5–10 seconds."),
+    "Пик: {v} (Δ {d})":
+        "Peak: {v} (Δ {d})",
+    "Подключение и частые ошибки":
+        "Connection & common errors",
+    "Подключение...":
+        "Connecting...",
+    "Подождите 1–3 секунды.":
+        "Please wait 1–3 seconds.",
+    "Подтверждение":
+        "Confirm",
+    "Применить":
+        "Apply",
+    "Применить Band Lock":
+        "Apply Band Lock",
+    "Применяю Band Lock…":
+        "Applying Band Lock…",
+    "Проверка…":
+        "Checking…",
+    "Прошивка":
+        "Firmware",
+    "Рабочий Band (LTE)":
+        "Working band (LTE)",
+    "Режим MIMO":
+        "MIMO mode",
+    "Режим сети будет «только 4G».":
+        "Network mode will be “4G only”.",
+    "Роутер не найден. Проверьте подключение к его Wi-Fi/USB.":
+        "Router not found. Check the connection to its Wi-Fi/USB.",
+    "Роутер отклонил команду: {err}":
+        "The router rejected the command: {err}",
+    "Роутер перезагружается — переподключусь автоматически.":
+        "The router is rebooting — I will reconnect automatically.",
+    "Роутер принял команду, но сообщает другой режим антенны.":
+        "The router accepted the command but reports a different antenna mode.",
+    "Связь переподключена.":
+        "Link reconnected.",
+    "Сейчас на модеме: AUTO (все бэнды)":
+        "Now on the modem: AUTO (all bands)",
+    "Сейчас на модеме: {bands}":
+        "Now on the modem: {bands}",
+    "Сейчас на модеме: не прочитано":
+        "Now on the modem: not read",
+    "Сектор антенны (PCI)":
+        "Antenna sector (PCI)",
+    "Серийный номер":
+        "Serial number",
+    "Скачано за сессию":
+        "Downloaded this session",
+    "Скорость (Download)":
+        "Speed (Download)",
+    "Скорость (Upload)":
+        "Speed (Upload)",
+    "Сначала подключитесь к роутеру.":
+        "Connect to the router first.",
+    "Собираю диагностику…":
+        "Collecting diagnostics…",
+    "Текущий бэнд ещё не определён.":
+        "The current band is not known yet.",
+    "Температура чипа":
+        "Chip temperature",
+    "Технология":
+        "Technology",
+    "Тип антенны изменён: {mode}":
+        "Antenna type changed: {mode}",
+    "Трафик за месяц (↓/↑)":
+        "Monthly traffic (↓/↑)",
+    "Управление роутером":
+        "Router management",
+    "Фиксация частот (Band Lock)":
+        "Band Lock",
+    "Частота DL":
+        "DL frequency",
+    "Ширина канала":
+        "Channel width",
+    "Язык:":
+        "Language:",
+    "включены":
+        "on",
+    "нет свежих данных":
+        "no fresh data",
+    "последние {n} точек":
+        "last {n} points",
+    "⚠ Данные устарели — нет ответа {s:.0f} с":
+        "⚠ Data is stale — no response for {s:.0f} s",
+    "⚪ Нейтральные":
+        "⚪ Neutral",
+    "✅ В белых списках":
+        "✅ In whitelist",
+    "📶 Переподключить связь":
+        "📶 Reconnect link",
+    "🔄 Перезагрузить роутер":
+        "🔄 Reboot router",
+    "🧪 ДЕМО · азимут {a}":
+        "🧪 DEMO · azimuth {a}",
+    "🧪 Тестовый режим":
+        "🧪 Test mode",
 
-    # --- Вкладка Подключение ---
-    "Параметры роутера": "Router settings",
-    "IP адрес:": "IP address:",
-    "Пароль:": "Password:",
-    "Опрос (сек):": "Polling (sec):",
-    "Авто-переподключение при обрыве": "Auto-reconnect on drop",
-    "🚀 Подключиться": "🚀 Connect",
-    "⏹ Отключиться": "⏹ Disconnect",
-    "Подключение и частые ошибки": "Connection & common errors",
-    (
-        "IP по умолчанию: 192.168.8.1 (для B315/B525 — 192.168.1.1 "
-        "или 192.168.3.1). Логин: admin, пароль — на наклейке роутера.\n"
-        "\n"
-        "Частые ошибки и что делать:\n"
-        "• 401 Unauthorized — неверный пароль, либо в веб-морду уже "
-        "вошли с другого устройства. Закройте веб-интерфейс роутера "
-        "и проверьте пароль.\n"
-        "• 108003 / 108006 — превышено число сессий или уже выполнен "
-        "вход. Перезагрузите роутер или подождите 1–2 минуты.\n"
-        "• 100002 / 100003 — функция не поддерживается этой моделью "
-        "или прошивкой. Часть возможностей будет недоступна — это "
-        "нормально.\n"
-        "• 125002 / 125003 — устарел токен сессии. Переподключитесь.\n"
-        "• Таймаут / нет ответа — проверьте, что ноутбук подключён "
-        "к Wi-Fi или USB именно этого роутера и IP введён верно."
-    ): (
-        "Default IP: 192.168.8.1 (for B315/B525 — 192.168.1.1 "
-        "or 192.168.3.1). Login: admin, password is on the router label.\n"
-        "\n"
-        "Common errors and fixes:\n"
-        "• 401 Unauthorized — wrong password, or the web UI is already "
-        "open on another device. Close the router web interface and "
-        "check the password.\n"
-        "• 108003 / 108006 — too many sessions or already logged in. "
-        "Reboot the router or wait 1–2 minutes.\n"
-        "• 100002 / 100003 — feature not supported by this model or "
-        "firmware. Some functions will be unavailable — this is normal.\n"
-        "• 125002 / 125003 — session token expired. Reconnect.\n"
-        "• Timeout / no response — make sure the laptop is connected to "
-        "the Wi-Fi or USB of this exact router and the IP is correct."
-    ),
-
-    # --- Вкладка Монитор ---
-    "Общее качество связи": "Overall link quality",
-    "Подключитесь к роутеру": "Connect to the router",
-    "Нет данных": "No data",
-    "Н/Д": "N/A",
-    "Пик: -": "Peak: -",
-    "Пик: {v}": "Peak: {v}",
-    "Тенденция RSRP (поворачивайте антенну)":
-        "RSRP trend (rotate the antenna)",
-    "Накапливаю данные...": "Collecting data...",
-    "Джиттер: -": "Jitter: -",
-    "🔊 Аудио-помощник": "🔊 Audio assistant",
-    "🔊 Аудио (ОС не поддерживается)": "🔊 Audio (OS not supported)",
-    "🖥 Крышный режим": "🖥 Rooftop mode",
-    "График:": "Chart:",
-    "Сбросить пики": "Reset peaks",
-    "💾 Экспорт CSV": "💾 Export CSV",
-    "[ESC] для выхода": "[ESC] to exit",
-
-    # Направление сигнала
+    # --- Windows (main.py) ---
+    ("IP по умолчанию: 192.168.8.1 (для B315/B525 — 192.168.1.1 или "
+     "192.168.3.1) — кнопка «Найти роутер» проверит их сама. Логин: admin, "
+     "пароль — на наклейке роутера.\n"
+     "\n"
+     "Частые ошибки и что делать:\n"
+     "• 108006 — неверный логин или пароль.\n"
+     "• 108007 — слишком много неудачных попыток: роутер временно "
+     "заблокировал вход. Подождите несколько минут.\n"
+     "• 108003 — уже выполнен вход с другого устройства. Закройте "
+     "веб-интерфейс роутера.\n"
+     "• 100002 — функция не поддерживается этой моделью или прошивкой. "
+     "Часть возможностей будет недоступна — это нормально.\n"
+     "• 100003 / 125002 / 125003 — истекла сессия. Программа войдёт заново "
+     "сама.\n"
+     "• Нет ответа — проверьте, что компьютер подключён к Wi-Fi или USB "
+     "именно этого роутера и IP введён верно.\n"
+     "\n"
+     "Тестовый режим показывает работу программы без роутера."):
+        ("Default IP: 192.168.8.1 (B315/B525: 192.168.1.1 or 192.168.3.1) — the "
+         "“Find router” button checks them automatically. Login: admin, the "
+         "password is on the router's label.\n"
+         "\n"
+         "Common errors and what to do:\n"
+         "• 108006 — wrong username or password.\n"
+         "• 108007 — too many failed attempts: the router has temporarily "
+         "blocked logins. Wait a few minutes.\n"
+         "• 108003 — already logged in from another device. Close the router's "
+         "web interface.\n"
+         "• 100002 — not supported by this model or firmware. Some features "
+         "will be unavailable — this is normal.\n"
+         "• 100003 / 125002 / 125003 — session expired. The app logs in again "
+         "by itself.\n"
+         "• No response — make sure the computer is connected to this router's "
+         "Wi-Fi or USB and the IP is correct.\n"
+         "\n"
+         "Test mode shows how the app works without a router."),
+    "[ESC] или F11 — выход":
+        "[ESC] or F11 — exit",
+    ("«Переподключить связь» выключает и включает мобильные данные: модем "
+     "заново выбирает лучшую соту — быстрее перезагрузки. После "
+     "перезагрузки программа переподключится сама."):
+        ("“Reconnect link” turns mobile data off and on: the modem picks the "
+         "best cell again — faster than a reboot. After a reboot the app "
+         "reconnects by itself."),
+    "Авто-переподключение при обрыве":
+        "Auto-reconnect on drop",
+    "Бэнд":
+        "Band",
+    "Вердикт":
+        "Verdict",
+    "Внимание":
+        "Warning",
+    "Все бэнды (AUTO)":
+        "All bands (AUTO)",
+    "График и стрелка:":
+        "Graph and arrow:",
+    "Джиттер: -":
+        "Jitter: -",
+    "Джиттер: {j:.1f} dB":
+        "Jitter: {j:.1f} dB",
+    "Диагностика сохранена: {path}. Личные номера замаскированы.":
+        "Diagnostics saved: {path}. Personal identifiers are masked.",
+    "Замеров":
+        "Samples",
+    "Лог сессии пуст. Подключитесь и подождите, пока соберутся данные.":
+        "Session log is empty. Connect and wait for data to accumulate.",
+    "Лучший RSRP":
+        "Best RSRP",
+    "Лучший SINR":
+        "Best SINR",
+    "Мониторинг железа и трафика":
+        "Hardware & traffic monitor",
+    "Не открыть браузер: {e}":
+        "Cannot open browser: {e}",
+    "Не проверялось":
+        "Not tested",
+    "Не удалось записать файл: {e}":
+        "Failed to write file: {e}",
+    "Недостаточно данных о вышке (нужны PLMN и eNodeB).":
+        "Not enough cell data (PLMN and eNodeB required).",
+    "Общее качество связи":
+        "Overall link quality",
+    "Опрос (сек):":
+        "Polling (sec):",
+    "Отключено":
+        "Disconnected",
+    "Параметры роутера":
+        "Router settings",
+    "Перед проверкой":
+        "Before testing",
+    "Пик: -":
+        "Peak: -",
+    "Поверх окон":
+        "Always on top",
+    "Подключено":
+        "Connected",
+    "Подключитесь к роутеру":
+        "Connect to the router",
+    "Режим:":
+        "Mode:",
+    "Сбросить пики (Ctrl+R)":
+        "Reset peaks (Ctrl+R)",
+    "Связь с роутером потеряна":
+        "Connection to the router lost",
+    "Сейчас на модеме: -":
+        "Now on the modem: -",
+    "Сигнал стабилен — зафиксируйте антенну":
+        "Signal stable — fix the antenna",
     "Сигнал улучшается — продолжайте в том же направлении":
         "Signal improving — keep turning that way",
     "Сигнал ухудшается — поверните обратно":
         "Signal getting worse — turn back",
-    "Сигнал стабилен — зафиксируйте антенну":
-        "Signal stable — fix the antenna",
+    ("Сохранено {n} записей в:\n"
+     "{path}"):
+        ("Saved {n} records to:\n"
+         "{path}"),
+    "Тенденция {param} (поворачивайте антенну)":
+        "{param} trend (turn the antenna)",
+    ("Фиксация бэндов привязывает модем к выбранным частотам. Список взят "
+     "из модема; замеченные в эфире бэнды — первыми. Перед записью "
+     "программа читает текущие настройки и меняет только LTE-бэнды; "
+     "«Вернуть как было» восстановит настройки, прочитанные при подключении."):
+        ("Band locking ties the modem to the selected frequencies. The list "
+         "comes from the modem; bands seen on air come first. Before writing, "
+         "the app reads the current settings and changes only the LTE bands; "
+         "“Restore as before” brings back the settings read at connection time."),
+    "Экспорт":
+        "Export",
+    "не проверено":
+        "not tested",
+    "пик {v}":
+        "peak {v}",
+    "↩ Вернуть как было":
+        "↩ Restore as before",
+    "⏹ Отключиться":
+        "⏹ Disconnect",
+    "⚙️ Подключение":
+        "⚙️ Connection",
+    ("⚠ Ноутбук должен быть подключён к Wi-Fi или USB именно этого роутера "
+     "— иначе тест измерит чужой канал.\n"
+     "• Применимо только для РФ."):
+        ("⚠ The laptop must be connected to the Wi-Fi or USB of this exact "
+         "router — otherwise the test measures a different link.\n"
+         "• Applies to Russia only."),
+    "🎛️ Сеть":
+        "🎛️ Network",
+    "💾 Экспорт CSV":
+        "💾 Export CSV",
+    "📈 Монитор":
+        "📈 Monitor",
+    "📊 Состояние":
+        "📊 Status",
+    "🔊 Аудио (ОС не поддерживается)":
+        "🔊 Audio (OS not supported)",
+    "🔊 Звук (Ctrl+M)":
+        "🔊 Sound (Ctrl+M)",
+    "🔍 Проверить сейчас":
+        "🔍 Check now",
+    "🔎 Найти роутер":
+        "🔎 Find router",
+    "🖥 Крышный режим (F11)":
+        "🖥 Roof mode (F11)",
+    "🗺 Открыть на CellMapper":
+        "🗺 Open in CellMapper",
+    "🗼 Вышка":
+        "🗼 Tower",
+    "🚀 Подключиться":
+        "🚀 Connect",
+    "🛡 Белые списки (РФ)":
+        "🛡 Whitelist (RU)",
+    "🧾 Сохранить диагностику":
+        "🧾 Save diagnostics",
 
-    # Оценка радиокачества (шаблоны с {pct})
-    "Отличный сигнал ({pct}%)": "Excellent signal ({pct}%)",
-    "Хороший сигнал ({pct}%)": "Good signal ({pct}%)",
-    "Средний сигнал — крутите антенну ({pct}%)":
-        "Fair signal — adjust the antenna ({pct}%)",
-    "Слабый сигнал — ищите лучше ({pct}%)":
-        "Weak signal — look for a better spot ({pct}%)",
-
-    # Джиттер (шаблон)
-    "Джиттер: {j:.1f} dB": "Jitter: {j:.1f} dB",
-
-    # --- Вкладка Сеть ---
-    "Фиксация частот (Band Lock)": "Band Lock",
-    (
-        "ВНИМАНИЕ: фиксация диапазона может уменьшить покрытие. "
-        "Применяйте, чтобы привязаться к лучшей вышке — сначала "
-        "определите рабочий band на вкладке «Вышка»."
-    ): (
-        "WARNING: locking a band may reduce coverage. Use it to pin to "
-        "the best cell — first identify the working band on the «Tower» tab."
-    ),
-    "Применить Band Lock": "Apply Band Lock",
-    "Сбросить в AUTO": "Reset to AUTO",
-    "Переключение антенн": "Antenna switching",
-    "Режим:": "Mode:",
-    "Применить": "Apply",
-    "Управление роутером": "Router management",
-    (
-        "Перезагрузка иногда нужна после Band Lock, переключения "
-        "антенн или при «зависании» сетевой части. Через 1–2 минуты "
-        "переподключитесь вручную."
-    ): (
-        "A reboot is sometimes needed after Band Lock, antenna switching "
-        "or when the network stack hangs. Reconnect manually after "
-        "1–2 minutes."
-    ),
-    "🔄 Перезагрузить роутер": "🔄 Reboot router",
-
-    # Антенна (режимы)
-    "Авто": "Auto",
-    "Внутренняя": "Internal",
-    "Внешняя": "External",
-    "Смешанная": "Mixed",
-
-    # --- Вкладка Вышка ---
-    "Информация о станции": "Cell info",
-    "Оператор (PLMN)": "Operator (PLMN)",
-    "Рабочий Band (LTE)": "Working band (LTE)",
-    "EARFCN (канал DL)": "EARFCN (DL channel)",
-    "Агрегация (CA)": "Aggregation (CA)",
-    "Ширина канала (DL)": "Channel width (DL)",
-    "Сектор антенны (PCI)": "Antenna sector (PCI)",
-    "eNodeB (Вышка)": "eNodeB (Tower)",
-    "Cell (Локальный сектор)": "Cell (local sector)",
-    "SIM / Устройство": "SIM / Device",
-    "IMEI (роутер)": "IMEI (router)",
-    "IMSI (SIM)": "IMSI (SIM)",
-    "ICCID (SIM-карта)": "ICCID (SIM card)",
-    "Номер телефона": "Phone number",
-    "Серийный номер": "Serial number",
-    "Модель": "Model",
-    "Прошивка": "Firmware",
-    "🗺 Открыть на CellMapper": "🗺 Open in CellMapper",
-    "Неизвестный оператор": "Unknown operator",
-    "Активна": "Active",
-    "Нет (Single)": "No (Single)",
-
-    # --- Вкладка Состояние ---
-    "Мониторинг железа и трафика": "Hardware & traffic monitor",
-    "Время сессии": "Session time",
-    "Температура чипа": "Chip temperature",
-    "Скорость (Download)": "Speed (Download)",
-    "Скорость (Upload)": "Speed (Upload)",
-    "Скачано за сессию": "Downloaded this session",
-    "Отдано за сессию": "Uploaded this session",
-    "RSRP мин / макс": "RSRP min / max",
-    "SINR мин / макс": "SINR min / max",
-
-    # --- Вкладка Белые списки ---
-    "Перед проверкой": "Before testing",
-    (
-        "⚠ Ноутбук должен быть подключён к Wi-Fi или USB именно этого "
-        "роутера — иначе тест измерит чужой канал.\n"
-        "• Применимо только для РФ."
-    ): (
-        "⚠ The laptop must be connected to the Wi-Fi or USB of this exact "
-        "router — otherwise the test measures a different link.\n"
-        "• Applies to Russia only."
-    ),
-    "🔍 Проверить сейчас": "🔍 Check now",
-    "Проверка…": "Checking…",
-    "Подождите 1–3 секунды.": "Please wait 1–3 seconds.",
-    "Вердикт": "Verdict",
-    "Не проверялось": "Not tested",
-    "✅ В белых списках": "✅ In whitelist",
-    "⚪ Нейтральные": "⚪ Neutral",
-    "не проверено": "not tested",
-
-    # --- messagebox: заголовки и тексты ---
-    "Успех": "Success",
-    "Внимание": "Warning",
-    "Подтверждение": "Confirm",
-    "Ошибка подключения": "Connection error",
-    "Экспорт": "Export",
-    "Перезагрузка": "Reboot",
-    "Сначала подключитесь к роутеру.": "Connect to the router first.",
-    "Выберите хотя бы один диапазон!": "Select at least one band!",
-    "Неизвестный режим антенны.": "Unknown antenna mode.",
-    "Сеть сброшена в AUTO.": "Network reset to AUTO.",
-    "Неверный IP-адрес: {ip}\nПример: 192.168.8.1":
-        "Invalid IP address: {ip}\nExample: 192.168.8.1",
-    "Связь с роутером не удалась:\n\n{err}":
-        "Failed to reach the router:\n\n{err}",
-    "Band Lock применён (mask: {mask}).":
-        "Band Lock applied (mask: {mask}).",
-    "Роутер отклонил команду:\n{err}":
-        "The router rejected the command:\n{err}",
-    "Тип антенны изменён: {mode}": "Antenna type changed: {mode}",
-    "Перезагрузить роутер?\n\nСоединение с интернетом прервётся на 1–2 "
-    "минуты. После загрузки переподключитесь вручную.":
-        "Reboot the router?\n\nInternet will drop for 1–2 minutes. "
-        "Reconnect manually after it boots.",
-    "Команда отправлена. Роутер вернётся через 1–2 минуты.":
-        "Command sent. The router will be back in 1–2 minutes.",
-    "Не удалось перезагрузить:\n{err}": "Failed to reboot:\n{err}",
-    "Недостаточно данных о вышке (нужны PLMN и eNodeB).":
-        "Not enough cell data (PLMN and eNodeB required).",
-    "Не открыть браузер: {e}": "Cannot open browser: {e}",
-    "Лог сессии пуст. Подключитесь и подождите, пока соберутся данные.":
-        "Session log is empty. Connect and wait for data to accumulate.",
-    "Сохранено {n} записей в:\n{path}":
-        "Saved {n} records to:\n{path}",
-    "Не удалось записать файл: {e}": "Failed to write file: {e}",
-    "Таймаут API...": "API timeout...",
-    "Переподключение через {d:.0f}с...": "Reconnecting in {d:.0f}s...",
-
-    # Вердикты белых списков (заголовки)
-    "Белые списки ВЫКЛЮЧЕНЫ": "Whitelist OFF",
-    "⚠ Вероятна фильтрация (белые списки)":
-        "⚠ Filtering likely (whitelist)",
-    "Аномалия": "Anomaly",
-    "Нет интернета": "No internet",
-
-    # Метки уровней сигнала (из SIGNAL_THRESHOLDS)
-    "Отличный": "Excellent",
-    "Хороший": "Good",
-    "Средний": "Fair",
-    "Плохой": "Poor",
-    "Идеальный": "Ideal",
-    "Шумный": "Noisy",
-    "Критичный": "Critical",
-    "Сильный": "Strong",
-    "Нормальный": "Normal",
-    "Слабый": "Weak",
-    "Очень слабый": "Very weak",
-    "Стабильный": "Stable",
-    "Потери": "Losses",
-    "Высокие потери": "High losses",
-
-    # Обозначения бэндов (для Band Lock)
-    "B1 (2100 МГц)": "B1 (2100 MHz)",
-    "B3 (1800 МГц)": "B3 (1800 MHz)",
-    "B5 (850 МГц)": "B5 (850 MHz)",
-    "B7 (2600 МГц)": "B7 (2600 MHz)",
-    "B8 (900 МГц)": "B8 (900 MHz)",
-    "B20 (800 МГц)": "B20 (800 MHz)",
-    "B38 (TDD 2600)": "B38 (TDD 2600)",
-    "B40 (TDD 2300)": "B40 (TDD 2300)",
-    "B41 (TDD 2500)": "B41 (TDD 2500)",
-
-    # Android-подсказки (Сеть)
-    ("ВНИМАНИЕ: фиксация диапазона может уменьшить покрытие. "
-     "Применяйте, чтобы привязаться к лучшей вышке — сначала "
-     "определите рабочий band на экране монитора."): (
-        "WARNING: locking a band may reduce coverage. Use it to bind to "
-        "the best tower — first identify the working band on the monitor "
-        "screen."),
-    ("⚠ Телефон должен быть подключён к Wi-Fi именно этого "
-     "роутера — иначе тест измерит чужой канал. Применимо только "
-     "для РФ."): (
-        "⚠ The phone must be connected to the Wi-Fi of this exact router "
-        "— otherwise the test measures a different link. Applies to "
-        "Russia only."),
-
-    # Детали вердикта белых списков (шаблоны с подстановкой счётчиков)
-    ("Обычный режим — открыт весь интернет "
-     "(белых: {w}/{wt}, нейтральных: {n}/{nt})."): (
-        "Normal mode — full internet is open "
-        "(whitelisted: {w}/{wt}, neutral: {n}/{nt})."),
-    ("Разрешённые сайты отвечают, а нейтральные — нет "
-     "(белых: {w}/{wt}, нейтральных: 0/{nt}). Похоже на режим "
-     "белых списков оператора. Для точности проверьте "
-     "открытие обычного сайта в браузере."): (
-        "Allowed sites respond but neutral ones do not "
-        "(whitelisted: {w}/{wt}, neutral: 0/{nt}). Looks like the "
-        "operator's whitelist mode. To be sure, try opening a regular "
-        "site in a browser."),
-    ("Нейтральные сайты доступны, но «белые» не отвечают. "
-     "Скорее всего, вы вышли в интернет не через 4G "
-     "(другой Wi-Fi, провод, VPN). Подключитесь к Wi-Fi роутера "
-     "и повторите."): (
-        "Neutral sites are reachable but whitelisted ones are not. "
-        "You are likely online not via 4G (another Wi-Fi, cable, VPN). "
-        "Connect to the router's Wi-Fi and retry."),
-    ("Ни одна цель не отвечает. Либо у роутера нет связи с БС, "
-     "либо проблема с DNS/маршрутом. Проверьте RSRP и трафик."): (
-        "No target responds. Either the router has no cell link, or "
-        "there is a DNS/route problem. Check RSRP and traffic."),
-
-    # График (Windows)
-    "последние {n} точек": "last {n} points",
+    # --- Android (android_main.py) ---
+    ("IP по умолчанию: 192.168.8.1 (для B315/B525 — 192.168.1.1 или "
+     "192.168.3.1) — кнопка «Найти» проверит их сама. Логин: admin, пароль "
+     "— на наклейке роутера.\n"
+     "\n"
+     "Частые ошибки и что делать:\n"
+     "• 108006 — неверный логин или пароль.\n"
+     "• 108007 — слишком много неудачных попыток: роутер временно "
+     "заблокировал вход. Подождите несколько минут.\n"
+     "• 108003 — уже выполнен вход с другого устройства. Закройте "
+     "веб-интерфейс роутера.\n"
+     "• 100002 — функция не поддерживается этой моделью или прошивкой. "
+     "Часть возможностей будет недоступна — это нормально.\n"
+     "• 100003 / 125002 / 125003 — истекла сессия. Программа войдёт заново "
+     "сама.\n"
+     "• Нет ответа — проверьте, что телефон подключён к Wi-Fi именно этого "
+     "роутера и IP введён верно.\n"
+     "\n"
+     "Тестовый режим показывает работу программы без роутера."):
+        ("Default IP: 192.168.8.1 (B315/B525: 192.168.1.1 or 192.168.3.1) — the "
+         "“Find” button checks them automatically. Login: admin, the password "
+         "is on the router's label.\n"
+         "\n"
+         "Common errors and what to do:\n"
+         "• 108006 — wrong username or password.\n"
+         "• 108007 — too many failed attempts: the router has temporarily "
+         "blocked logins. Wait a few minutes.\n"
+         "• 108003 — already logged in from another device. Close the router's "
+         "web interface.\n"
+         "• 100002 — not supported by this model or firmware. Some features "
+         "will be unavailable — this is normal.\n"
+         "• 100003 / 125002 / 125003 — session expired. The app logs in again "
+         "by itself.\n"
+         "• No response — make sure the phone is connected to this router's "
+         "Wi-Fi and the IP is correct.\n"
+         "\n"
+         "Test mode shows how the app works without a router."),
+    ("«Переподключить связь» заставляет модем заново выбрать лучшую соту — "
+     "быстрее перезагрузки. После перезагрузки программа переподключится "
+     "сама."):
+        ("“Reconnect link” makes the modem pick the best cell again — faster "
+         "than a reboot. After a reboot the app reconnects by itself."),
+    "Белые списки (РФ)":
+        "Whitelist (RU)",
+    "Во весь экран":
+        "Fullscreen",
+    "Все (AUTO)":
+        "All (AUTO)",
+    "Диагностика скопирована в буфер обмена. Личные номера замаскированы.":
+        "Diagnostics copied to the clipboard. Personal identifiers are masked.",
+    "Звук недоступен на этом устройстве":
+        "Sound is not available on this device",
+    "Информация":
+        "Information",
+    "Лучше — продолжайте":
+        "Better — keep going",
+    "Меню":
+        "Menu",
+    "Нажмите «Назад» ещё раз, чтобы отключиться":
+        "Press “Back” again to disconnect",
+    "Отключиться":
+        "Disconnect",
+    "Отключиться от роутера?":
+        "Disconnect from the router?",
+    "Перезагрузить роутер":
+        "Reboot router",
+    "Переподключить":
+        "Reconnect",
+    "Пики сброшены":
+        "Peaks reset",
+    "Подключиться":
+        "Connect",
+    "Подсказка":
+        "Help",
+    "Портативный монитор LTE/5G Huawei":
+        "Portable Huawei LTE/5G monitor",
+    "Проверить сейчас":
+        "Check now",
+    "Сеть":
+        "Network",
+    "Состояние":
+        "Status",
+    ("Список взят из модема; замеченные в эфире бэнды — первыми. Меняются "
+     "только LTE-бэнды; «Как было» восстановит настройки, прочитанные при "
+     "подключении."):
+        ("The list comes from the modem; bands seen on air come first. Only LTE "
+         "bands are changed; “As before” restores the settings read at "
+         "connection time."),
+    "Стабильно — фиксируйте":
+        "Stable — fix it here",
+    "Тестовый режим (без модема)":
+        "Test mode (no modem)",
+    "Хуже — поверните обратно":
+        "Worse — turn back",
+    "ℹ Информация":
+        "ℹ Information",
+    "← Назад":
+        "← Back",
+    "↩ Как было":
+        "↩ As before",
+    "⏏ Отключиться":
+        "⏏ Disconnect",
+    "☀ Солнце: вкл":
+        "☀ Sun mode: on",
+    "☀ Солнце: выкл":
+        "☀ Sun mode: off",
+    "☰ Меню":
+        "☰ Menu",
+    ("⚠ Телефон должен быть подключён к Wi-Fi именно этого роутера — иначе "
+     "тест измерит чужой канал. Применимо только для РФ."):
+        ("⚠ The phone must be connected to the Wi-Fi of this exact router — "
+         "otherwise the test measures a different link. Applies to Russia only."),
+    "⟲ Пики":
+        "⟲ Peaks",
+    "🎛 Сеть":
+        "🎛 Network",
+    "🔊 Звук":
+        "🔊 Sound",
+    "🔎 Найти":
+        "🔎 Find",
+    "🧾 Скопировать диагностику":
+        "🧾 Copy diagnostics",
 }
 
 

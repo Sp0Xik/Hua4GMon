@@ -1,10 +1,14 @@
-# Зависимости Windows-версии (десктоп, main.py).
-# Tkinter входит в стандартную библиотеку Python — отдельной установки
-# не требует.
+# Зависимости Windows-версии (main.py) и тестов core.
+# Tkinter входит в стандартную библиотеку Python.
 #
-# Android-версия (android_main.py) собирается через Buildozer; её
-# зависимости (kivy, pycryptodome и пр.) перечислены в buildozer.spec.
-#
-# Верхняя граница <2 — защита от мажорного релиза с ломающими
-# изменениями API. Актуальная протестированная версия: 1.11.x.
-huawei-lte-api>=1.10,<2
+# Версии закреплены (воспроизводимая сборка .exe). Те же версии
+# перечислены в buildozer.spec для Android — их совпадение проверяет
+# tests/test_project.py. Обновления предлагает Dependabot.
+huawei-lte-api==2.0.1
+requests==2.34.2
+urllib3==2.8.0
+certifi==2026.7.22
+idna==3.20
+charset-normalizer==3.5.1
+xmltodict==1.0.4
+pycryptodomex==3.23.0

@@ -1,0 +1,45 @@
+name: Сообщить об ошибке / Bug report
+description: Программа работает неправильно с вашим роутером или устройством
+labels: [ bug ]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо, что сообщаете о проблеме! Самое полезное — **диагностика**:
+        * Windows: вкладка «Сеть» → «🧾 Сохранить диагностику», приложите файл;
+        * Android: экран «Сеть» → «🧾 Скопировать диагностику», вставьте ниже.
+
+        IMEI, IMSI, ICCID, номер и серийный номер в диагностике уже замаскированы.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Платформа
+      options: [ Windows, Android ]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия Hua4GMon
+      placeholder: "1.4.0"
+    validations:
+      required: true
+  - type: input
+    id: router
+    attributes:
+      label: Модель роутера и прошивка
+      placeholder: "B636-336, 11.0.3.1"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Что произошло и что ожидалось
+      description: Шаги, после которых появляется ошибка.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Диагностика (JSON)
+      render: json
