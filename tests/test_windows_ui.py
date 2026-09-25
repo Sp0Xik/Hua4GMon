@@ -279,3 +279,18 @@ def test_close_splash(monkeypatch):
         raise OSError("bootloader closed the socket")
     monkeypatch.setitem(sys.modules, "pyi_splash", types.SimpleNamespace(close=gone))
     main.close_splash()
+
+
+def test_splash_status(monkeypatch):
+    shown = []
+    monkeypatch.setitem(sys.modules, "pyi_splash",
+                        types.SimpleNamespace(update_text=shown.append))
+    main.splash_status("Построение окна…")
+    assert shown == ["Построение окна…"]
+
+    def not_started(_text):
+        raise RuntimeError("This module is not initialized")
+    monkeypatch.setitem(sys.modules, "pyi_splash", types.SimpleNamespace(update_text=not_started))
+    main.splash_status("x")
+    monkeypatch.setitem(sys.modules, "pyi_splash", None)     # запуск из исходников
+    main.splash_status("x")

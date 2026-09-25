@@ -110,7 +110,8 @@ def test_no_todo_markers():
     markers = re.compile(r"\b(?:" + "TO" + "DO|" + "FIX" + "ME|" + "X" + r"XX:)")
     files = [*SOURCE_FILES, *sorted((ROOT / "tests").glob("*.py")),
              *sorted(ROOT.glob("*.md")), *sorted((ROOT / ".github").rglob("*.yml")),
-             ROOT / "buildozer.spec", ROOT / "pyproject.toml", ROOT / "packaging" / "windows.spec"]
+             ROOT / "buildozer.spec", ROOT / "pyproject.toml",
+             *sorted((ROOT / "packaging").glob("*.py")), ROOT / "packaging" / "windows.spec"]
     for p in files:
         m = markers.search(p.read_text(encoding="utf-8"))
         assert not m, f"{p.relative_to(ROOT)} содержит {m.group()}"
@@ -178,18 +179,19 @@ def test_apk_build_step_survives_yes_pipe():
     assert "| head" not in wf, "head в конвейере под pipefail может уронить шаг"
 
 
-def test_windows_build_uses_spec_and_self_test():
-    """CI собирает обе Windows-сборки из spec и запускает их --self-test."""
+def test_windows_build_is_single_exe_with_self_test():
+    """CI собирает один .exe из spec и проверяет его --self-test."""
     wf = read(".github/workflows/build.yml")
     job = wf[wf.index("build-windows:"):]
     assert "pyinstaller --noconfirm packaging/windows.spec" in job
     assert "--onefile" not in job, "параметры сборки — только в packaging/windows.spec"
-    smoke = job[job.index("- name: Smoke-test builds"):job.index("- name: Stage release assets")]
-    for exe in ("dist/Hua4GMon/Hua4GMon.exe", "dist/Hua4GMon-onefile.exe"):
-        assert f"'{exe}'" in smoke
-    assert "'--self-test'" in smoke and "exit 1" in smoke
+    smoke = job[job.index("- name: Smoke-test EXE"):job.index("- name: Stage release assets")]
+    assert "Start-Process dist/Hua4GMon.exe -ArgumentList '--self-test'" in smoke
+    assert "exit 1" in smoke
     release = job[job.index("- name: Create GitHub Release"):]
-    assert "${{ env.ZIP_NAME }}" in release and "${{ env.EXE_NAME }}" in release
+    assert "${{ env.EXE_NAME }}" in release
+    for other in ("installer.iss", "iscc", "innosetup", "setup.exe", ".zip"):
+        assert other not in job.lower(), f"Windows-версия — только один .exe: {other}"
     assert "make_version_info.render" in read("packaging/windows.spec")
 
 

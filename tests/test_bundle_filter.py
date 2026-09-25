@@ -6,6 +6,7 @@
 """
 import os
 import pathlib
+import runpy
 import struct
 import subprocess
 import sys
@@ -112,7 +113,7 @@ def _run_spec(tmp_path, monkeypatch):
     )
     namespace = {
         "Analysis": analysis, "PYZ": target("PYZ"), "EXE": target("EXE"),
-        "COLLECT": target("COLLECT"),
+        "COLLECT": target("COLLECT"),           # не должен вызываться
         "Splash": target("Splash", binaries=[("tk86t.dll", "f", "BINARY")]),
         "SPECPATH": str(SPEC.parent), "workpath": str(tmp_path / "work"), "os": os,
     }
@@ -122,34 +123,27 @@ def _run_spec(tmp_path, monkeypatch):
             for kind in ("Analysis", "PYZ", "EXE", "COLLECT", "Splash")}
 
 
-def test_spec_builds_onefile_and_portable(tmp_path, monkeypatch):
+def test_spec_builds_single_exe(tmp_path, monkeypatch):
     t = _run_spec(tmp_path, monkeypatch)
     (analysis,) = t["Analysis"]
     assert {"core.router", "core.demo", "core.i18n"} <= set(analysis.kwargs["hiddenimports"])
     assert "setuptools" in analysis.kwargs["excludes"]
+    assert analysis.kwargs["runtime_hooks"] == [str(ROOT / "packaging" / "splash_rthook.py")]
+    assert not t["COLLECT"], "только один .exe, без папки программы"
 
-    onefile, portable = t["EXE"]
+    (exe,) = t["EXE"]
+    (pyz,) = t["PYZ"]
+    (splash,) = t["Splash"]
     trimmed_bin = [("Cryptodome/Hash/_SHA1.pyd", "a", "BINARY"), ("tcl86t.dll", "c", "BINARY")]
     trimmed_dat = [("_tcl_data/init.tcl", "d", "DATA")]
-    assert onefile.kwargs["name"] == "Hua4GMon-onefile"
-    assert trimmed_bin in onefile.args and trimmed_dat in onefile.args
-    (splash,) = t["Splash"]
-    assert splash in onefile.args and splash.binaries in onefile.args
-    assert splash.kwargs["binaries"] == trimmed_bin
-
-    assert portable.kwargs["name"] == "Hua4GMon" and portable.kwargs["exclude_binaries"]
-    assert splash not in portable.args
-    portable_pyz = portable.args[0]
-    assert portable_pyz.args[0] == [("main", "m.py", "PYMODULE")]   # без pyi_splash
-    (collect,) = t["COLLECT"]
-    assert collect.args == (portable, trimmed_bin, trimmed_dat)
-    assert collect.kwargs["name"] == "Hua4GMon"
-
-    for exe in (onefile, portable):
-        assert exe.kwargs["upx"] is False and exe.kwargs["console"] is False
-        assert pathlib.Path(exe.kwargs["icon"]).is_file()
-        version_text = pathlib.Path(exe.kwargs["version"]).read_text(encoding="utf-8")
-        assert f"'FileVersion', '{core.__version__}'" in version_text
+    assert exe.args == (pyz, analysis.scripts, splash, splash.binaries, trimmed_bin, trimmed_dat)
+    assert pyz.args == (analysis.pure,)                 # pyi_splash остаётся — нужен заставке
+    assert splash.kwargs["binaries"] == trimmed_bin and splash.kwargs["datas"] == trimmed_dat
+    assert exe.kwargs["name"] == "Hua4GMon"
+    assert exe.kwargs["upx"] is False and exe.kwargs["console"] is False
+    assert pathlib.Path(exe.kwargs["icon"]).is_file()
+    version_text = pathlib.Path(exe.kwargs["version"]).read_text(encoding="utf-8")
+    assert f"'FileVersion', '{core.__version__}'" in version_text
 
 
 def test_splash_image_fits_pyinstaller_limits():
@@ -159,3 +153,28 @@ def test_splash_image_fits_pyinstaller_limits():
     width, height = struct.unpack(">II", data[16:24])
     # Больше 760×480 PyInstaller уменьшает только при наличии Pillow.
     assert width <= 760 and height <= 480
+
+
+# ---------- packaging/splash_rthook.py ----------
+
+RTHOOK = ROOT / "packaging" / "splash_rthook.py"
+
+
+def test_rthook_reports_loading_stage(monkeypatch):
+    shown = []
+    monkeypatch.setitem(sys.modules, "pyi_splash", types.SimpleNamespace(update_text=shown.append))
+    runpy.run_path(str(RTHOOK))
+    assert shown == ["Загрузка программы…"]
+
+
+def _splash_not_started(text):
+    raise RuntimeError(f"This module is not initialized: {text}")
+
+
+@pytest.mark.parametrize("module", [
+    None,                                                       # сборка без заставки
+    types.SimpleNamespace(update_text=_splash_not_started),     # загрузчик не показал её
+])
+def test_rthook_is_silent_without_splash(monkeypatch, module):
+    monkeypatch.setitem(sys.modules, "pyi_splash", module)
+    runpy.run_path(str(RTHOOK))

@@ -1,17 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Сборка Windows-версии (CI: .github/workflows/build.yml):
-#     pyinstaller --noconfirm packaging/windows.spec
+# Сборка Windows-версии — один portable .exe (CI: .github/workflows/build.yml):
+#     pyinstaller --noconfirm packaging/windows.spec      →  dist/Hua4GMon.exe
 #
-# Один анализ — две сборки в dist/:
-#   Hua4GMon/              portable-папка: Hua4GMon.exe + _internal.
-#                          Ничего не распаковывает при запуске — открывается
-#                          за секунды даже на слабом ноутбуке с антивирусом.
-#   Hua4GMon-onefile.exe   один файл. При каждом запуске распаковывается во
-#                          временную папку, и антивирус проверяет её заново;
-#                          пока идёт распаковка, видна заставка splash.png.
-#
-# Из обеих сборок убраны файлы, которые программа не загружает
-# (tools/bundle_filter.py): меньше файлов — быстрее распаковка и проверка.
+# Однофайловый .exe при каждом запуске распаковывает содержимое во
+# временную папку, а антивирус проверяет распакованные файлы. Поэтому:
+#   * в сборку не попадает то, что программа не загружает
+#     (tools/bundle_filter.py, excludes ниже) — меньше файлов, быстрее старт;
+#   * пока идёт распаковка и загрузка, видна заставка splash.png с ходом
+#     запуска.
 # VERSIONINFO (свойства файла в Проводнике) — из core.__version__.
 import pkgutil
 import sys
@@ -29,6 +25,8 @@ with open(version_file, "w", encoding="utf-8") as fh:
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],
+    # Первым делом сообщает заставке, что распаковка закончилась.
+    runtime_hooks=[os.path.join(SPECPATH, "splash_rthook.py")],
     # Все модули core, в том числе те, что main.py не импортирует напрямую.
     hiddenimports=[f"core.{m.name}" for m in pkgutil.iter_modules([os.path.join(ROOT, "core")])],
     # Тяжёлые пакеты, которые анализ иногда подтягивает транзитивно.
@@ -41,19 +39,11 @@ a = Analysis(
 )
 binaries = bundle_filter.trim(a.binaries, bundle_filter.keep_binary)
 datas = bundle_filter.trim(a.datas, bundle_filter.keep_data)
-pyz = PYZ(a.pure)
 
-# upx=False: сжатие UPX замедляет запуск и вызывает ложные срабатывания AV.
-exe_options = dict(
-    version=version_file,
-    icon=os.path.join(ROOT, "icon.ico"),
-    console=False,
-    upx=False,
-)
-
-# Заставка загрузчика: видна сразу после запуска, пока .exe распаковывается;
-# строка внизу показывает распаковываемые файлы. Закрывает её программа,
-# когда окно готово (main.close_splash).
+# Заставка загрузчика: появляется, как только .exe начал работать.
+# Строка внизу — ход запуска: «Распаковка…», имена распаковываемых файлов,
+# «Загрузка программы…» (splash_rthook.py), «Построение окна…» (main.py).
+# Закрывает заставку программа, когда окно готово (main.close_splash).
 splash = Splash(
     os.path.join(SPECPATH, "splash.png"),
     binaries=binaries,
@@ -61,27 +51,21 @@ splash = Splash(
     text_pos=(144, 150),
     text_size=-11,
     text_color="#666666",
-    text_default="...",
+    text_default="Распаковка…",
     always_on_top=False,
 )
+
+# upx=False: сжатие UPX замедляет запуск и вызывает ложные срабатывания AV.
 EXE(
-    pyz,
+    PYZ(a.pure),
     a.scripts,
     splash,
     splash.binaries,
     binaries,
     datas,
-    name="Hua4GMon-onefile",
-    **exe_options,
-)
-
-# Заставка нужна только однофайловой сборке. Без модуля pyi_splash
-# main.close_splash ничего не делает.
-portable = EXE(
-    PYZ([entry for entry in a.pure if entry[0] != "pyi_splash"]),
-    a.scripts,
-    exclude_binaries=True,
     name="Hua4GMon",
-    **exe_options,
+    version=version_file,
+    icon=os.path.join(ROOT, "icon.ico"),
+    console=False,
+    upx=False,
 )
-COLLECT(portable, binaries, datas, name="Hua4GMon", upx=False)

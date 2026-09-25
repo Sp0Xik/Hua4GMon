@@ -512,6 +512,8 @@ EN: dict[str, str] = {
         "Peak: -",
     "Поверх окон":
         "Always on top",
+    "Построение окна…":
+        "Building the window…",
     "Подключено":
         "Connected",
     "Подключитесь к роутеру":

@@ -1545,12 +1545,23 @@ class Hua4GMon:
 # ВХОД
 # =========================================================
 
+def splash_status(text: str) -> None:
+    """Строка хода запуска на заставке .exe (packaging/windows.spec).
+
+    Первую строку после распаковки пишет packaging/splash_rthook.py.
+    ImportError — запуск из исходников; RuntimeError/OSError — загрузчик
+    не показал заставку или уже закрыл её.
+    """
+    with contextlib.suppress(ImportError, RuntimeError, OSError):
+        import pyi_splash
+        pyi_splash.update_text(text)
+
+
 def close_splash() -> None:
-    """Убирает заставку, которую однофайловый .exe показывает, пока
-    распаковывается (packaging/windows.spec). При запуске из исходников
-    и в portable-сборке заставки нет — модуля pyi_splash тоже.
+    """Убирает заставку .exe, когда окно готово. При запуске из исходников
+    заставки нет — модуля pyi_splash тоже.
     Hardware validation required: заставка и время запуска на слабом
-    ноутбуке с антивирусом (однофайловый .exe против portable-папки).
+    ноутбуке с разными антивирусами.
     """
     try:
         import pyi_splash
@@ -1613,6 +1624,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.self_test is not None:
         close_splash()
         return run_self_test(args.self_test)
+    splash_status(t("Построение окна…"))
     root = tk.Tk()
     app = Hua4GMon(root, default_ip=args.ip, default_password=args.password, demo=args.demo)
     root.after_idle(close_splash)       # окно уже на экране — заставка не нужна
