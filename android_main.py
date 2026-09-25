@@ -140,6 +140,10 @@ PARAM_TITLES = {'rsrp': 'RSRP', 'rssi': 'RSSI', 'sinr': 'SINR', 'rsrq': 'RSRQ',
 TREND_GLYPHS = {TREND_UP: "↑", TREND_DOWN: "↓", TREND_FLAT: "→"}
 
 # Шрифт со стрелками (↑→↓), ⚠, Δ: встроенный Roboto в Kivy их не содержит.
+# Kivy не подменяет недостающие символы другим шрифтом, а цветных эмодзи
+# (🔊 🧪 ✅ …) в DejaVu Sans нет — они рисуются квадратом. Все подписи
+# Android используют только символы этого шрифта; это проверяет
+# tests/test_project.py::test_android_text_fits_bundled_font.
 _FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           'assets', 'DejaVuSans.ttf')
 
@@ -932,7 +936,7 @@ class ConnectionScreen(Screen):
         self.subtitle = t("Портативный монитор LTE/5G Huawei")
         self.lbl_ip = t("IP адрес:")
         self.lbl_pw = t("Пароль:")
-        self.lbl_find = t("🔎 Найти")
+        self.lbl_find = t("Найти")
         self.lbl_connect = t("Подключиться")
         self.lbl_lang = t("Язык:")
         self.lbl_demo = t("Тестовый режим (без модема)")
@@ -1002,7 +1006,7 @@ class MonitorScreen(Screen):
 
     def refresh_texts(self) -> None:
         self.lbl_fullscreen = t("Во весь экран")
-        self.lbl_sound = t("🔊 Звук")
+        self.lbl_sound = t("♪ Звук")
         self.lbl_peaks = t("⟲ Пики")
         self.lbl_menu = t("☰ Меню")
 
@@ -1080,9 +1084,9 @@ class ToolsScreen(Screen):
             "«Переподключить связь» заставляет модем заново выбрать лучшую "
             "соту — быстрее перезагрузки. После перезагрузки программа "
             "переподключится сама.")
-        self.lbl_reattach = t("📶 Переподключить связь")
-        self.lbl_reboot = t("🔄 Перезагрузить роутер")
-        self.lbl_diag = t("🧾 Скопировать диагностику")
+        self.lbl_reattach = t("Переподключить связь")
+        self.lbl_reboot = t("Перезагрузить роутер")
+        self.lbl_diag = t("Скопировать диагностику")
         self.lbl_whitelist = t("Белые списки (РФ)")
         self.hint_whitelist = t(
             "⚠ Телефон должен быть подключён к Wi-Fi именно этого "
@@ -1309,7 +1313,7 @@ class Hua4GMonApp(App):
             if detail and ev is not None:
                 ev.text = detail
         elif self.demo_modem is not None:
-            lbl.text = t("🧪 Тестовый режим")
+            lbl.text = t("Тестовый режим")
             scr.status_color = hex_to_rgba('#e68033', sun)
 
     # ---------- данные ----------
@@ -1370,7 +1374,7 @@ class Hua4GMonApp(App):
         score, summary, color = calculate_overall_health(snap.rsrp, snap.sinr)
         health = t(summary).format(pct=score)
         if self.demo_modem is not None:
-            health = t("🧪 ДЕМО · азимут {a}").format(
+            health = t("ДЕМО · азимут {a}").format(
                 a=demo_angle_hint(self.demo_modem)) + " · " + health
         ids.status_lbl.text = health
         scr.status_color = hex_to_rgba(color, sun)
@@ -1394,7 +1398,7 @@ class Hua4GMonApp(App):
                       jitter=self.state.jitter(), mimo=mimo, uplink=up)
         if snap.data_enabled is False:
             tips.insert(0, "Мобильные данные на роутере выключены.")
-        ids.advice_lbl.text = "\n".join("💡 " + t(tip) for tip in tips[:2])
+        ids.advice_lbl.text = "\n".join("• " + t(tip) for tip in tips[:2])
         scr.advice_color = hex_to_rgba('#e68033', sun)
         self.refresh_graph()
         if self.sm.current == 'info':
@@ -1476,7 +1480,7 @@ class Hua4GMonApp(App):
         sun = self.theme_name == 'sun'
         items = [
             (t("ℹ Информация"), lambda: self.go('info')),
-            (t("🎛 Сеть"), lambda: self.go('tools')),
+            (t("⚙ Сеть"), lambda: self.go('tools')),
             (t("☀ Солнце: выкл") if sun else t("☀ Солнце: вкл"),
              lambda: self.apply_theme('dark' if sun else 'sun')),
             (t("⏏ Отключиться"), self.confirm_disconnect),
@@ -1893,10 +1897,10 @@ class Hua4GMonApp(App):
             tools.wl_verdict = report.title
             tools.wl_color = hex_to_rgba(report.color, self.theme_name == 'sun')
             lines = [report.detail, ""]
-            for title, results in ((t("✅ В белых списках"), report.white),
-                                   (t("⚪ Нейтральные"), report.neutral)):
+            for title, results in ((t("В белых списках:"), report.white),
+                                   (t("Нейтральные:"), report.neutral)):
                 lines.append(title)
-                lines += [f"{'✅' if r.ok else '❌'} {r.host} — {r.detail}" for r in results]
+                lines += [f"{'✔' if r.ok else '✘'} {r.host} — {r.detail}" for r in results]
             tools.wl_detail = "\n".join(lines)
 
         def failed(exc: BaseException) -> None:

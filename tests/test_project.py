@@ -34,6 +34,29 @@ def test_no_dead_translations():
     assert not unused, f"Переводы без использования (удалите): {unused[:10]}"
 
 
+def test_android_text_fits_bundled_font():
+    """Каждый символ, который может показать Android-версия, есть в её шрифте.
+
+    Kivy не подставляет недостающий символ из другого шрифта: цветные
+    эмодзи (🔊 🧪 ✅ …) на Android рисуются квадратом.
+    """
+    ttlib = pytest.importorskip("fontTools.ttLib")
+    cmap = ttlib.TTFont(ROOT / "assets" / "DejaVuSans.ttf").getBestCmap()
+    shown = i18n_keys.string_constants(ROOT / "android_main.py")
+    for path in sorted((ROOT / "core").glob("*.py")):
+        if path.name != "i18n.py":      # EN-словарь содержит и Windows-подписи
+            shown |= i18n_keys.string_constants(path)
+    shown |= i18n_keys.core_indirect()
+    shown |= {EN[k] for k in shown if k in EN}
+    bad = {}
+    for text in shown:
+        missing = sorted({ch for ch in text if ord(ch) not in cmap and ch not in "\n\r\t"})
+        if missing:
+            bad[text] = missing
+    assert not bad, f"Нет в DejaVuSans.ttf (на Android будет квадрат): {bad}"
+    assert ord("🔊") not in cmap, "проверка должна ловить цветные эмодзи"
+
+
 PLACEHOLDER = re.compile(r"\{([a-z_]*)(?::[^}]*)?\}")
 
 
@@ -82,14 +105,15 @@ def test_no_deprecated_reboot_anywhere():
 # =========================================================
 
 def test_no_todo_markers():
-    markers = ("TO" + "DO", "FIX" + "ME", "X" + "XX:")
+    # Отдельные слова: имена вроде PYCRYPTODOME_DISABLE_GMP — не пометки.
+    # Шаблон собран из частей, чтобы не находить сам себя.
+    markers = re.compile(r"\b(?:" + "TO" + "DO|" + "FIX" + "ME|" + "X" + r"XX:)")
     files = [*SOURCE_FILES, *sorted((ROOT / "tests").glob("*.py")),
              *sorted(ROOT.glob("*.md")), *sorted((ROOT / ".github").rglob("*.yml")),
-             ROOT / "buildozer.spec", ROOT / "pyproject.toml"]
+             ROOT / "buildozer.spec", ROOT / "pyproject.toml", ROOT / "packaging" / "windows.spec"]
     for p in files:
-        text = p.read_text(encoding="utf-8")
-        for m in markers:
-            assert m not in text, f"{p.relative_to(ROOT)} содержит {m}"
+        m = markers.search(p.read_text(encoding="utf-8"))
+        assert not m, f"{p.relative_to(ROOT)} содержит {m.group()}"
 
 
 # =========================================================
@@ -154,10 +178,19 @@ def test_apk_build_step_survives_yes_pipe():
     assert "| head" not in wf, "head в конвейере под pipefail может уронить шаг"
 
 
-def test_windows_build_uses_version_file():
+def test_windows_build_uses_spec_and_self_test():
+    """CI собирает обе Windows-сборки из spec и запускает их --self-test."""
     wf = read(".github/workflows/build.yml")
-    assert "tools/make_version_info.py" in wf and "'--version-file'" in wf
-    assert "'--onefile'" in wf
+    job = wf[wf.index("build-windows:"):]
+    assert "pyinstaller --noconfirm packaging/windows.spec" in job
+    assert "--onefile" not in job, "параметры сборки — только в packaging/windows.spec"
+    smoke = job[job.index("- name: Smoke-test builds"):job.index("- name: Stage release assets")]
+    for exe in ("dist/Hua4GMon/Hua4GMon.exe", "dist/Hua4GMon-onefile.exe"):
+        assert f"'{exe}'" in smoke
+    assert "'--self-test'" in smoke and "exit 1" in smoke
+    release = job[job.index("- name: Create GitHub Release"):]
+    assert "${{ env.ZIP_NAME }}" in release and "${{ env.EXE_NAME }}" in release
+    assert "make_version_info.render" in read("packaging/windows.spec")
 
 
 def test_library_version_matches_pin():

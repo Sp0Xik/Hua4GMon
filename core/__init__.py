@@ -115,6 +115,7 @@ from core.router import (
     RouterSession,
     SessionWorker,
     configure_library_logging,
+    library_self_test,
     library_version,
 )
 from core.signal_analysis import (
@@ -183,7 +184,7 @@ __all__ = [
     "detect_ca", "mimo_status", "uplink_status",
     # router
     "RouterConfig", "RouterSession", "SessionWorker",
-    "configure_library_logging", "library_version",
+    "configure_library_logging", "library_self_test", "library_version",
     # signal_analysis
     "calculate_overall_health", "curve_score", "evaluate_signal",
     # state

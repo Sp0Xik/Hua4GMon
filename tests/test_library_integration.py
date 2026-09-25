@@ -143,3 +143,24 @@ def test_discover_prefers_candidate_order(router):
     found = core.discover_router(['127.0.0.2', '127.0.0.1'], port=router.port, timeout=0.5)
     assert found is not None and found.ip == '127.0.0.1'
     assert core.discover_router([], port=router.port) is None
+
+
+# ---------- самопроверка сборки (Hua4GMon.exe --self-test) ----------
+
+def test_library_self_test_passes():
+    assert core.library_self_test() == [
+        f"huawei-lte-api {core.library_version()}", "XML: OK", "RSA PKCS#1 v1.5 + OAEP: OK"]
+
+
+def test_library_self_test_detects_broken_rsa(monkeypatch):
+    from huawei_lte_api.Tools import Tools
+    monkeypatch.setattr(Tools, "rsa_encrypt", staticmethod(lambda *a: b"0" * 512))
+    with pytest.raises(RuntimeError, match="PKCS#1 v1.5"):
+        core.library_self_test()
+
+
+def test_library_self_test_detects_broken_xml(monkeypatch):
+    import xmltodict
+    monkeypatch.setattr(xmltodict, "parse", lambda text: {})
+    with pytest.raises(RuntimeError, match="xmltodict"):
+        core.library_self_test()

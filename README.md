@@ -16,7 +16,7 @@ B636, B818, E3372 и совместимых). Показывает в реаль
 
 | Платформа | Технологии | Точка входа |
 | :-------- | :--------- | :---------- |
-| Windows 10/11 | Tkinter + PyInstaller (один .exe) | `main.py` |
+| Windows 10/11 | Tkinter + PyInstaller (portable-папка или один .exe) | `main.py` |
 | Android 7–16 | Kivy + Buildozer | `android_main.py` |
 
 Вся логика (опрос роутера, разбор данных, оценка сигнала, Band Lock,
@@ -73,15 +73,29 @@ B636, B818, E3372 и совместимых). Показывает в реаль
 
 ### Windows
 
-Скачайте `Hua4GMon-vX.Y.Z.exe` из [Releases] и запустите — установка не
-нужна. Программа не сохраняет ни настроек, ни паролей. Как любое
-однофайловое приложение PyInstaller, на время работы оно распаковывается
-во временную папку Windows и удаляет её при выходе.
+В [Releases] два варианта, установка не нужна ни одному:
 
-При первом запуске неподписанного .exe Windows SmartScreen может
+- **`Hua4GMon-vX.Y.Z-windows.zip` — рекомендуется, особенно для полевых
+  ноутбуков.** Распакуйте один раз (например, в `C:\Hua4GMon` или на
+  флешку) и запускайте `Hua4GMon.exe` из папки `Hua4GMon`. Программа
+  ничего не распаковывает при запуске и открывается за секунды.
+- **`Hua4GMon-vX.Y.Z.exe` — один файл.** Удобно переносить, но при каждом
+  запуске он распаковывается во временную папку Windows, а антивирус
+  заново проверяет распакованные файлы. На слабом компьютере старт может
+  занять минуту и больше — всё это время видна заставка «Запуск
+  программы…», запускать повторно не нужно.
+
+Программа не сохраняет ни настроек, ни паролей.
+
+При первом запуске неподписанной программы Windows SmartScreen может
 предупредить «Неизвестный издатель» — нажмите «Подробнее» →
-«Выполнить в любом случае». Если файл не открывается, в PowerShell:
-`Unblock-File .\Hua4GMon-vX.Y.Z.exe`.
+«Выполнить в любом случае». Если файл не открывается, в PowerShell
+(архив — до распаковки): `Unblock-File .\Hua4GMon-vX.Y.Z-windows.zip`
+или `Unblock-File .\Hua4GMon-vX.Y.Z.exe`.
+
+Проверка программы без роутера (для обращения в поддержку):
+`Hua4GMon.exe --self-test отчёт.txt` — в отчёте версия и результаты
+проверки библиотеки роутера и окна; код выхода 0 — всё исправно.
 
 ### Android
 
@@ -162,10 +176,12 @@ Android-интерфейса требуют `pip install kivy==2.3.0`.
 
 **Сборка.** CI (`.github/workflows/`) проверяет код на Python 3.11–3.14,
 гоняет тесты и на Windows, и собирает обе платформы; на теге `vX.Y.Z`
-выпускает релиз. Windows: `pip install -r requirements-build.txt`,
-`python tools/make_version_info.py version_info.txt`, затем PyInstaller с
-`--onefile --windowed --version-file version_info.txt` (полные параметры —
-в `build.yml`). Android: стек Buildozer 1.5.0 + python-for-android
+выпускает релиз. Windows: `pip install -r requirements-build.txt`, затем
+`pyinstaller --noconfirm packaging/windows.spec` — в `dist/` появятся
+portable-папка `Hua4GMon` и однофайловый `Hua4GMon-onefile.exe`
+(VERSIONINFO берётся из `core/__init__.py`, неиспользуемые файлы отсекает
+`tools/bundle_filter.py`); CI запускает обе сборки с `--self-test`.
+Android: стек Buildozer 1.5.0 + python-for-android
 v2024.01.21 + NDK 25b закреплён намеренно (новый p4a тянет Python 3.14,
 где ломается pyjnius); еженедельная задача «canary» проверяет Buildozer
 1.6.0 и на релиз не влияет.

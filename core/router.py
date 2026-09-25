@@ -65,6 +65,43 @@ def library_version() -> str:
         return "unknown"
 
 
+# Модуль RSA-2048, как у ключей роутеров Huawei. Для проверки, что
+# шифрование работает, закрытый ключ не нужен — подходит любой нечётный
+# модуль такой длины.
+_SELF_TEST_RSA_N = "c" + "f" * 511
+_SELF_TEST_RSA_E = "10001"
+
+
+def library_self_test() -> list[str]:
+    """Проверяет, что huawei-lte-api со всеми зависимостями работает в этой сборке.
+
+    Windows-сборка содержит только нужные библиотеке нативные модули
+    pycryptodomex (tools/bundle_filter.py). Проверка импортирует клиент,
+    разбирает XML-ответ так же, как библиотека, и шифрует блок обоими
+    способами, которыми библиотека шифрует данные для роутера.
+    Возвращает строки отчёта; при неисправности бросает исключение.
+    """
+    import importlib
+
+    import xmltodict
+    for module in ("huawei_lte_api.Client", "huawei_lte_api.Connection"):
+        importlib.import_module(module)
+    from huawei_lte_api.Tools import Tools
+
+    parsed = xmltodict.parse("<response><SignalIcon>5</SignalIcon></response>")
+    if parsed != {"response": {"SignalIcon": "5"}}:
+        raise RuntimeError(f"xmltodict: unexpected result {parsed!r}")
+    for padding, name in ((0, "PKCS#1 v1.5"), (1, "OAEP")):
+        first, second = (Tools.rsa_encrypt(_SELF_TEST_RSA_E, _SELF_TEST_RSA_N,
+                                           b"Hua4GMon", padding) for _ in range(2))
+        # Один блок RSA-2048 = 512 hex-символов; случайное дополнение
+        # делает два шифротекста разными.
+        if len(first) != 512 or first == second:
+            raise RuntimeError(f"RSA {name}: unexpected ciphertext")
+    return [f"huawei-lte-api {library_version()}", "XML: OK",
+            "RSA PKCS#1 v1.5 + OAEP: OK"]
+
+
 def huawei_client_factory(url: str, username: str, password: str,
                           timeout: float) -> tuple[Any, Any]:
     from huawei_lte_api.Client import Client

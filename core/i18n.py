@@ -592,6 +592,24 @@ EN: dict[str, str] = {
         "🧾 Save diagnostics",
 
     # --- Android (android_main.py) ---
+    "В белых списках:":
+        "Whitelisted:",
+    "ДЕМО · азимут {a}":
+        "DEMO · azimuth {a}",
+    "Найти":
+        "Find",
+    "Нейтральные:":
+        "Neutral:",
+    "Переподключить связь":
+        "Reconnect link",
+    "Скопировать диагностику":
+        "Copy diagnostics",
+    "Тестовый режим":
+        "Test mode",
+    "♪ Звук":
+        "♪ Sound",
+    "⚙ Сеть":
+        "⚙ Network",
     ("IP по умолчанию: 192.168.8.1 (для B315/B525 — 192.168.1.1 или "
      "192.168.3.1) — кнопка «Найти» проверит их сама. Логин: admin, пароль "
      "— на наклейке роутера.\n"
@@ -705,14 +723,6 @@ EN: dict[str, str] = {
          "otherwise the test measures a different link. Applies to Russia only."),
     "⟲ Пики":
         "⟲ Peaks",
-    "🎛 Сеть":
-        "🎛 Network",
-    "🔊 Звук":
-        "🔊 Sound",
-    "🔎 Найти":
-        "🔎 Find",
-    "🧾 Скопировать диагностику":
-        "🧾 Copy diagnostics",
 }
 
 

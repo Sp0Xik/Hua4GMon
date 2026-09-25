@@ -53,18 +53,20 @@ def _skipped_call_args(tree: ast.AST) -> set[int]:
     return ids
 
 
-def ui_strings(path: pathlib.Path) -> set[str]:
+def string_constants(path: pathlib.Path) -> set[str]:
+    """Все строковые литералы файла, кроме докстрингов, логов и справки CLI."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     skip = _docstring_nodes(tree) | _skipped_call_args(tree)
+    return {node.value for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            and id(node) not in skip}
+
+
+def ui_strings(path: pathlib.Path) -> set[str]:
     from core.i18n import LANGUAGES
     language_names = set(LANGUAGES.values())
-    found: set[str] = set()
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
-                and id(node) not in skip and CYRILLIC.search(node.value)
-                and node.value not in language_names):
-            found.add(node.value)
-    return found
+    return {s for s in string_constants(path)
+            if CYRILLIC.search(s) and s not in language_names}
 
 
 def t_literals(path: pathlib.Path) -> set[str]:

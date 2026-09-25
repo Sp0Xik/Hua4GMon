@@ -63,7 +63,8 @@ jobs:
         run: xvfb-run -a pytest -q --cov=core --cov-report=term --cov-fail-under=90
 
   # =================================================================
-  # BUILD — portable Windows .exe, только после lint + test
+  # BUILD — Windows: portable-папка (zip) и однофайловый .exe,
+  # только после lint + test
   # =================================================================
   build-windows:
     needs: [ lint, test ]
@@ -85,7 +86,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements-build.txt -r requirements-dev.txt
 
-    # Те же тесты на настоящей Windows: Tk-интерфейс, winsound, пути.
+    # Те же тесты на настоящей Windows: Tk-интерфейс, winsound, пути,
+    # список нативных модулей pycryptodomex для сборки.
     - name: Run pytest on Windows
       run: pytest -q
 
@@ -98,68 +100,65 @@ jobs:
             Write-Error "Тег $env:GITHUB_REF_NAME не совпадает с core.__version__ = $ver"
             exit 1
           }
-          $exeName = "Hua4GMon-v$ver.exe"
+          $base = "Hua4GMon-v$ver"
         } else {
-          $exeName = "Hua4GMon-v$ver-dev-$($env:GITHUB_SHA.Substring(0, 7)).exe"
+          $base = "Hua4GMon-v$ver-dev-$($env:GITHUB_SHA.Substring(0, 7))"
         }
-        "EXE_NAME=$exeName" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "EXE_NAME=$base.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "ZIP_BASE=$base-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "ZIP_NAME=$base-windows.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-    - name: Build single-file EXE
+    # Один анализ — две сборки (packaging/windows.spec):
+    #   dist/Hua4GMon/            portable-папка, запускается без распаковки;
+    #   dist/Hua4GMon-onefile.exe один файл с заставкой на время распаковки.
+    - name: Build Windows app
+      run: pyinstaller --noconfirm packaging/windows.spec
+
+    # --self-test проверяет в собранном виде библиотеку, криптографию и
+    # окно программы; время — от запуска до выхода, у однофайлового .exe
+    # вместе с распаковкой.
+    - name: Smoke-test builds
       shell: pwsh
+      timeout-minutes: 5
       run: |
-        # VERSIONINFO (свойства файла в Проводнике) — из core.__version__.
-        python tools/make_version_info.py version_info.txt
-        # --onefile: всё внутри одного бинарника, всегда portable.
-        # --noupx: не давим UPX-ом — это снижает false-positive у AV.
-        # --collect-submodules core: страховка, чтобы PyInstaller
-        #     не потерял подмодули из локального пакета core/.
-        # --exclude-module: явно вырезаем ненужные тяжёлые пакеты,
-        #     которые PyInstaller иногда тащит транзитивно.
-        $pyiArgs = @(
-            '--onefile',
-            '--windowed',
-            '--noupx',
-            '--name', 'Hua4GMon',
-            '--version-file', 'version_info.txt',
-            '--collect-submodules', 'core',
-            '--exclude-module', 'pytest',
-            '--exclude-module', 'kivy',
-            '--exclude-module', 'numpy',
-            '--exclude-module', 'matplotlib',
-            '--exclude-module', 'PIL',
-            '--exclude-module', 'pandas',
-            '--exclude-module', 'scipy'
-        )
-        if (Test-Path 'icon.ico') {
-            $pyiArgs += '--icon=icon.ico'
+        $summary = @('### Самопроверка Windows-сборок', '', '| Сборка | Запуск и проверка | Итог |', '|---|---|---|')
+        $failed = $false
+        foreach ($exe in @('dist/Hua4GMon/Hua4GMon.exe', 'dist/Hua4GMon-onefile.exe')) {
+          $report = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetFileNameWithoutExtension($exe) + '-selftest.txt')
+          $watch = [Diagnostics.Stopwatch]::StartNew()
+          $p = Start-Process $exe -ArgumentList '--self-test', $report -PassThru -Wait
+          $sec = [math]::Round($watch.Elapsed.TotalSeconds, 1)
+          $result = if ($p.ExitCode -eq 0) { 'OK' } else { "код $($p.ExitCode)" }
+          Write-Host ('== {0}: {1}, {2} с' -f $exe, $result, $sec)
+          if (Test-Path $report) { Get-Content $report | Write-Host }
+          $summary += '| {0} | {1} с | {2} |' -f $exe, $sec, $result
+          if ($p.ExitCode -ne 0) { $failed = $true }
         }
-        $pyiArgs += 'main.py'
-        pyinstaller @pyiArgs
-
-    - name: Smoke-test EXE
-      shell: pwsh
-      timeout-minutes: 3
-      run: |
-        # --version печатает версию и завершается: проверяет, что все
-        # модули упакованы и .exe вообще запускается.
-        $p = Start-Process dist/Hua4GMon.exe -ArgumentList '--version' -PassThru -Wait
-        if ($p.ExitCode -ne 0) { Write-Error "EXE завершился с кодом $($p.ExitCode)"; exit 1 }
+        $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+        if ($failed) { Write-Error 'Самопроверка собранной программы не пройдена'; exit 1 }
 
     - name: Stage release assets
       shell: pwsh
       run: |
-        Copy-Item dist/Hua4GMon.exe $env:EXE_NAME
-        $hash = (Get-FileHash $env:EXE_NAME -Algorithm SHA256).Hash
-        "$hash  $env:EXE_NAME" | Out-File -Encoding ascii "$env:EXE_NAME.sha256"
-        "EXE_HASH=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append
-        "EXE_SIZE=$([math]::Round((Get-Item $env:EXE_NAME).Length / 1MB, 1)) МБ" |
-            Out-File -FilePath $env:GITHUB_ENV -Append
+        Copy-Item dist/Hua4GMon-onefile.exe $env:EXE_NAME
+        # Архив с папкой Hua4GMon (Hua4GMon.exe + _internal) внутри.
+        python -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', 'dist', 'Hua4GMon')" $env:ZIP_BASE
+        foreach ($pair in @(@('EXE', $env:EXE_NAME), @('ZIP', $env:ZIP_NAME))) {
+          $file = $pair[1]
+          $hash = (Get-FileHash $file -Algorithm SHA256).Hash
+          "$hash  $file" | Out-File -Encoding ascii "$file.sha256"
+          "$($pair[0])_HASH=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$($pair[0])_SIZE=$([math]::Round((Get-Item $file).Length / 1MB, 1)) МБ" |
+              Out-File -FilePath $env:GITHUB_ENV -Append
+        }
 
     - name: Upload artifact (для push и PR)
       uses: actions/upload-artifact@v7
       with:
         name: Hua4GMon-Windows
         path: |
+          ${{ env.ZIP_NAME }}
+          ${{ env.ZIP_NAME }}.sha256
           ${{ env.EXE_NAME }}
           ${{ env.EXE_NAME }}.sha256
 
@@ -168,6 +167,8 @@ jobs:
       uses: softprops/action-gh-release@v3
       with:
         files: |
+          ${{ env.ZIP_NAME }}
+          ${{ env.ZIP_NAME }}.sha256
           ${{ env.EXE_NAME }}
           ${{ env.EXE_NAME }}.sha256
           README.md
@@ -176,28 +177,36 @@ jobs:
           LICENSES/GPL-3.0.txt
           LICENSES/DejaVu-Fonts.txt
         body: |
-          **Hua4GMon ${{ github.ref_name }}** — portable Windows .exe и Android APK.
+          **Hua4GMon ${{ github.ref_name }}** — Windows (portable) и Android APK.
 
-          **Windows:** скачайте `${{ env.EXE_NAME }}` и запустите. Установка
-          не требуется, ничего не пишется на диск.
+          **Windows — рекомендуется `${{ env.ZIP_NAME }}`** (${{ env.ZIP_SIZE }}).
+          Распакуйте один раз (например, в `C:\Hua4GMon` или на флешку) и
+          запускайте `Hua4GMon.exe` из папки. Открывается за секунды даже на
+          слабом ноутбуке. Установка не нужна.
+
+          **Windows — один файл `${{ env.EXE_NAME }}`** (${{ env.EXE_SIZE }}).
+          Удобно переносить, но при каждом запуске распаковывается во
+          временную папку, а антивирус проверяет её заново: на слабом ПК
+          старт может занять минуту и больше (всё это время видна заставка).
 
           **Android:** установите `Hua4GMon-${{ github.ref_name }}.apk`
           (Android 7–16).
 
-          **Размер .exe:** ${{ env.EXE_SIZE }}
-          **SHA256 .exe:**
+          **SHA256:**
           ```
-          ${{ env.EXE_HASH }}
+          ${{ env.ZIP_HASH }}  ${{ env.ZIP_NAME }}
+          ${{ env.EXE_HASH }}  ${{ env.EXE_NAME }}
           ```
 
-          **⚠ Windows SmartScreen:** при первом запуске неподписанного
-          .exe Windows может предупредить «Неизвестный издатель».
+          **⚠ Windows SmartScreen:** при первом запуске неподписанной
+          программы Windows может предупредить «Неизвестный издатель».
           Это нормально. Жмите «Подробнее» → «Выполнить в любом случае».
           См. README → раздел Windows SmartScreen.
 
-          **⚠ Если Windows ругается на «не удаётся открыть» .exe**,
-          выполните в PowerShell:
+          **⚠ Если Windows ругается на «не удаётся открыть»**, выполните
+          в PowerShell перед распаковкой или запуском:
           ```powershell
+          Unblock-File .\${{ env.ZIP_NAME }}
           Unblock-File .\${{ env.EXE_NAME }}
           ```
 

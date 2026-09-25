@@ -76,6 +76,7 @@ from core import (
     format_rate_mbps,
     humanize_error,
     is_valid_ip,
+    library_self_test,
     library_version,
     lock_warnings,
     lockable_bands,
@@ -1544,30 +1545,83 @@ class Hua4GMon:
 # ВХОД
 # =========================================================
 
-def parse_args() -> argparse.Namespace:
+def close_splash() -> None:
+    """Убирает заставку, которую однофайловый .exe показывает, пока
+    распаковывается (packaging/windows.spec). При запуске из исходников
+    и в portable-сборке заставки нет — модуля pyi_splash тоже.
+    Hardware validation required: заставка и время запуска на слабом
+    ноутбуке с антивирусом (однофайловый .exe против portable-папки).
+    """
+    try:
+        import pyi_splash
+    except ImportError:
+        return
+    with contextlib.suppress(OSError):   # загрузчик уже закрыл заставку
+        pyi_splash.close()
+
+
+def run_self_test(report: str) -> int:
+    """Проверка программы без роутера: библиотека, криптография, окно.
+
+    CI запускает так собранный .exe; пользователь может приложить отчёт
+    к обращению: `Hua4GMon.exe --self-test report.txt`. У оконного .exe
+    нет консоли, поэтому отчёт пишется в файл. Код возврата 0 — исправно.
+    """
+    start = time.perf_counter()
+    lines = [f"{APP_NAME} {__version__}, Python {platform.python_version()}"]
+    ok = True
+    try:
+        lines += library_self_test()
+        root = tk.Tk()
+        root.withdraw()
+        app = Hua4GMon(root)
+        root.update()
+        lines.append(f"Tk {root.tk.call('info', 'patchlevel')}: window built")
+        app.on_closing()
+    except Exception as exc:
+        ok = False
+        logger.exception("Self-test failed")
+        lines.append(f"ERROR: {type(exc).__name__}: {exc}")
+    lines.append(f"{'OK' if ok else 'FAIL'} in {time.perf_counter() - start:.2f} s")
+    text = "\n".join(lines)
+    print(text)
+    if report:
+        with open(report, "w", encoding="utf-8") as fh:
+            fh.write(text + "\n")
+    return 0 if ok else 1
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=f"{APP_NAME} — портативный монитор LTE/5G Huawei.")
     p.add_argument('--ip', default='192.168.8.1', help='IP роутера (по умолчанию 192.168.8.1)')
     p.add_argument('--password', default='', help='Пароль (если указан — автоподключение)')
     p.add_argument('--demo', action='store_true', help='Тестовый режим без роутера')
     p.add_argument('--verbose', '-v', action='store_true', help='Подробный лог в stderr')
+    p.add_argument('--self-test', nargs='?', const='', default=None, metavar='ФАЙЛ',
+                   help='Проверить программу без роутера и выйти (отчёт — в ФАЙЛ)')
     p.add_argument('--version', action='version', version=f'{APP_NAME} {__version__}')
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING,
                         format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
                         stream=sys.stderr)
     configure_library_logging()
     enable_dpi_awareness()
+    if args.self_test is not None:
+        close_splash()
+        return run_self_test(args.self_test)
     root = tk.Tk()
     app = Hua4GMon(root, default_ip=args.ip, default_password=args.password, demo=args.demo)
+    root.after_idle(close_splash)       # окно уже на экране — заставка не нужна
     try:
         root.mainloop()
     except KeyboardInterrupt:
         app.on_closing()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

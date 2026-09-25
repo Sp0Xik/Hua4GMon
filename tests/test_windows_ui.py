@@ -3,12 +3,16 @@
 Запускается, если доступен Tk и дисплей (локально: xvfb-run pytest).
 Проходит те же действия, что пользователь: подключение, опрос, Band Lock,
 AUTO/возврат, антенна, перезагрузка с автопереподключением, смена языка,
-крышный режим, CSV, диагностика, белые списки, отключение.
+крышный режим, CSV, диагностика, белые списки, отключение; а также
+запуск: самопроверку --self-test и закрытие заставки.
 """
 import json
 import os
+import pathlib
+import subprocess
 import sys
 import time
+import types
 
 import pytest
 
@@ -20,6 +24,8 @@ import core  # noqa: E402
 import core.demo as demo_mod  # noqa: E402
 import core.router as router_mod  # noqa: E402
 import main  # noqa: E402
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def pump(app, cond, timeout=10.0):
@@ -228,3 +234,48 @@ def test_beep_frequency():
     assert main.beep_frequency('rsrp', 0) == 2500
     assert main.beep_frequency('sinr', -10) == 1400
     assert main.beep_frequency('rsrp', -100) == 300
+
+
+# ---------- запуск: самопроверка и заставка ----------
+
+def test_self_test_of_program(tmp_path):
+    """Тот же вызов, что CI делает для собранного .exe — в отдельном процессе."""
+    report = tmp_path / "report.txt"
+    proc = subprocess.run([sys.executable, str(ROOT / "main.py"), "--self-test", str(report)],
+                          capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    text = report.read_text(encoding="utf-8")
+    assert f"huawei-lte-api {core.library_version()}" in text
+    assert "window built" in text and "\nOK in " in text
+    assert text.strip() == proc.stdout.strip()
+
+
+def test_self_test_reports_failure(tmp_path, monkeypatch):
+    def broken():
+        raise RuntimeError("no crypto")
+    monkeypatch.setattr(main, "library_self_test", broken)
+    report = tmp_path / "report.txt"
+    assert main.run_self_test(str(report)) == 1
+    text = report.read_text(encoding="utf-8")
+    assert "ERROR: RuntimeError: no crypto" in text and "\nFAIL in " in text
+
+
+def test_self_test_argument():
+    assert main.parse_args([]).self_test is None
+    assert main.parse_args(["--self-test"]).self_test == ""
+    assert main.parse_args(["--self-test", "r.txt"]).self_test == "r.txt"
+
+
+def test_close_splash(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pyi_splash", None)     # не собранный .exe
+    main.close_splash()
+    calls = []
+    monkeypatch.setitem(sys.modules, "pyi_splash",
+                        types.SimpleNamespace(close=lambda: calls.append(1)))
+    main.close_splash()
+    assert calls == [1]
+
+    def gone():
+        raise OSError("bootloader closed the socket")
+    monkeypatch.setitem(sys.modules, "pyi_splash", types.SimpleNamespace(close=gone))
+    main.close_splash()
