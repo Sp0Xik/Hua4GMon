@@ -170,6 +170,16 @@ def test_android_toolchain_pinned():
     assert '"cython==0.29.36"' in action
 
 
+@pytest.mark.parametrize("workflow", ["build.yml", "build-android.yml"])
+def test_every_push_builds(workflow):
+    """Каждый push в main собирает обе платформы: фильтр путей однажды
+    оставил коммит только с Windows-изменениями без APK."""
+    wf = read(f".github/workflows/{workflow}")
+    push = wf[wf.index("  push:"):wf.index("  workflow_dispatch:")]
+    assert "branches: [ main ]" in push
+    assert "paths" not in push
+
+
 def test_apk_build_step_survives_yes_pipe():
     """`yes | buildozer` под pipefail роняет успешную сборку (EPIPE у yes)."""
     action = read(".github/actions/buildozer-apk/action.yml")

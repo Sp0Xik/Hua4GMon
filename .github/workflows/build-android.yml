@@ -1,19 +1,11 @@
 name: Build Android APK
 
 on:
+  # Каждый push в main даёт и .exe (build.yml), и APK — без фильтра по
+  # путям, чтобы к любому коммиту была свежая Android-сборка.
   push:
     branches: [ main ]
     tags:     [ 'v*.*.*' ]
-    # Для тегов фильтр путей не применяется — релиз собирается всегда.
-    paths:
-      - 'android_main.py'
-      - 'core/**'
-      - 'assets/**'
-      - 'LICENSES/**'
-      - 'buildozer.spec'
-      - 'requirements.txt'
-      - '.github/workflows/build-android.yml'
-      - '.github/actions/buildozer-apk/**'
   workflow_dispatch:
     inputs:
       canary:
