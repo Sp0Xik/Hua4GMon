@@ -185,6 +185,12 @@ def test_windows_build_is_single_exe_with_self_test():
     job = wf[wf.index("build-windows:"):]
     assert "pyinstaller --noconfirm packaging/windows.spec" in job
     assert "--onefile" not in job, "параметры сборки — только в packaging/windows.spec"
+    # Загрузчик PyInstaller — собственной сборки, и это проверяется до сборки .exe.
+    install = job[job.index("- name: Install dependencies"):job.index("- name: Verify self-built")]
+    assert "PYINSTALLER_COMPILE_BOOTLOADER: '1'" in install
+    assert "pip install --no-binary pyinstaller -r requirements-build.txt" in install
+    verify = job[job.index("- name: Verify self-built"):job.index("- name: Build single-file EXE")]
+    assert "python tools/bootloader_check.py" in verify and "exit 1" in verify
     smoke = job[job.index("- name: Smoke-test EXE"):job.index("- name: Stage release assets")]
     assert "Start-Process dist/Hua4GMon.exe -ArgumentList '--self-test'" in smoke
     assert "exit 1" in smoke

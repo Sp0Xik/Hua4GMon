@@ -1,3 +1,5 @@
-# Сборка portable .exe для Windows.
+# Сборка portable .exe для Windows. В CI PyInstaller ставится из исходников
+# с собственным загрузчиком: PYINSTALLER_COMPILE_BOOTLOADER=1 и
+# pip install --no-binary pyinstaller (см. .github/workflows/build.yml).
 -r requirements.txt
 pyinstaller==6.22.3

@@ -1,4 +1,5 @@
-"""Windows-сборка: отбор файлов (tools/bundle_filter.py) и packaging/windows.spec.
+"""Windows-сборка: отбор файлов (tools/bundle_filter.py), packaging/windows.spec,
+runtime-хук заставки и проверка собственного загрузчика (tools/bootloader_check.py).
 
 Сама сборка идёт в CI на Windows; здесь проверяется логика spec-файла
 без PyInstaller и то, что список нативных модулей pycryptodomex совпадает
@@ -11,11 +12,12 @@ import struct
 import subprocess
 import sys
 import types
+import zipfile
 
 import pytest
 
 import core
-from tools import bundle_filter
+from tools import bootloader_check, bundle_filter
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SPEC = ROOT / "packaging" / "windows.spec"
@@ -178,3 +180,39 @@ def _splash_not_started(text):
 def test_rthook_is_silent_without_splash(monkeypatch, module):
     monkeypatch.setitem(sys.modules, "pyi_splash", module)
     runpy.run_path(str(RTHOOK))
+
+
+# ---------- tools/bootloader_check.py ----------
+
+def _wheel(path, data: bytes):
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr(bootloader_check.BOOTLOADER, data)
+    return path
+
+
+def test_bootloader_check_compares_with_official_wheel(tmp_path):
+    wheel = _wheel(tmp_path / "pyinstaller.whl", b"MZ official")
+    ours = tmp_path / "runw.exe"
+    ours.write_bytes(b"MZ built on CI")
+    assert bootloader_check.is_self_built(ours, wheel)
+    ours.write_bytes(b"MZ official")
+    assert not bootloader_check.is_self_built(ours, wheel)
+
+
+def test_bootloader_check_cli(tmp_path, monkeypatch, capsys):
+    wheel = _wheel(tmp_path / "pyinstaller.whl", b"MZ official")
+    ours = tmp_path / "runw.exe"
+    monkeypatch.setattr(bootloader_check, "installed_bootloader", lambda: ours)
+    ours.write_bytes(b"MZ built on CI")
+    assert bootloader_check.main(["x", str(wheel)]) == 0
+    assert "собран из исходников" in capsys.readouterr().out
+    ours.write_bytes(b"MZ official")
+    assert bootloader_check.main(["x", str(wheel)]) == 1
+    assert bootloader_check.main(["x"]) == 2
+
+
+def test_bootloader_path_points_into_pyinstaller():
+    pyinstaller = pytest.importorskip("PyInstaller")
+    path = bootloader_check.installed_bootloader()
+    assert path.parts[-4:] == ("PyInstaller", "bootloader", "Windows-64bit-intel", "runw.exe")
+    assert path.parent.parent.parent == pathlib.Path(pyinstaller.__file__).resolve().parent

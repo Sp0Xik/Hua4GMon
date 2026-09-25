@@ -80,10 +80,28 @@ jobs:
         cache: 'pip'
         cache-dependency-path: requirements-build.txt
 
-    - name: Install dependencies
+    # Загрузчик PyInstaller (часть .exe, которая распаковывает и запускает
+    # программу) собирается из исходников компилятором MSVC раннера.
+    # Готовый загрузчик из PyPI встроен во множество чужих программ, в том
+    # числе вредоносных, и браузеры с антивирусами чаще принимают .exe с ним
+    # за опасный; собственную сборку для этого рекомендует документация
+    # PyInstaller («Building the Bootloader»).
+    - name: Install dependencies (PyInstaller bootloader from source)
+      env:
+        PYINSTALLER_COMPILE_BOOTLOADER: '1'
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements-build.txt -r requirements-dev.txt
+        pip install --no-binary pyinstaller -r requirements-build.txt -r requirements-dev.txt
+
+    - name: Verify self-built bootloader
+      shell: pwsh
+      run: |
+        $ver = python -c "import PyInstaller; print(PyInstaller.__version__)"
+        $dir = Join-Path $env:RUNNER_TEMP 'pyinstaller-pypi'
+        pip download "pyinstaller==$ver" --no-deps --only-binary=:all: -d $dir
+        $wheel = Get-ChildItem $dir -Filter '*.whl' | Select-Object -First 1
+        python tools/bootloader_check.py $wheel.FullName
+        if ($LASTEXITCODE -ne 0) { Write-Error 'В сборку попал бы готовый загрузчик PyInstaller из PyPI'; exit 1 }
 
     # Те же тесты на настоящей Windows: Tk-интерфейс, winsound, пути,
     # список нативных модулей pycryptodomex для сборки.
@@ -178,7 +196,11 @@ jobs:
           **⚠ Windows SmartScreen:** при первом запуске неподписанного
           .exe Windows может предупредить «Неизвестный издатель».
           Это нормально. Жмите «Подробнее» → «Выполнить в любом случае».
-          См. README → раздел Windows.
+
+          **⚠ Если браузер или антивирус блокирует файл** — это ложное
+          срабатывание на неподписанную программу. Сверьте SHA256 выше
+          (PowerShell: `Get-FileHash .\${{ env.EXE_NAME }}`) и см. README →
+          раздел Windows.
 
           **⚠ Если Windows ругается на «не удаётся открыть» .exe**,
           выполните в PowerShell:
