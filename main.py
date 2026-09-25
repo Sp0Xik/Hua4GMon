@@ -1595,10 +1595,10 @@ def run_self_test(report: str) -> int:
         lines.append(f"ERROR: {type(exc).__name__}: {exc}")
     lines.append(f"{'OK' if ok else 'FAIL'} in {time.perf_counter() - start:.2f} s")
     text = "\n".join(lines)
-    print(text)
-    if report:
+    if report:                          # сначала файл: он нужен при любой консоли
         with open(report, "w", encoding="utf-8") as fh:
             fh.write(text + "\n")
+    print(text)
     return 0 if ok else 1
 
 

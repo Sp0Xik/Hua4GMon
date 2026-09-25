@@ -191,6 +191,7 @@ def test_windows_build_is_single_exe_with_self_test():
     assert "pip install --no-binary pyinstaller -r requirements-build.txt" in install
     verify = job[job.index("- name: Verify self-built"):job.index("- name: Build single-file EXE")]
     assert "python tools/bootloader_check.py" in verify and "exit 1" in verify
+    assert "3 { Write-Error" in verify, "код 3 = готовый загрузчик (tools/bootloader_check.EXIT_STOCK)"
     smoke = job[job.index("- name: Smoke-test EXE"):job.index("- name: Stage release assets")]
     assert "Start-Process dist/Hua4GMon.exe -ArgumentList '--self-test'" in smoke
     assert "exit 1" in smoke

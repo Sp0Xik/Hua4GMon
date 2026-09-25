@@ -101,7 +101,11 @@ jobs:
         pip download "pyinstaller==$ver" --no-deps --only-binary=:all: -d $dir
         $wheel = Get-ChildItem $dir -Filter '*.whl' | Select-Object -First 1
         python tools/bootloader_check.py $wheel.FullName
-        if ($LASTEXITCODE -ne 0) { Write-Error 'В сборку попал бы готовый загрузчик PyInstaller из PyPI'; exit 1 }
+        switch ($LASTEXITCODE) {
+          0 { }
+          3 { Write-Error 'В сборку попал бы готовый загрузчик PyInstaller из PyPI'; exit 1 }
+          default { Write-Error "Проверка загрузчика не выполнилась (код $LASTEXITCODE)"; exit 1 }
+        }
 
     # Те же тесты на настоящей Windows: Tk-интерфейс, winsound, пути,
     # список нативных модулей pycryptodomex для сборки.

@@ -205,10 +205,13 @@ def test_bootloader_check_cli(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(bootloader_check, "installed_bootloader", lambda: ours)
     ours.write_bytes(b"MZ built on CI")
     assert bootloader_check.main(["x", str(wheel)]) == 0
-    assert "собран из исходников" in capsys.readouterr().out
     ours.write_bytes(b"MZ official")
-    assert bootloader_check.main(["x", str(wheel)]) == 1
+    assert bootloader_check.main(["x", str(wheel)]) == bootloader_check.EXIT_STOCK == 3
     assert bootloader_check.main(["x"]) == 2
+    out = capsys.readouterr().out
+    assert "self-built" in out and "STOCK" in out and "usage:" in out
+    # Консоль раннера Windows — cp1252: вывод, который в неё не помещается, роняет шаг.
+    out.encode("ascii")
 
 
 def test_bootloader_path_points_into_pyinstaller():
