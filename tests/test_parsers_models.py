@@ -138,6 +138,14 @@ def test_parse_supported_bands_single_item_dict():
     assert core.parse_supported_bands(nml) == [38]
 
 
+def test_parse_supported_bands_ignores_all_item_with_any_value():
+    """«LTE ALL» с неканонической маской не добавляет бэнды 1–30."""
+    nml = {'LTEBandList': {'LTEBand': [
+        {'Name': 'LTE BC3/LTE BC20', 'Value': '80004'},
+        {'Name': 'LTE all', 'Value': '3FFFFFFF'}]}}
+    assert core.parse_supported_bands(nml) == [3, 20]
+
+
 @pytest.mark.parametrize("bad", [None, {}, {'LTEBandList': None}, "x",
                                  {'LTEBandList': {'LTEBand': ['junk']}}])
 def test_parse_supported_bands_garbage(bad):

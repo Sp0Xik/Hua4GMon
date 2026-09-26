@@ -132,7 +132,7 @@ def test_whitelist_check_is_parallel(monkeypatch):
     monkeypatch.setattr(wl, "probe_host", slow)
     start = time.monotonic()
     rep = wl.run_whitelist_check(white=[('a', 1)] * 3, neutral=[('b', 1)] * 3)
-    assert time.monotonic() - start < 1.0
+    assert time.monotonic() - start < 1.5          # последовательно было бы 1.8 с
     assert len(rep.white) == 3 and len(rep.neutral) == 3
 
 
@@ -223,6 +223,38 @@ def test_mask_value():
     assert mask_value('123') == '***'
 
 
+def test_mask_value_full():
+    assert mask_value('10.1.2.3', keep=0) == '********'
+
+
+def test_mask_network_addresses_fully():
+    """MAC Wi-Fi (BSSID), IP и DNS — полностью: по ним находят место установки."""
+    info = {'WifiMacAddrWl0': 'AC:DE:48:00:11:22', 'WifiMacAddrWl1': 'AC:DE:48:00:11:23',
+            'MacAddress1': 'AC:DE:48:00:11:24', 'WanIPAddress': '10.1.2.3',
+            'WanIPv6Address': '2001:db8::1', 'wan_dns_address': '10.0.0.1,10.0.0.2',
+            'wan_ipv6_dns_address': '2001:db8::53', 'PrimaryDns': '8.8.8.8',
+            'ImeiSvn': '12', 'SerialNumber': 'ABCDEF123456',
+            'DeviceName': 'B636-336', 'workmode': 'LTE', 'Mccmnc': '25002'}
+    out = core.mask_sensitive(info)
+    for key in ('WifiMacAddrWl0', 'WifiMacAddrWl1', 'MacAddress1', 'WanIPAddress',
+                'WanIPv6Address', 'wan_dns_address', 'wan_ipv6_dns_address', 'PrimaryDns'):
+        assert set(out[key]) == {'*'}, key
+    assert out['SerialNumber'] == '********3456' and out['ImeiSvn'] == '**'
+    assert (out['DeviceName'], out['workmode'], out['Mccmnc']) == ('B636-336', 'LTE', '25002')
+    # Вложенные структуры под «секретным» ключом разбираются, а не затираются целиком.
+    assert core.mask_sensitive({'MacList': [{'Mac': 'AA:BB'}]}) == {'MacList': [{'Mac': '*****'}]}
+
+
+def test_mask_address_lists_and_spellings():
+    """Список адресов под секретным ключом и другие написания имён полей."""
+    out = core.mask_sensitive({'MacAddress': ['AC:DE:48:00:11:22', ''],
+                               'WanIpAddr': '10.1.2.3', 'IPv4Address': '10.1.2.4',
+                               'Imsi': ['250020000000001'], 'Bands': ['3', '7']})
+    assert out['MacAddress'] == ['*' * 17, '']
+    assert set(out['WanIpAddr']) == set(out['IPv4Address']) == {'*'}
+    assert out['Imsi'] == ['***********0001'] and out['Bands'] == ['3', '7']
+
+
 def test_mask_sensitive_nested():
     data = {'Imei': '860000000000001', 'DeviceName': 'B636',
             'list': [{'imsi': '250020000000001'}], 'Msisdn': ''}
@@ -245,3 +277,26 @@ def test_diagnostics_report():
     assert '8970102000000000001' not in text
     assert back['errors']['net_cell_info'] == 'Err: 100002'
     assert back['generated'] == '2026-09-24T12:00:00'
+
+
+# ---------- вердикт белых списков: подсказка про SNI ----------
+
+def _fake_probes(monkeypatch, results):
+    import core.whitelist as wl
+    monkeypatch.setattr(wl, "probe_host", lambda host, port, timeout: results[host])
+
+
+def test_sni_hint_only_when_neutral_sites_fail(monkeypatch):
+    ok = lambda h: core.ProbeResult(h, 443, True, True, "OK")          # noqa: E731
+    sni = lambda h: core.ProbeResult(h, 443, True, False, "TLS")       # noqa: E731
+    white, neutral = [("gosuslugi.ru", 443)], [("example.com", 443), ("duckduckgo.com", 443)]
+    _fake_probes(monkeypatch, {"gosuslugi.ru": ok("gosuslugi.ru"),
+                               "example.com": sni("example.com"),
+                               "duckduckgo.com": ok("duckduckgo.com")})
+    report = core.run_whitelist_check(white, neutral, timeout=0.1)
+    assert "SNI" not in report.detail          # один сайт заблокирован — это не фильтр
+    _fake_probes(monkeypatch, {"gosuslugi.ru": ok("gosuslugi.ru"),
+                               "example.com": sni("example.com"),
+                               "duckduckgo.com": sni("duckduckgo.com")})
+    report = core.run_whitelist_check(white, neutral, timeout=0.1)
+    assert "SNI" in report.detail

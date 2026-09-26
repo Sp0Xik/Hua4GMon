@@ -56,7 +56,7 @@ from core.constants import (
 )
 from core.demo import DemoModem, demo_angle_hint, demo_factory
 from core.discovery import FoundRouter, discover_router, probe_huawei
-from core.errors import ErrorKind, classify_error, humanize_error
+from core.errors import ErrorKind, NetModeUnavailable, classify_error, humanize_error
 from core.export import (
     build_diagnostics,
     csv_dialect,
@@ -67,7 +67,6 @@ from core.export import (
 )
 from core.i18n import (
     LANGUAGES,
-    available_languages,
     current_language,
     set_language,
     t,
@@ -139,7 +138,6 @@ from core.whitelist import (
     analyze_whitelist_results,
     probe_host,
     run_whitelist_check,
-    tcp_reachable,
 )
 
 # Единственный источник версии: UI, buildozer (version.regex), CI и
@@ -162,11 +160,11 @@ __all__ = [
     # demo / discovery / errors / export
     "DemoModem", "demo_angle_hint", "demo_factory",
     "FoundRouter", "discover_router", "probe_huawei",
-    "ErrorKind", "classify_error", "humanize_error",
+    "ErrorKind", "NetModeUnavailable", "classify_error", "humanize_error",
     "build_diagnostics", "csv_dialect", "default_csv_name",
     "diagnostics_json", "mask_sensitive", "write_session_csv",
     # i18n
-    "LANGUAGES", "available_languages", "current_language",
+    "LANGUAGES", "current_language",
     "set_language", "t",
     # models
     "CellKey", "Snapshot", "build_snapshot",
@@ -192,5 +190,5 @@ __all__ = [
     "CellChange", "CellStats", "SignalState", "TrendTracker",
     # whitelist
     "ProbeResult", "WhitelistReport", "analyze_whitelist_results",
-    "probe_host", "run_whitelist_check", "tcp_reachable",
+    "probe_host", "run_whitelist_check",
 ]

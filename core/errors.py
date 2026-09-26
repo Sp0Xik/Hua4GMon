@@ -12,6 +12,10 @@ import enum
 from core.i18n import t
 
 
+class NetModeUnavailable(Exception):
+    """Настройки сети модема не прочитаны — запись Band Lock отменена."""
+
+
 class ErrorKind(enum.Enum):
     NETWORK = 'network'            # роутер недоступен / таймаут
     SESSION = 'session'            # сессия истекла — нужен повторный вход
@@ -64,7 +68,7 @@ def classify_error(exc: BaseException) -> ErrorKind:
         return ErrorKind.NOT_SUPPORTED
     if code in BUSY_CODES:
         return ErrorKind.BUSY
-    if isinstance(exc, (OSError, TimeoutError)):
+    if isinstance(exc, OSError):            # TimeoutError и ошибки requests — тоже OSError
         return ErrorKind.NETWORK
     return ErrorKind.OTHER
 
@@ -74,7 +78,10 @@ def humanize_error(exc: BaseException) -> str:
     code = error_code(exc)
     if code in _MESSAGES:
         return t(_MESSAGES[code])
-    if isinstance(exc, (OSError, TimeoutError)):
+    if isinstance(exc, NetModeUnavailable):
+        return t("Не удалось прочитать настройки модема — запись отменена, модем "
+                 "не изменён. Повторите через несколько секунд.")
+    if isinstance(exc, OSError):
         return t("Роутер не отвечает: проверьте подключение к его Wi-Fi/USB "
                  "и IP-адрес.")
     text = str(exc).strip() or exc.__class__.__name__

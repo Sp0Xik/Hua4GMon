@@ -48,16 +48,6 @@ def _describe_os_error(exc: BaseException) -> str:
     return t("ошибка ({code})").format(code=errno if errno is not None else '?')
 
 
-def tcp_reachable(host: str, port: int,
-                  timeout: float = WL_CHECK_TIMEOUT) -> tuple[bool, str]:
-    """Пытается открыть TCP-соединение. Возвращает (доступен, описание)."""
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True, "OK"
-    except OSError as e:
-        return False, _describe_os_error(e)
-
-
 @dataclass(frozen=True, slots=True)
 class ProbeResult:
     host: str
@@ -120,7 +110,9 @@ def run_whitelist_check(white: Sequence[tuple[str, int]] = WHITELIST_HOSTS_RU,
         [(r.host, r.ok) for r in white_res],
         [(r.host, r.ok) for r in neutral_res])
     sni_blocked = [r.host for r in neutral_res if r.tcp_ok and not r.tls_ok]
-    if sni_blocked and any(r.ok for r in white_res):
+    # Подсказка — только когда нейтральные сайты не открываются вовсе:
+    # единичный заблокированный сайт при открытом интернете — не фильтр.
+    if sni_blocked and any(r.ok for r in white_res) and not any(r.ok for r in neutral_res):
         detail += " " + t("Похоже на фильтрацию по SNI: TCP проходит, TLS — нет.")
     return WhitelistReport(white_res, neutral_res, title, detail, color)
 

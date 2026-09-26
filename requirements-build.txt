@@ -3,3 +3,5 @@
 # pip install --no-binary pyinstaller (см. .github/workflows/build.yml).
 -r requirements.txt
 pyinstaller==6.22.3
+# Хуки определяют, что попадёт в .exe, — версия закреплена для повторяемости.
+pyinstaller-hooks-contrib==2026.7

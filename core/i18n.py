@@ -46,6 +46,14 @@ EN: dict[str, str] = {
         "TCP ok, TLS dropped ({reason})",
     "Авто":
         "Auto",
+    "МБ":
+        "MB",
+    "Мбит/с":
+        "Mbit/s",
+    ("Не удалось прочитать настройки модема — запись отменена, модем "
+     "не изменён. Повторите через несколько секунд."):
+        ("Could not read the modem settings — nothing was written, the modem "
+         "is unchanged. Try again in a few seconds."),
     "Агрегация пропадёт: не выбраны {bands}.":
         "Carrier aggregation will stop: {bands} not selected.",
     "Аномалия":
@@ -244,9 +252,9 @@ EN: dict[str, str] = {
         "Original settings were not read — the router did not return net-mode.",
     "Ищу роутер…":
         "Looking for the router…",
-    ("Команда отправлена, но роутер вернул другие настройки — проверьте "
+    ("Команда отправлена, но роутер не подтвердил запись — проверьте "
      "строку «Сейчас на модеме»."):
-        ("Command sent, but the router reports different settings — check the "
+        ("Command sent, but the router did not confirm the change — check the "
          "“Now on the modem” line."),
     "Лучшие соты за сессию":
         "Best cells this session",
@@ -326,8 +334,8 @@ EN: dict[str, str] = {
         "Connection & common errors",
     "Подключение...":
         "Connecting...",
-    "Подождите 1–3 секунды.":
-        "Please wait 1–3 seconds.",
+    "Проверка занимает несколько секунд.":
+        "The check takes a few seconds.",
     "Подтверждение":
         "Confirm",
     "Применить":
@@ -346,10 +354,12 @@ EN: dict[str, str] = {
         "MIMO mode",
     "Режим сети будет «только 4G».":
         "Network mode will be “4G only”.",
+    "Если у модема нет 5G, режим сети будет «только 4G».":
+        "If the modem has no 5G, the network mode will be “4G only”.",
     "Роутер не найден. Проверьте подключение к его Wi-Fi/USB.":
         "Router not found. Check the connection to its Wi-Fi/USB.",
-    "Роутер отклонил команду: {err}":
-        "The router rejected the command: {err}",
+    "Команда не выполнена: {err}":
+        "Command failed: {err}",
     "Роутер перезагружается — переподключусь автоматически.":
         "The router is rebooting — I will reconnect automatically.",
     "Роутер принял команду, но сообщает другой режим антенны.":
@@ -510,6 +520,8 @@ EN: dict[str, str] = {
         "Before testing",
     "Пик: -":
         "Peak: -",
+    "Нет свежих данных":
+        "No fresh data",
     "Поверх окон":
         "Always on top",
     "Построение окна…":
@@ -738,11 +750,6 @@ def set_language(lang: str) -> None:
 def current_language() -> str:
     """Возвращает код текущего языка."""
     return _current_lang
-
-
-def available_languages() -> list[str]:
-    """Список кодов поддерживаемых языков."""
-    return list(LANGUAGES.keys())
 
 
 def t(text: str) -> str:

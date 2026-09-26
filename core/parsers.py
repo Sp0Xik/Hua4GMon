@@ -18,6 +18,7 @@ from core.constants import (
     LTE_BAND_TABLE,
     REGION_BANDS,
 )
+from core.i18n import t
 
 # Регулярка для базовой валидации IPv4. Полная проверка диапазона — в is_valid_ip.
 _IP_RE = re.compile(r'^\d{1,3}(\.\d{1,3}){3}$')
@@ -231,17 +232,17 @@ def format_band_label(band_raw: Any, earfcn: Any = None,
 
 
 def format_bytes_mb(b: Any) -> str:
-    """Сырые байты → '123.4 МБ' для UI."""
+    """Сырые байты → '123.4 МБ' для UI (единица — на языке интерфейса)."""
     try:
-        return f"{int(b) / 1048576:.1f} МБ"
+        return f"{int(b) / 1048576:.1f} {t('МБ')}"
     except (TypeError, ValueError):
         return "-"
 
 
 def format_rate_mbps(bps: Any) -> str:
-    """Bytes/sec → 'X.YZ Мбит/с' для UI."""
+    """Bytes/sec → 'X.YZ Мбит/с' для UI (единица — на языке интерфейса)."""
     try:
-        return f"{int(bps) * 8 / 1_000_000:.2f} Мбит/с"
+        return f"{int(bps) * 8 / 1_000_000:.2f} {t('Мбит/с')}"
     except (TypeError, ValueError):
         return "-"
 
@@ -261,13 +262,18 @@ def first_present(data: Any, keys: Iterable[str]) -> Any:
     return None
 
 
-def mcs_to_modulation(mcs: Any) -> str | None:
-    """MCS-индекс → модуляция по таблице 64QAM (3GPP TS 36.213, 7.1.7.1-1).
+# Верхние границы MCS для QPSK / 16QAM / 64QAM (3GPP TS 36.213):
+# DL — таблица 7.1.7.1-1, UL — таблица 8.6.1-1.
+_MCS_BOUNDS = {False: (9, 16, 28), True: (10, 20, 28)}
 
-    Индексы 29–31 зарезервированы для повторных передач и модуляцию не
-    определяют — возвращается None. Если сеть использует таблицу 256QAM,
-    точную модуляцию даёт только развёрнутая строка роутера ('27@256QAM'),
-    которую разбирает format_modulation.
+
+def mcs_to_modulation(mcs: Any, uplink: bool = False) -> str | None:
+    """MCS-индекс → модуляция по таблице 64QAM (DL или UL).
+
+    Индексы 29–31 — повторные передачи: по голому номеру не понять, какая
+    таблица действует, поэтому возвращается None. Если сеть использует
+    таблицу 256QAM, точную модуляцию даёт только развёрнутая строка роутера
+    ('27@256QAM'), которую разбирает format_modulation.
     """
     n = extract_number(mcs)
     if n is None:
@@ -275,32 +281,41 @@ def mcs_to_modulation(mcs: Any) -> str | None:
     n = int(n)
     if n < 0:
         return None
-    if n <= 9:
+    qpsk, qam16, qam64 = _MCS_BOUNDS[uplink]
+    if n <= qpsk:
         return "QPSK"
-    if n <= 16:
+    if n <= qam16:
         return "16QAM"
-    if n <= 28:
+    if n <= qam64:
         return "64QAM"
     return None
 
 
-def format_modulation(raw: Any) -> str | None:
+def format_modulation(raw: Any, uplink: bool = False) -> str | None:
     """Модуляция → компактный вид.
 
     Роутер отдаёт либо MCS-индекс числом (5, 27), либо подробную строку
     вида 'mcsDownCarrier1Code0:27@256QAM mcsDownCarrier1Code1:27@256QAM'
     (несколько carrier/codeword). Приводим к короткому '256QAM (MCS 27)'
-    или '256QAM (MCS 23/27)', если MCS разные. None — если не разобрать.
+    или '256QAM (MCS 23/27)', если MCS разные. Строка без модуляции
+    ('mcsDownCarrier1Code0:27 mcsDownCarrier1Code1:26') → 'MCS 26/27':
+    таблица MCS (64QAM или 256QAM) из неё не видна, модуляция не
+    угадывается. None — если не разобрать.
+
+    Hardware validation required: формат dl_mcs / ul_mcs на B636 и B535.
     """
     if raw in (None, ''):
         return None
     s = str(raw)
-    pairs = re.findall(r'(\d+)@(\w*QAM)', s, re.IGNORECASE)
+    pairs = re.findall(r'(\d+)@(QPSK|\w*QAM)', s, re.IGNORECASE)
     if pairs:
         mcs = sorted({int(m) for m, _ in pairs})
         qam = list(dict.fromkeys(q.upper() for _, q in pairs))
         return f"{' + '.join(qam)} (MCS {'/'.join(str(m) for m in mcs)})"
-    mod = mcs_to_modulation(raw)
+    codes = sorted({int(c) for c in re.findall(r':\s*(\d+)', s)})
+    if codes:
+        return f"MCS {'/'.join(str(c) for c in codes)}"
+    mod = mcs_to_modulation(raw, uplink)
     if mod is not None:
         return f"{mod} (MCS {int(extract_number(raw))})"
     return None
@@ -439,13 +454,14 @@ def parse_supported_bands(net_mode_list: Any) -> list[int]:
     for item in _as_list(container.get('LTEBand')):
         if not isinstance(item, Mapping):
             continue
+        name = str(item.get('Name') or '')
+        if 'ALL' in name.upper():
+            continue        # «LTE ALL» — маска «все бэнды», а не бэнды модема
         val = parse_hex_mask(item.get('Value'))
         if val is not None and 0 < val < LTE_ALL_MASK:
             found.update(mask_to_bands(val))
-        name = str(item.get('Name') or '')
-        if 'ALL' not in name.upper():
-            found.update(int(n) for n in re.findall(r'BC\s*(\d+)', name, re.IGNORECASE)
-                         if 1 <= int(n) <= 63)
+        found.update(int(n) for n in re.findall(r'BC\s*(\d+)', name, re.IGNORECASE)
+                     if 1 <= int(n) <= 63)
     return sorted(found)
 
 

@@ -8,8 +8,7 @@ package.domain = io.github.sp0xik
 # Исходники. CI собирает APK в отдельной папке build-android/, где
 # android_main.py становится main.py (десктопный main.py — Tkinter).
 source.dir = .
-source.include_exts = py,png,jpg,svg,kv,atlas,ttf,txt
-source.include_patterns = core/*.py,assets/*.png,assets/*.ttf,LICENSES/*.txt
+source.include_exts = py,png,ttf,txt
 
 # Версия — единственный источник: __version__ в core/__init__.py.
 version.regex = __version__ = ['"](.*)['"]
@@ -17,9 +16,11 @@ version.filename = %(source.dir)s/core/__init__.py
 
 # ЗАВИСИМОСТИ.
 # python-for-android ставит чистые Python-пакеты с --no-deps, поэтому все
-# транзитивные зависимости перечислены явно и закреплены (те же версии,
-# что в requirements.txt — это проверяет тест).
-#   * kivy, pycryptodome — рецепты p4a (версию задаёт рецепт).
+# транзитивные зависимости программы перечислены явно и закреплены (те же
+# версии, что в requirements.txt — это проверяет тест).
+#   * kivy, pycryptodome — рецепты p4a (версию задаёт рецепт закреплённого
+#     p4a: Kivy 2.3.0, pycryptodome 3.6.3). Рецепт Kivy дополнительно
+#     ставит chardet без закреплённой версии — requests принимает 3.0.2–7.x.
 #   * huawei-lte-api требует pycryptodomex (неймспейс Cryptodome), но у
 #     p4a нет его рецепта. Ставим pycryptodome (неймспейс Crypto), а
 #     android_main.py перенаправляет Cryptodome.* -> Crypto.* на старте.
@@ -36,18 +37,22 @@ presplash.filename = %(source.dir)s/assets/icon-512.png
 # Разрешения: только сеть. Экран во время мониторинга держится флагом
 # окна FLAG_KEEP_SCREEN_ON (android_main.set_keep_screen_on) — ему не
 # нужно разрешение WAKE_LOCK.
-android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE
+android.permissions = INTERNET
 
 # HTTP к роутеру идёт через сокеты Python, на которые политика cleartext
 # Android (Network Security Config) не распространяется, поэтому
 # отдельная настройка cleartext не требуется.
-android.allow_backup = True
+# Программа ничего не сохраняет — резервной копии Android копировать нечего.
+android.allow_backup = False
 
 # Версии API. targetSdk 33 (Android 13): приложение работает на Android
 # 7–16. Переход на 35 включит принудительный edge-to-edge (Android 15+),
 # под который нужен отдельный отступ интерфейса от системных панелей.
 android.api = 33
 android.minapi = 24
+# NDK 25b выравнивает библиотеки по 4 КБ: на устройствах со страницами
+# памяти 16 КБ (часть Android 15+) APK может не запуститься — ограничение
+# закреплённого стека, см. HARDWARE_VALIDATION.md.
 android.ndk = 25b
 android.archs = arm64-v8a,armeabi-v7a
 
@@ -65,7 +70,7 @@ android.release_artifact = apk
 # же p4a — отдельная задача CI «canary».
 p4a.branch = v2024.01.21
 
-# Не показывать логи p4a в release; для отладки можно поднять.
+# 2 — подробный лог buildozer (CI и так запускает с -v).
 log_level = 2
 
 [buildozer]

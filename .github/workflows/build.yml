@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
@@ -45,6 +47,8 @@ jobs:
         python: [ '3.11', '3.12', '3.13', '3.14' ]
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
@@ -72,6 +76,8 @@ jobs:
       contents: write           # нужно для создания Release
     steps:
     - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Set up Python
       uses: actions/setup-python@v7
@@ -173,6 +179,9 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v3
       with:
+        # Черновик: публикуется вручную, когда к нему прикреплены и .exe,
+        # и APK (их собирают два workflow) — релиз не выйдет «наполовину».
+        draft: true
         files: |
           ${{ env.EXE_NAME }}
           ${{ env.EXE_NAME }}.sha256
@@ -181,6 +190,7 @@ jobs:
           LICENSES/LGPL-3.0.txt
           LICENSES/GPL-3.0.txt
           LICENSES/DejaVu-Fonts.txt
+          LICENSES/THIRD-PARTY-NOTICES.txt
         body: |
           **Hua4GMon ${{ github.ref_name }}** — portable Windows .exe и Android APK.
 
@@ -212,4 +222,4 @@ jobs:
           Unblock-File .\${{ env.EXE_NAME }}
           ```
 
-          Полный список изменений: [CHANGELOG.md](CHANGELOG.md).
+          Полный список изменений: [CHANGELOG.md](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md).

@@ -104,6 +104,14 @@ PARAM_TITLES = {'rsrp': 'RSRP', 'rssi': 'RSSI', 'sinr': 'SINR', 'rsrq': 'RSRQ',
                 'nr_rsrp': 'NR RSRP', 'nr_sinr': 'NR SINR', 'nr_rsrq': 'NR RSRQ'}
 TREND_GLYPHS = {TREND_UP: ("↑", "#00b894"), TREND_DOWN: ("↓", "#d63031"),
                 TREND_FLAT: ("→", "#fdcb6e")}
+# Ctrl+R — сброс пиков, Ctrl+M — звук, при любой раскладке и Caps Lock.
+# На Windows клавиша берётся по виртуальному коду (VK_R, VK_M): Tk 8.6 на
+# Windows передаёт кириллицу как символ Unicode, и привязки вида
+# <Control-Cyrillic_ka> с ним не совпадают. В X11 — по keysym.
+CTRL_KEYCODES_WIN = {0x52: 'reset', 0x4D: 'sound'}
+CTRL_KEYSYMS = {'r': 'reset', 'R': 'reset', 'Cyrillic_ka': 'reset', 'Cyrillic_KA': 'reset',
+                'm': 'sound', 'M': 'sound', 'Cyrillic_softsign': 'sound',
+                'Cyrillic_SOFTSIGN': 'sound'}
 
 logger = logging.getLogger(APP_NAME)
 
@@ -113,7 +121,10 @@ def unit_of(param: str) -> str:
 
 
 def fmt_num(value: float | None) -> str:
-    return "-" if value is None else f"{value:g}"
+    """Число для подписи: целые — как есть (eNB 1048575, а не 1.04858e+06)."""
+    if value is None:
+        return "-"
+    return str(value) if isinstance(value, int) else f"{value:g}"
 
 
 # =========================================================
@@ -333,8 +344,8 @@ class Hua4GMon:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.root.bind("<Configure>", self._on_root_resize, add='+')
         self.root.bind_all("<F11>", lambda e: self.toggle_roof_mode())
-        self.root.bind_all("<Control-r>", lambda e: self.reset_peaks())
-        self.root.bind_all("<Control-m>", lambda e: self._toggle_sound())
+        self.root.bind_all("<Control-KeyPress>", self._on_ctrl_key)
+        self._lock_text: Callable[[], str] = lambda: t("Сейчас на модеме: -")
         self.setup_ui()
         self._tick_id = self.root.after(500, self._tick)
 
@@ -459,6 +470,8 @@ class Hua4GMon:
             self.notebook.select(snap['tab'])
         self.toggle_on_top()
         self._render_link_state()
+        # Новые кнопки созданы включёнными — команда роутеру ещё может идти.
+        self._set_net_buttons('disabled' if self._busy else 'normal')
         if self.session is not None and self.session.device_info:
             self._fill_device(self.session.device_info)
         if self.state.last is not None:
@@ -624,7 +637,7 @@ class Hua4GMon:
             "записью программа читает текущие настройки и меняет только "
             "LTE-бэнды; «Вернуть как было» восстановит настройки, "
             "прочитанные при подключении.")), 80).pack(anchor='w', pady=(0, 6))
-        self.lock_state_lbl = ttk.Label(band_frame, text=t("Сейчас на модеме: -"),
+        self.lock_state_lbl = ttk.Label(band_frame, text=self._lock_text(),
                                         font=("Segoe UI", 10, "bold"))
         self.lock_state_lbl.pack(anchor='w')
         self.band_grid = ttk.Frame(band_frame)
@@ -808,11 +821,29 @@ class Hua4GMon:
     # =====================================================
 
     def toggle_on_top(self) -> None:
-        self.root.attributes('-topmost', self.ontop_var.get())
+        on_top = self.ontop_var.get()
+        self.root.attributes('-topmost', on_top)
+        if self.roof_win is not None and self.roof_win.winfo_exists():
+            # Крышный режим не должен оказаться под главным окном.
+            self.roof_win.attributes('-topmost', on_top)
 
     def _toggle_sound(self) -> None:
         if HAS_WINSOUND:
             self.sound_var.set(not self.sound_var.get())
+
+    def _on_ctrl_key(self, event: Any) -> None:
+        """Ctrl+R / Ctrl+M при любой раскладке.
+
+        Hardware validation required: русская раскладка и Caps Lock на Windows.
+        """
+        if sys.platform == 'win32':
+            action = CTRL_KEYCODES_WIN.get(event.keycode)
+        else:
+            action = CTRL_KEYSYMS.get(event.keysym)
+        if action == 'reset':
+            self.reset_peaks()
+        elif action == 'sound':
+            self._toggle_sound()
 
     def _sync_interval(self) -> None:
         try:
@@ -837,27 +868,36 @@ class Hua4GMon:
                 self.dispatch.post(done, result)
         threading.Thread(target=task, daemon=True).start()
 
+    def _net_ready(self) -> bool:
+        """Можно ли отправить команду роутеру прямо сейчас."""
+        if self.session is None or self.link != 'online':
+            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
+            return False
+        return not self._busy
+
     def _net_action(self, work: Callable[[], Any], done: Callable[[Any], None],
                     busy_text: str) -> None:
         """Команда роутеру: кнопки блокируются до ответа (без двойных записей)."""
-        if self.session is None or self.link != 'online':
-            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
-            return
-        if self._busy:
+        if not self._net_ready():
             return
         self._busy = True
         self._set_net_buttons('disabled')
         self.net_msg.config(text=busy_text, fg='#0078D7')
+        session = self.session
 
         def finish(result: Any) -> None:
+            if session is not self.session:
+                return          # ответ прошлой сессии: её состояние уже сброшено
             self._busy = False
             self._set_net_buttons('normal')
             done(result)
 
         def failed(exc: BaseException) -> None:
+            if session is not self.session:
+                return
             self._busy = False
             self._set_net_buttons('normal')
-            self.net_msg.config(text=t("Роутер отклонил команду: {err}").format(
+            self.net_msg.config(text=t("Команда не выполнена: {err}").format(
                 err=humanize_error(exc)), fg='#d63031')
         self._run_bg(work, finish, failed)
 
@@ -997,24 +1037,32 @@ class Hua4GMon:
         else:
             self.status_label.config(text=t("Связь с роутером потеряна"), foreground='red')
 
+    def _show_lock_state(self, text: Callable[[], str]) -> None:
+        """Строка «Сейчас на модеме»; text заново переводится при смене языка."""
+        self._lock_text = text
+        self.lock_state_lbl.config(text=text())
+
     def load_router_config(self) -> None:
         """Читает текущий Band Lock и антенну (только чтение)."""
         session = self.session
         if session is None:
             return
+        # Пока не прочитано — не показываем состояние прошлой сессии.
+        self._show_lock_state(lambda: t("Сейчас на модеме: не прочитано"))
 
         def done(cfg: Any) -> None:
             if session is not self.session:
                 return
             if cfg.locked is None:
-                self.lock_state_lbl.config(text=t("Сейчас на модеме: не прочитано"))
+                self._show_lock_state(lambda: t("Сейчас на модеме: не прочитано"))
             elif not cfg.locked:
-                self.lock_state_lbl.config(text=t("Сейчас на модеме: AUTO (все бэнды)"))
+                self._show_lock_state(lambda: t("Сейчас на модеме: AUTO (все бэнды)"))
                 for var in self.band_vars.values():
                     var.set(False)
             else:
-                self.lock_state_lbl.config(text=t("Сейчас на модеме: {bands}").format(
-                    bands=", ".join(f"B{b}" for b in cfg.locked)))
+                names = ", ".join(f"B{b}" for b in cfg.locked)
+                self._show_lock_state(
+                    lambda: t("Сейчас на модеме: {bands}").format(bands=names))
                 extra = [b for b in cfg.locked if b not in self._band_list]
                 if extra:
                     self._band_list += extra
@@ -1042,9 +1090,12 @@ class Hua4GMon:
             self.graph_cb.config(values=self._graph_params)
         new_bands = [b for b in snap.bands if b not in self._band_list]
         if new_bands and self.session is not None:
-            self._band_list = lockable_bands(self.session.supported_bands,
-                                             self.state.observed_bands)
-            self._rebuild_band_grid(self._band_list)
+            bands = lockable_bands(self.session.supported_bands, self.state.observed_bands)
+            # Бэнд, которого нет в списке модема (или > 63), в список не
+            # попадёт — не пересоздаём сетку на каждом опросе.
+            if bands != self._band_list:
+                self._band_list = bands
+                self._rebuild_band_grid(bands)
         self._render(snap)
         self._beep()
 
@@ -1067,6 +1118,9 @@ class Hua4GMon:
                 s=age), fg='#d63031')
             for widgets in self.lbl_vars.values():
                 widgets['val'].config(fg='#aaaaaa')
+            # Без свежих данных стрелка не должна подсказывать направление.
+            self.dir_label.config(text="⚠", fg='#aaaaaa')
+            self.dir_text.config(text=t("Нет свежих данных"), fg='#aaaaaa')
         self._render_roof(stale)
 
     def _render(self, snap: Snapshot) -> None:
@@ -1197,7 +1251,7 @@ class Hua4GMon:
         else:
             lbl['month_traffic'].config(text="-")
         mods = [f"{d} {m}" for d, m in (("DL", format_modulation(snap.dl_mcs)),
-                                        ("UL", format_modulation(snap.ul_mcs))) if m]
+                                        ("UL", format_modulation(snap.ul_mcs, uplink=True))) if m]
         lbl['mod'].config(text=" / ".join(mods) if mods else "-")
         lbl['mimo'].config(text=format_mimo(snap.transmode) if snap.transmode else "-")
         cqi = "-"
@@ -1271,8 +1325,10 @@ class Hua4GMon:
         names = ", ".join(f"B{b}" for b in selected)
         lines = [t("Зафиксировать бэнды: {bands}?").format(bands=names)]
         lines += lock_warnings(selected, self.state.last)
-        if not session.supports_5g:
+        if session.locks_lte_only:
             lines.append(t("Режим сети будет «только 4G»."))
+        elif not session.caps_known:     # режимы уточнятся перед записью
+            lines.append(t("Если у модема нет 5G, режим сети будет «только 4G»."))
         if not messagebox.askyesno(t("Подтверждение"), "\n\n".join(lines)):
             return
         self._net_action(lambda: session.apply_plan(session.plan_band_lock(selected)),
@@ -1309,7 +1365,7 @@ class Hua4GMon:
                 "Модем перерегистрируется в сети (до ~30 с)."), fg='#00b894')
         else:
             self.net_msg.config(text=t(
-                "Команда отправлена, но роутер вернул другие настройки — "
+                "Команда отправлена, но роутер не подтвердил запись — "
                 "проверьте строку «Сейчас на модеме»."), fg='#b35900')
         self.load_router_config()
 
@@ -1354,7 +1410,7 @@ class Hua4GMon:
 
     def reboot_router(self) -> None:
         session, worker = self.session, self.worker
-        if session is None or worker is None:
+        if session is None or worker is None or self.link != 'online':
             self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
             return
         if not messagebox.askyesno(t("Подтверждение"), t(
@@ -1362,8 +1418,12 @@ class Hua4GMon:
                 "на 1–2 минуты. Программа переподключится автоматически.")):
             return
 
+        if not self._net_ready():
+            return          # пока открыт диалог, связь пропала или идёт команда
+        # До отправки: роутер может оборвать связь раньше, чем ответит.
+        worker.auto_reconnect = True
+
         def done(_: Any) -> None:
-            worker.auto_reconnect = True
             self.net_msg.config(text=t(
                 "Роутер перезагружается — переподключусь автоматически."), fg='#0078D7')
         self._net_action(session.reboot, done, t("Отправляю команду перезагрузки…"))
@@ -1379,18 +1439,25 @@ class Hua4GMon:
         if not path:
             return
 
-        def work() -> str:
+        def work() -> tuple[bool, str]:
             dumps, errors = session.collect_diagnostics()
             report = build_diagnostics(
                 app_version=__version__, library_version=library_version(),
                 platform=f"Windows {platform.release()} / Python {platform.python_version()}",
                 dumps=dumps, errors=errors)
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(diagnostics_json(report))
-            return path
-        self._net_action(work, lambda p: self.net_msg.config(text=t(
-            "Диагностика сохранена: {path}. Личные номера замаскированы.").format(path=p),
-            fg='#00b894'), t("Собираю диагностику…"))
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    f.write(diagnostics_json(report))
+            except OSError as e:
+                # Ошибка файла — не ошибка роутера.
+                return False, t("Не удалось записать файл: {e}").format(e=e)
+            return True, t("Диагностика сохранена: {path}. Личные номера замаскированы.").format(
+                path=path)
+
+        def done(result: tuple[bool, str]) -> None:
+            saved, msg = result
+            self.net_msg.config(text=msg, fg='#00b894' if saved else '#d63031')
+        self._net_action(work, done, t("Собираю диагностику…"))
 
     # =====================================================
     # CellMapper / CSV
@@ -1434,7 +1501,7 @@ class Hua4GMon:
         self.wl_button.config(state='disabled')
         self.wl_progress.start(10)
         self.wl_title.config(text=t("Проверка…"), fg='orange')
-        self.wl_detail.config(text=t("Подождите 1–3 секунды."), fg='gray')
+        self.wl_detail.config(text=t("Проверка занимает несколько секунд."), fg='gray')
         for lbl in self.wl_labels.values():
             lbl.config(text=lbl.cget('text').split(' — ')[0] + " — ⏳", fg='gray')
         self._run_bg(run_whitelist_check, self._render_whitelist, self._whitelist_failed)
@@ -1474,6 +1541,7 @@ class Hua4GMon:
         win.bind("<Escape>", lambda e: self._close_roof())
         win.protocol("WM_DELETE_WINDOW", self._close_roof)
         self.roof_win = win
+        self.toggle_on_top()        # при «Поверх окон» — поверх главного окна
         h = max(400, win.winfo_screenheight())
         big, arrow, small = -int(h * 0.13), -int(h * 0.2), -int(h * 0.035)
         tk.Label(win, text=t("[ESC] или F11 — выход"), font=("Segoe UI", small // 2),
@@ -1575,7 +1643,7 @@ def run_self_test(report: str) -> int:
     """Проверка программы без роутера: библиотека, криптография, окно.
 
     CI запускает так собранный .exe; пользователь может приложить отчёт
-    к обращению: `Hua4GMon.exe --self-test report.txt`. У оконного .exe
+    к обращению: `Hua4GMon-vX.Y.Z.exe --self-test report.txt`. У оконного .exe
     нет консоли, поэтому отчёт пишется в файл. Код возврата 0 — исправно.
     """
     start = time.perf_counter()

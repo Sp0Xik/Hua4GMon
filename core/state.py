@@ -157,6 +157,7 @@ class SignalState:
         self.last_ok: float | None = None
         self._cell: CellKey | None = None
         self._cell_label = ''
+        self._rsrp_in_cell = 0          # отсчётов RSRP с последней смены соты
 
     # ---- управление ----
 
@@ -196,10 +197,18 @@ class SignalState:
                 self.session_max[p] = v
 
         change = self._track_cell(snap, wall)
+        if change is not None:
+            self._rsrp_in_cell = 0
+        if snap.metric('rsrp') is not None:
+            self._rsrp_in_cell += 1
 
         value = snap.metric(self.trend_param)
         if value is not None:
             self.tracker.push(value)
+        else:
+            # Метрика пропала (например, NR при уходе с 5G): без данных
+            # стрелка не должна давать прежнее указание.
+            self.tracker.reset()
 
         self.observed_bands.update(snap.bands)
         self._append_log(snap, wall)
@@ -252,9 +261,12 @@ class SignalState:
         return round(cur - peak, 1)
 
     def jitter(self) -> float | None:
-        """Размах RSRP за последние JITTER_WINDOW тиков."""
+        """Размах RSRP за последние JITTER_WINDOW тиков на текущей соте.
+
+        Скачок уровня при смене соты — не «гуляние» антенны.
+        """
         hist = self.history['rsrp']
-        if len(hist) < JITTER_WINDOW:
+        if min(len(hist), self._rsrp_in_cell) < JITTER_WINDOW:
             return None
         recent = list(hist)[-JITTER_WINDOW:]
         return max(recent) - min(recent)

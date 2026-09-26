@@ -41,7 +41,10 @@ def test_android_text_fits_bundled_font():
     эмодзи (🔊 🧪 ✅ …) на Android рисуются квадратом.
     """
     ttlib = pytest.importorskip("fontTools.ttLib")
-    cmap = ttlib.TTFont(ROOT / "assets" / "DejaVuSans.ttf").getBestCmap()
+    # Обычное и жирное начертания: жирным выводятся значения и заголовки.
+    cmaps = [set(ttlib.TTFont(ROOT / "assets" / name).getBestCmap())
+             for name in ("DejaVuSans.ttf", "DejaVuSans-Bold.ttf")]
+    cmap = set.intersection(*cmaps)
     shown = i18n_keys.string_constants(ROOT / "android_main.py")
     for path in sorted((ROOT / "core").glob("*.py")):
         if path.name != "i18n.py":      # EN-словарь содержит и Windows-подписи
@@ -91,7 +94,7 @@ def test_library_imported_only_in_router():
 def test_ui_does_not_call_router_api_directly(ui):
     src = read(ui)
     for forbidden in (".reboot(", "set_net_mode(", "set_antenna_settings(", "set_control(",
-                      "Connection(", "Client(", "tcp_reachable("):
+                      "Connection(", "Client("):
         assert forbidden not in src, f"{ui}: прямой вызов {forbidden} — используйте core"
 
 
@@ -212,6 +215,26 @@ def test_windows_build_is_single_exe_with_self_test():
     assert "make_version_info.render" in read("packaging/windows.spec")
 
 
+@pytest.mark.parametrize("workflow", ["build.yml", "build-android.yml"])
+def test_workflow_supply_chain_hygiene(workflow):
+    """Токен не остаётся в .git для шагов со сторонним кодом; релиз — черновик,
+    который публикуется вручную, когда в нём есть и .exe, и APK."""
+    wf = read(f".github/workflows/{workflow}")
+    checkouts = len(re.findall(r"uses: actions/checkout@v\d+", wf))
+    assert checkouts and wf.count("persist-credentials: false") == checkouts
+    release = wf[re.search(r"softprops/action-gh-release@v\d+", wf).start():]
+    assert "draft: true" in release.split("files:")[0]
+    # Пароли подписи APK — только в env шага сборки, не в GITHUB_ENV всех шагов.
+    assert "_PASSWD=$" not in wf
+
+
+def test_android_gate_runs_android_ui_tests():
+    """APK собирается только после тестов Android-интерфейса (Kivy под Xvfb)."""
+    wf = read(".github/workflows/build-android.yml")
+    test_job = wf[wf.index("  test:"):wf.index("  build:")]
+    assert '"kivy==2.3.0"' in test_job and "xvfb-run -a pytest" in test_job
+
+
 def test_library_version_matches_pin():
     assert core.library_version() == _requirements()["huawei-lte-api"]
 
@@ -319,5 +342,15 @@ def test_hardware_markers_registered():
 
 
 def test_license_texts_present():
-    for name in ("LGPL-3.0.txt", "GPL-3.0.txt", "DejaVu-Fonts.txt"):
+    for name in ("LGPL-3.0.txt", "GPL-3.0.txt", "DejaVu-Fonts.txt", "THIRD-PARTY-NOTICES.txt"):
         assert (ROOT / "LICENSES" / name).stat().st_size > 1000, name
+
+
+def test_third_party_notices_cover_runtime_packages():
+    """Каждый пакет из requirements.txt есть в тексте уведомлений (после
+    обновления зависимостей — перегенерировать, команда в начале файла)."""
+    notices = read("LICENSES/THIRD-PARTY-NOTICES.txt").splitlines()
+    for name, version in _requirements().items():
+        assert name in notices, f"{name}: нет в LICENSES/THIRD-PARTY-NOTICES.txt"
+        found = notices[notices.index(name) + 1]
+        assert found == version, f"{name}: в уведомлениях {found}, закреплена {version}"

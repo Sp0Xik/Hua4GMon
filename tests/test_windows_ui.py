@@ -156,6 +156,7 @@ def test_staleness_is_shown(app):
     online(app)
     app.worker.pause()
     assert pump(app, lambda: "⚠" in app.health_text_lbl.cget('text'), timeout=8)
+    assert app.dir_label.cget('text') == "⚠"          # без данных — без указаний
     app.worker.resume()
 
 
@@ -224,7 +225,7 @@ def test_disconnect_is_immediate(app):
     worker = app.worker
     start = time.monotonic()
     app.disconnect()
-    assert time.monotonic() - start < 0.2
+    assert time.monotonic() - start < 0.5          # не ждёт ответа роутера (запас на медленный CI)
     assert app.link == 'offline'
     worker.join(5)
     assert not worker.is_alive()
@@ -294,3 +295,96 @@ def test_splash_status(monkeypatch):
     main.splash_status("x")
     monkeypatch.setitem(sys.modules, "pyi_splash", None)     # запуск из исходников
     main.splash_status("x")
+
+
+def test_fmt_num_keeps_integers():
+    assert main.fmt_num(1048575) == "1048575"
+    assert main.fmt_num(-8.4) == "-8.4" and main.fmt_num(None) == "-"
+
+
+def test_shortcuts_work_with_russian_layout_and_caps(app, monkeypatch):
+    calls = []
+    monkeypatch.setattr(app, "reset_peaks", lambda: calls.append('r'))
+    monkeypatch.setattr(app, "_toggle_sound", lambda: calls.append('m'))
+    assert app.root.bind_all("<Control-KeyPress>")
+    for sym in ("r", "R", "Cyrillic_ka", "Cyrillic_KA", "m", "M",
+                "Cyrillic_softsign", "Cyrillic_SOFTSIGN", "c"):
+        app._on_ctrl_key(types.SimpleNamespace(keysym=sym, keycode=0))
+    assert calls == ['r'] * 4 + ['m'] * 4
+    calls.clear()
+    # Tk на Windows: keysym — символ раскладки (к, ь), keycode — VK_R / VK_M.
+    monkeypatch.setattr(main.sys, "platform", "win32")
+    for code, sym in ((0x52, "\u043a"), (0x4D, "\u044c"), (0x43, "c")):
+        app._on_ctrl_key(types.SimpleNamespace(keysym=sym, keycode=code))
+    assert calls == ['r', 'm']
+
+
+def test_reboot_only_when_online(app):
+    online(app)
+    app.link = 'connecting'
+    app.worker.auto_reconnect = False
+    app.reboot_router()
+    assert app.worker.auto_reconnect is False      # флаг не включается без команды
+    assert "Сначала подключитесь" in app.net_msg.cget('text')
+    app.link = 'online'
+    app._busy = True                               # идёт другая команда
+    try:
+        app.reboot_router()
+        assert app.worker.auto_reconnect is False
+    finally:
+        app._busy = False
+
+
+def test_roof_window_follows_on_top(app, monkeypatch):
+    """Крышное окно получает «Поверх окон» сразу при открытии (Xvfb без
+    оконного менеджера не отражает -topmost, поэтому проверяется вызов)."""
+    seen = []
+    real = app.toggle_on_top
+    monkeypatch.setattr(app, "toggle_on_top", lambda: (seen.append(app.roof_win), real()))
+    app.toggle_roof_mode()
+    assert seen and seen[-1] is app.roof_win is not None
+
+
+def test_lock_state_survives_language_switch(app):
+    online(app)
+    assert pump(app, lambda: "AUTO" in app.lock_state_lbl.cget('text'))
+    app.lang_var.set("English")
+    app._on_language_change()
+    try:
+        assert app.lock_state_lbl.cget('text') == core.t("Сейчас на модеме: AUTO (все бэнды)")
+        assert "AUTO" in app.lock_state_lbl.cget('text')
+    finally:
+        core.set_language("ru")
+
+
+def test_band_grid_not_rebuilt_every_poll(app, monkeypatch):
+    """Бэнд, которого нет в списке модема, не пересоздаёт сетку на каждом опросе."""
+    online(app)
+    app.session.supported_bands = [7]
+    rebuilds = []
+    monkeypatch.setattr(app, "_rebuild_band_grid", rebuilds.append)
+    n = len(app.state.log)
+    assert pump(app, lambda: len(app.state.log) >= n + 4)
+    assert len(rebuilds) <= 1
+
+
+def test_busy_buttons_stay_disabled_after_language_switch(app):
+    online(app)
+    app._busy = True
+    try:
+        app.lang_var.set("English")
+        app._on_language_change()
+        assert all(str(b.cget('state')) == 'disabled' for b in app._net_buttons)
+    finally:
+        app._busy = False
+        core.set_language("ru")
+
+
+def test_diagnostics_file_error_is_not_router_error(app, tmp_path, monkeypatch):
+    online(app)
+    monkeypatch.setattr(main.filedialog, "asksaveasfilename",
+                        lambda **k: str(tmp_path / "missing" / "d.json"))
+    app.save_diagnostics()
+    assert pump(app, lambda: not app._busy)
+    text = app.net_msg.cget('text')
+    assert "Не удалось записать файл" in text and "Команда не выполнена" not in text

@@ -76,7 +76,7 @@ from kivy.uix.modalview import ModalView
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.uix.widget import Widget
-from kivy.utils import platform
+from kivy.utils import escape_markup, platform
 
 from core import (
     ANTENNA_MODES,
@@ -144,8 +144,10 @@ TREND_GLYPHS = {TREND_UP: "↑", TREND_DOWN: "↓", TREND_FLAT: "→"}
 # (🔊 🧪 ✅ …) в DejaVu Sans нет — они рисуются квадратом. Все подписи
 # Android используют только символы этого шрифта; это проверяет
 # tests/test_project.py::test_android_text_fits_bundled_font.
-_FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                          'assets', 'DejaVuSans.ttf')
+_ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
+_FONT_PATH = os.path.join(_ASSETS, 'DejaVuSans.ttf')
+# Жирное начертание — для крупных значений и заголовков (читаемость на солнце).
+_FONT_BOLD_PATH = os.path.join(_ASSETS, 'DejaVuSans-Bold.ttf')
 
 THEMES: dict[str, dict[str, list[float]]] = {
     'dark': {
@@ -169,7 +171,10 @@ def unit_of(param: str) -> str:
 
 
 def fmt_num(value: float | None) -> str:
-    return "-" if value is None else f"{value:g}"
+    """Число для подписи: целые — как есть (eNB 1048575, а не 1.04858e+06)."""
+    if value is None:
+        return "-"
+    return str(value) if isinstance(value, int) else f"{value:g}"
 
 
 def hex_to_rgba(color: str, sun: bool = False) -> list[float]:
@@ -1113,14 +1118,15 @@ class Hua4GMonApp(App):
 
     def build(self) -> ScreenManager:
         from kivy.core.window import Window
-        from kivy.factory import Factory
         Window.clearcolor = tuple(self.c_bg)
         Window.softinput_mode = 'below_target'
         Window.bind(on_keyboard=self._on_keyboard)
         if os.path.exists(_FONT_PATH):
-            LabelBase.register(name='Roboto', fn_regular=_FONT_PATH, fn_bold=_FONT_PATH)
+            bold = _FONT_BOLD_PATH if os.path.exists(_FONT_BOLD_PATH) else _FONT_PATH
+            LabelBase.register(name='Roboto', fn_regular=_FONT_PATH, fn_bold=bold)
         self.title = f"{APP_NAME} v{__version__}"
-        self.state = SignalState(trend_param='sinr')
+        # Журнал сессии нужен только для экспорта CSV, которого на Android нет.
+        self.state = SignalState(trend_param='sinr', log_max=GRAPH_HISTORY)
         self.session: RouterSession | None = None
         self.worker: SessionWorker | None = None
         self.demo_modem: DemoModem | None = None
@@ -1135,7 +1141,6 @@ class Hua4GMonApp(App):
         self._beep_ev: Any = None
         self.beeper = ToneBeeper()
         self.lbl_back = t("← Назад")
-        Factory.register('SignalGraph', cls=SignalGraph)
         self.sm: ScreenManager = Builder.load_string(KV)
         Clock.schedule_interval(self._tick, 0.5)
         return self.sm
@@ -1170,6 +1175,8 @@ class Hua4GMonApp(App):
             if hasattr(self, key):
                 setattr(self, key, value)
         Window.clearcolor = tuple(self.c_bg)
+        self._bands_shown = []          # подписи бэндов — заново, в цвете темы
+        self.build_band_checkboxes()
         if self.state.last is not None:
             self._render(self.state.last)
         else:
@@ -1289,16 +1296,31 @@ class Hua4GMonApp(App):
         self.sm.current = 'monitor'
         set_keep_screen_on(True)
         self._render_link_state()
+        self._show_last_event()         # не текст ошибки прошлой сессии
         if self.sound_on:
             self._schedule_beep()
 
+    def _show_last_event(self) -> None:
+        ev = self.sm.get_screen('monitor').ids.get('event_lbl')
+        if ev is not None:
+            ev.text = self._event_text(self.state.events[-1]) if self.state.events else ""
+
     def _on_status(self, status: str, delay: float | None, exc: BaseException | None) -> None:
+        recovered = self.link == 'reconnecting' and status != 'reconnecting'
         self.link = 'reconnecting' if status == 'reconnecting' else 'online'
         self._render_link_state(humanize_error(exc) if exc is not None else "")
+        if recovered:
+            # Строка событий показывала ошибку связи — возвращаем последнее событие.
+            self._show_last_event()
 
     def _on_fatal(self, exc: BaseException) -> None:
         self.disconnect()
         self._conn_screen().set_status(humanize_error(exc), [0.9, 0.3, 0.3, 1])
+
+    @staticmethod
+    def _event_text(change: Any) -> str:
+        return t("{at} смена соты: {old} → {new}").format(
+            at=change.at, old=change.old_label, new=change.new_label)
 
     def _render_link_state(self, detail: str = "") -> None:
         scr = self.sm.get_screen('monitor')
@@ -1324,8 +1346,7 @@ class Hua4GMonApp(App):
         if change is not None:
             ev = scr.ids.get('event_lbl')
             if ev is not None:
-                ev.text = t("{at} смена соты: {old} → {new}").format(
-                    at=change.at, old=change.old_label, new=change.new_label)
+                ev.text = self._event_text(change)
         if snap.has_nr and 'nr_sinr' not in scr.graph_values:
             scr.graph_values = LTE_PARAMS + NR_PARAMS
         if any(b not in self._band_list for b in snap.bands) and self.session is not None:
@@ -1459,9 +1480,11 @@ class Hua4GMonApp(App):
 
     def _beep_tick(self, _dt: float) -> None:
         self._beep_ev = None
-        if not self.sound_on or self.link != 'online':
+        if not self.sound_on or self.link == 'offline':
             return
-        if not self.state.is_stale(time.monotonic(), self.interval):
+        # Во время переподключения молчим, но цикл не прерываем — иначе звук
+        # не вернулся бы после перезагрузки роутера или обрыва Wi-Fi.
+        if self.link == 'online' and not self.state.is_stale(time.monotonic(), self.interval):
             self.beeper.beep(50)
         self._schedule_beep()
 
@@ -1567,7 +1590,8 @@ class Hua4GMonApp(App):
         mhz = t('МГц')
 
         def row(name: str, value: Any) -> str:
-            text = value if value not in (None, '', '-') else nd
+            # Строки от роутера — без разметки Kivy: «[» и «]» в них не теги.
+            text = escape_markup(str(value)) if value not in (None, '', '-') else nd
             return f"[b]{t(name)}:[/b] {text}"
 
         ca = {True: t("Активна"), False: t("Нет"), None: None}[snap.ca]
@@ -1603,7 +1627,7 @@ class Hua4GMonApp(App):
         mimo = mimo_status(snap.cqi0, snap.cqi1)
         up = uplink_status(snap.pusch_dbm)
         mods = [f"{d} {m}" for d, m in (("DL", format_modulation(snap.dl_mcs)),
-                                        ("UL", format_modulation(snap.ul_mcs))) if m]
+                                        ("UL", format_modulation(snap.ul_mcs, uplink=True))) if m]
         cqi = None
         if snap.cqi0 is not None:
             cqi = f"{snap.cqi0}" + (f" / {snap.cqi1}" if snap.cqi1 is not None else "") + \
@@ -1695,14 +1719,19 @@ class Hua4GMonApp(App):
             return
         self._busy = True
         self._net_msg(busy_text, '#3399ff')
+        session = self.session
 
         def finish(result: Any) -> None:
+            if session is not self.session:
+                return          # ответ прошлой сессии: её состояние уже сброшено
             self._busy = False
             done(result)
 
         def failed(exc: BaseException) -> None:
+            if session is not self.session:
+                return
             self._busy = False
-            self._net_msg(t("Роутер отклонил команду: {err}").format(
+            self._net_msg(t("Команда не выполнена: {err}").format(
                 err=humanize_error(exc)), '#d63031')
         self._run_bg(work, finish, failed)
 
@@ -1711,6 +1740,9 @@ class Hua4GMonApp(App):
         session = self.session
         if session is None:
             return
+        unread = t("Сейчас на модеме: не прочитано")
+        # Пока не прочитано — не показываем состояние прошлой сессии.
+        self._tools().lock_state = unread
 
         def done(cfg: Any) -> None:
             if session is not self.session:
@@ -1735,7 +1767,10 @@ class Hua4GMonApp(App):
                 for label, code in ANTENNA_MODES.items():
                     if code == cfg.antenna:
                         tools.antenna_text = t(label)
-        self._run_bg(session.read_config, done, lambda e: None)
+        def failed(_exc: BaseException) -> None:
+            if session is self.session:
+                self._tools().lock_state = unread
+        self._run_bg(session.read_config, done, failed)
 
     def mark_current_bands(self) -> None:
         snap = self.state.last
@@ -1763,8 +1798,10 @@ class Hua4GMonApp(App):
         names = ", ".join(f"B{b}" for b in selected)
         lines = [t("Зафиксировать бэнды: {bands}?").format(bands=names)]
         lines += lock_warnings(selected, self.state.last)
-        if not session.supports_5g:
+        if session.locks_lte_only:
             lines.append(t("Режим сети будет «только 4G»."))
+        elif not session.caps_known:     # режимы уточнятся перед записью
+            lines.append(t("Если у модема нет 5G, режим сети будет «только 4G»."))
 
         def go() -> None:
             self._net_action(lambda: session.apply_plan(session.plan_band_lock(selected)),
@@ -1802,7 +1839,7 @@ class Hua4GMonApp(App):
             self._net_msg(success_text + " " + t(
                 "Модем перерегистрируется в сети (до ~30 с)."), '#00b894')
         else:
-            self._net_msg(t("Команда отправлена, но роутер вернул другие настройки — "
+            self._net_msg(t("Команда отправлена, но роутер не подтвердил запись — "
                             "проверьте строку «Сейчас на модеме»."), '#e68033')
         self.load_router_config()
 
@@ -1853,7 +1890,6 @@ class Hua4GMonApp(App):
             return
 
         def done(_: Any) -> None:
-            worker.auto_reconnect = True
             self._net_msg(t("Роутер перезагружается — переподключусь автоматически."),
                           '#3399ff')
         self.confirm(t("Подтверждение"), t(
@@ -1891,7 +1927,7 @@ class Hua4GMonApp(App):
         tools = self._tools()
         tools.wl_verdict = t("Проверка…")
         tools.wl_color = hex_to_rgba('#e68033', self.theme_name == 'sun')
-        tools.wl_detail = t("Подождите 1–3 секунды.")
+        tools.wl_detail = t("Проверка занимает несколько секунд.")
 
         def done(report: Any) -> None:
             tools.wl_verdict = report.title

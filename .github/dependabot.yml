@@ -17,10 +17,11 @@ updates:
         patterns: [ "huawei-lte-api", "requests", "urllib3", "certifi",
                     "idna", "charset-normalizer", "xmltodict", "pycryptodomex" ]
       dev-tools:
-        patterns: [ "pytest", "pytest-cov", "ruff", "pyinstaller" ]
+        patterns: [ "pytest", "pytest-cov", "ruff", "pyinstaller*", "fonttools" ]
 
   - package-ecosystem: github-actions
-    directory: "/"
+    # Корень — workflows; отдельно — общий шаг сборки APK.
+    directories: [ "/", "/.github/actions/*" ]
     schedule:
       interval: monthly
     groups:

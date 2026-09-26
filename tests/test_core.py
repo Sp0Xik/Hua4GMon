@@ -15,6 +15,8 @@
   * защищают от регрессий при правках логики;
   * НЕ требуют сетевого доступа (кроме одного теста на localhost:1).
 """
+import re
+
 import pytest
 
 import core
@@ -331,15 +333,10 @@ def test_format_rate_mbps():
     assert core.format_rate_mbps(None) == "-"
 
 
-# =========================================================
-# tcp_reachable (быстрый «отказ» на гарантированно недоступном порту)
-# =========================================================
-
-def test_tcp_unreachable_returns_false():
-    """Тест не лезет в реальную сеть — порт 1 на localhost закрыт."""
-    ok, reason = core.tcp_reachable('localhost', 1, timeout=0.5)
-    assert ok is False
-    assert reason   # непустая причина
+def test_traffic_units_follow_language():
+    core.set_language("en")
+    assert core.format_rate_mbps(1_250_000) == "10.00 Mbit/s"
+    assert core.format_bytes_mb(10 * 1048576) == "10.0 MB"
 
 
 # =========================================================
@@ -421,12 +418,6 @@ def test_i18n_health_template_translatable():
     core.set_language("ru")
 
 
-def test_i18n_available_languages():
-    langs = core.available_languages()
-    assert "ru" in langs
-    assert "en" in langs
-
-
 # =========================================================
 # Android entry-point — статические проверки без импорта Kivy
 # =========================================================
@@ -434,18 +425,13 @@ def test_i18n_available_languages():
 def _read_android_main():
     """Читает исходник android_main.py из корня репо (без импорта Kivy)."""
     import pathlib
-    p = pathlib.Path(__file__).resolve().parent.parent / "android_main.py"
-    if not p.exists():
-        return None
-    return p.read_text(encoding="utf-8")
+    return (pathlib.Path(__file__).resolve().parent.parent / "android_main.py").read_text(
+        encoding="utf-8")
 
 
 def test_android_main_does_not_import_tkinter():
     """Android-точка входа не должна тянуть tkinter — на Android его нет."""
     src = _read_android_main()
-    if src is None:
-        import pytest
-        pytest.skip("android_main.py отсутствует")
     assert "import tkinter" not in src
     assert "from tkinter" not in src
 
@@ -453,14 +439,12 @@ def test_android_main_does_not_import_tkinter():
 def test_android_main_reuses_core():
     """Android-версия должна переиспользовать общую логику из core."""
     src = _read_android_main()
-    if src is None:
-        import pytest
-        pytest.skip("android_main.py отсутствует")
     assert "from core import" in src
     # Сессия, состояние и разбор — общие, а не продублированные в UI
     for name in ("RouterSession", "SessionWorker", "SignalState",
-                 "evaluate_signal", "is_valid_ip", "t"):
+                 "evaluate_signal", "is_valid_ip"):
         assert name in src, f"android_main должен использовать core.{name}"
+    assert re.search(r"\bt\(", src), "android_main должен переводить подписи через t()"
 
 
 def test_android_on_pre_enter_does_not_touch_kv_ids_directly():
@@ -472,9 +456,6 @@ def test_android_on_pre_enter_does_not_touch_kv_ids_directly():
     `self.ids.get(...)`.
     """
     src = _read_android_main()
-    if src is None:
-        import pytest
-        pytest.skip("android_main.py отсутствует")
 
     import re
     kv_ids = ('status_lbl', 'antenna_spinner', 'bands_grid', 'tower_block',
@@ -507,9 +488,6 @@ def test_main_imports_exist_in_core():
     """Всё, что main.py импортирует из core, должно там существовать."""
     import pathlib
     p = pathlib.Path(__file__).resolve().parent.parent / "main.py"
-    if not p.exists():
-        import pytest
-        pytest.skip("main.py отсутствует")
     for name in _imported_core_names(p.read_text(encoding="utf-8")):
         assert hasattr(core, name), (
             f"main.py импортирует core.{name}, но его нет в core "
@@ -523,9 +501,6 @@ def test_android_main_imports_exist_in_core():
     старым → ImportError на старте APK.
     """
     src = _read_android_main()
-    if src is None:
-        import pytest
-        pytest.skip("android_main.py отсутствует")
     for name in _imported_core_names(src):
         assert hasattr(core, name), (
             f"android_main.py импортирует core.{name}, но его нет в core "
@@ -571,6 +546,29 @@ def test_modulation_mixed_mcs():
 
 def test_modulation_plain_index():
     assert core.format_modulation(26) == "64QAM (MCS 26)"
+
+
+@pytest.mark.parametrize("mcs, dl, ul", [
+    (9, "QPSK", "QPSK"), (10, "16QAM", "QPSK"), (16, "16QAM", "16QAM"),
+    (17, "64QAM", "16QAM"), (20, "64QAM", "16QAM"), (21, "64QAM", "64QAM"),
+    (28, "64QAM", "64QAM"), (29, None, None),
+])
+def test_mcs_tables_dl_and_ul(mcs, dl, ul):
+    """DL — TS 36.213 табл. 7.1.7.1-1, UL — табл. 8.6.1-1."""
+    assert core.mcs_to_modulation(mcs) == dl
+    assert core.mcs_to_modulation(mcs, uplink=True) == ul
+
+
+def test_modulation_uplink_and_qpsk_strings():
+    assert core.format_modulation(10, uplink=True) == "QPSK (MCS 10)"
+    assert core.format_modulation('mcsDownCarrier1Code0:5@QPSK') == "QPSK (MCS 5)"
+
+
+def test_modulation_without_qam_shows_indices():
+    """Строка без @QAM (B525/B535): таблица MCS неизвестна — только индексы."""
+    assert core.format_modulation(
+        'mcsDownCarrier1Code0:27 mcsDownCarrier1Code1:26') == "MCS 26/27"
+    assert core.format_modulation('mcsUpCarrier1:24', uplink=True) == "MCS 24"
 
 
 def test_modulation_none():

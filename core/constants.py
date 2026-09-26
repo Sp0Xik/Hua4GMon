@@ -257,9 +257,9 @@ STALE_MIN_SECONDS: float = 3.0
 CELL_EVENTS_MAX: int = 20
 BEST_CELLS_SHOWN: int = 5
 
-# Сколько тиков между запросами к эндпоинтам (signal — каждый тик).
+# Сколько тиков между запросами к необязательным эндпоинтам
+# (device/signal — каждый тик).
 POLL_EVERY: dict[str, int] = {
-    'signal': 1,
     'status': 2,
     'traffic': 2,
     'plmn': 15,

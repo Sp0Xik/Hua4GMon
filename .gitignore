@@ -67,6 +67,7 @@ Thumbs.db
 hua4gmon-*.csv
 hua4gmon-diag-*.json
 
-# ==== Сборка Windows (генерируется в CI) ====
+# ==== Сборка Windows ====
+# version_info.txt — вывод tools/make_version_info.py при ручном запуске
+# (spec-файл пишет его в папку сборки).
 version_info.txt
-Hua4GMon.spec

@@ -8,7 +8,9 @@ CSV:
     колонкам), для английского — «,» и точка.
 
 Диагностика: сырые ответы API для отчёта об ошибке. Идентификаторы
-(IMEI, IMSI, ICCID, номер, серийный номер, MAC, WAN IP) маскируются.
+(IMEI, IMSI, ICCID, номер, серийный номер) маскируются с сохранением
+последних 4 символов, сетевые адреса (любые MAC, в том числе Wi-Fi, IP, DNS)
+— полностью. Номер соты и оператор остаются: без них диагностика бесполезна.
 """
 from __future__ import annotations
 
@@ -23,11 +25,13 @@ CSV_FIELDS: tuple[str, ...] = (
     'enodeb', 'sector', 'pci', 'earfcn', 'bands', 'rat',
 )
 
-SENSITIVE_KEYS = frozenset(k.lower() for k in (
-    'Imei', 'Imsi', 'Iccid', 'Msisdn', 'SerialNumber', 'MacAddress1',
-    'MacAddress2', 'WanIPAddress', 'WanIPv6Address', 'wan_ip', 'Mac',
-    'PrimaryDns', 'SecondaryDns', 'PrimaryIPv6Dns', 'SecondaryIPv6Dns',
-))
+# Части имён ключей (без учёта регистра), значения которых маскируются.
+# Идентификаторы: последние 4 символа остаются — чтобы различать устройства.
+ID_KEY_PARTS: tuple[str, ...] = ('imei', 'imsi', 'iccid', 'msisdn', 'serialnumber')
+# Сетевые адреса — полностью: по MAC Wi-Fi (BSSID) общедоступные базы
+# находят место установки, по IP и DNS — провайдера и район.
+ADDRESS_KEY_PARTS: tuple[str, ...] = ('mac', 'dns', 'ipaddr', 'ipv4', 'ipv6address',
+                                      'ip_address', 'wan_ip')
 
 
 def csv_dialect(lang: str) -> tuple[str, str]:
@@ -63,26 +67,37 @@ def default_csv_name(now: datetime.datetime | None = None) -> str:
     return f"hua4gmon-{now:%Y%m%d-%H%M%S}.csv"
 
 
-def mask_value(value: Any) -> str:
-    """Оставляет последние 4 символа: '860000000000001' → '***********0001'."""
+def mask_value(value: Any, keep: int = 4) -> str:
+    """Оставляет последние keep символов: '860000000000001' → '***********0001'."""
     s = str(value)
-    if len(s) <= 4:
+    if len(s) <= keep:
         return '*' * len(s)
-    return '*' * (len(s) - 4) + s[-4:]
+    return '*' * (len(s) - keep) + (s[-keep:] if keep else '')
 
 
-def mask_sensitive(data: Any) -> Any:
-    """Рекурсивно маскирует идентификаторы в ответах API."""
+def _kept_chars(key: str) -> int | None:
+    """Сколько символов значения оставить; None — ключ не секретный."""
+    k = key.lower()
+    if any(part in k for part in ADDRESS_KEY_PARTS):
+        return 0
+    if any(part in k for part in ID_KEY_PARTS):
+        return 4
+    return None
+
+
+def mask_sensitive(data: Any, keep: int | None = None) -> Any:
+    """Рекурсивно маскирует идентификаторы и сетевые адреса в ответах API.
+
+    keep — для значений под секретным ключом (в том числе элементов списка
+    вида {'MacAddress': ['AA:…', 'BB:…']}); вложенные словари проверяются
+    по своим ключам.
+    """
     if isinstance(data, Mapping):
-        out: dict[str, Any] = {}
-        for k, v in data.items():
-            if str(k).lower() in SENSITIVE_KEYS and v not in (None, ''):
-                out[str(k)] = mask_value(v)
-            else:
-                out[str(k)] = mask_sensitive(v)
-        return out
+        return {str(k): mask_sensitive(v, _kept_chars(str(k))) for k, v in data.items()}
     if isinstance(data, list):
-        return [mask_sensitive(v) for v in data]
+        return [mask_sensitive(v, keep) for v in data]
+    if keep is not None and data not in (None, ''):
+        return mask_value(data, keep)
     return data
 
 

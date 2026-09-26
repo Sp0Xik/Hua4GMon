@@ -63,13 +63,14 @@ def mimo_status(cqi0: int | None, cqi1: int | None) -> str | None:
     'single'    — второй поток не передаётся (CQI1 = 0 при нормальном CQI0);
     'imbalance' — потоки сильно различаются;
     'ok'        — два потока работают.
-    None — роутер не отдаёт оба CQI, вывод сделать нельзя.
+    None — роутер не отдаёт оба CQI или CQI1 = 0 при слабом сигнале
+    (CQI0 < 7): там один поток — норма, вывод о кабелях сделать нельзя.
     Hardware validation required: наличие cqi1 при одном потоке на B636.
     """
     if cqi0 is None or cqi1 is None:
         return None
-    if cqi1 == 0 and cqi0 >= 7:
-        return 'single'
+    if cqi1 == 0:
+        return 'single' if cqi0 >= 7 else None
     if abs(cqi0 - cqi1) >= 4:
         return 'imbalance'
     return 'ok'

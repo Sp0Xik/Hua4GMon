@@ -32,7 +32,8 @@ def test_detect_ca(ex, count, ca):
 
 @pytest.mark.parametrize("cqi0, cqi1, status", [
     (11, 10, 'ok'), (12, 0, 'single'), (12, 6, 'imbalance'),
-    (3, 0, 'ok'), (None, 5, None), (5, None, None),
+    (3, 0, None), (6, 0, None), (0, 0, None), (7, 0, 'single'),
+    (None, 5, None), (5, None, None),
 ])
 def test_mimo_status(cqi0, cqi1, status):
     assert core.mimo_status(cqi0, cqi1) == status
@@ -205,6 +206,28 @@ def test_state_jitter():
         assert st.jitter() is None
         st.ingest(snap(rsrp=v), float(i), WALL)
     assert st.jitter() == 7
+
+
+def test_state_jitter_restarts_after_cell_change():
+    """Скачок уровня при хэндовере — не «гуляние» антенны."""
+    st = core.SignalState()
+    for i in range(5):
+        st.ingest(snap(rsrp=-80), float(i), WALL)
+    assert st.jitter() == 0
+    for i in range(4):
+        st.ingest(snap(rsrp=-93, pci=112, earfcn=6300), 10.0 + i, WALL)
+        assert st.jitter() is None
+    st.ingest(snap(rsrp=-95, pci=112, earfcn=6300), 20.0, WALL)
+    assert st.jitter() == 2
+
+
+def test_state_trend_resets_when_metric_disappears():
+    st = core.SignalState(trend_param='nr_sinr')
+    for i, v in enumerate((0, 2, 4, 6, 8)):
+        st.ingest(snap(nr_sinr=v), float(i), WALL)
+    assert st.trend == core.TREND_UP
+    st.ingest(snap(), 10.0, WALL)                      # NR-ветка пропала
+    assert st.trend == core.TREND_COLLECTING
 
 
 def test_state_cell_change_event_resets_trend():

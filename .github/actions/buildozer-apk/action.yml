@@ -55,7 +55,8 @@ runs:
         python -m pip install --upgrade pip
         pip install "buildozer==${{ inputs.buildozer-version }}" "cython==0.29.36"
 
-    # SDK/NDK — несколько ГБ; без кэша каждая сборка идёт 30–40 минут.
+    # Кэш — только SDK/NDK (несколько ГБ скачивания). Рецепты p4a (Python,
+    # OpenSSL, SDL2, Kivy) компилируются заново в каждой сборке.
     - uses: actions/cache@v6
       with:
         path: ~/.buildozer

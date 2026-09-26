@@ -208,6 +208,117 @@ def test_restore_original(session, modem):
     assert session.apply_plan(plan)
 
 
+def _busy_net_mode(session):
+    """Следующее чтение net-mode ответит «роутер занят» (100004)."""
+    net = session._client.net
+    real = net.net_mode
+    calls = {'n': 0}
+
+    def busy_once():
+        calls['n'] += 1
+        if calls['n'] == 1:
+            raise DemoApiError("Busy", 100004)
+        return real()
+    net.net_mode = busy_once
+
+
+def test_band_lock_keeps_2g3g_when_read_fails(session, modem):
+    """Не прочитали настройки перед записью — берутся исходные, а не значения
+    по умолчанию: NetworkBand (2G/3G) модема не меняется."""
+    modem.network_band = '2000000400380'
+    session.original_net_mode = session.read_net_mode()
+    _busy_net_mode(session)
+    plan = session.plan_band_lock([20])
+    assert plan.networkband == '2000000400380'
+    assert session.apply_plan(plan) is True
+    assert modem.network_band == '2000000400380' and modem.lte_mask == 1 << 19
+    _busy_net_mode(session)
+    assert session.plan_all_bands().networkband == '2000000400380'
+
+
+def test_band_lock_refused_without_any_settings(session, modem):
+    session.original_net_mode = None
+    _busy_net_mode(session)
+    writes = []
+    session._client.net.set_net_mode = lambda *a: writes.append(a)
+    with pytest.raises(core.NetModeUnavailable):
+        session.plan_band_lock([20])
+    _busy_net_mode(session)
+    with pytest.raises(core.NetModeUnavailable):
+        session.plan_all_bands()
+    assert not writes
+    assert "модем не изменён" in core.humanize_error(core.NetModeUnavailable())
+
+
+@pytest.mark.parametrize("busy", [1, 2])
+def test_band_lock_keeps_5g_mode_when_modes_unread(modem, busy):
+    """net-mode-list не прочитан при подключении (busy=1) или и перед
+    записью (busy=2): 5G-модем не переводится в «только 4G»."""
+    left = {'busy': busy}
+
+    def factory(*a):
+        conn, client = demo_factory(modem)(*a)
+        real = client.net.net_mode_list
+
+        def mode_list():
+            if left['busy']:
+                left['busy'] -= 1
+                raise DemoApiError("Busy", 100004)
+            return {**real(), 'AccessList': {'Access': ['00', '03', '0803']}}
+        client.net.net_mode_list = mode_list
+        return conn, client
+    modem.network_mode = '0803'
+    s = core.RouterSession("demo", "pw", factory=factory)
+    s.open()
+    assert not s.locks_lte_only
+    plan = s.plan_band_lock([3])
+    assert plan.networkmode == '0803'
+    assert s.apply_plan(plan) and modem.network_mode == '0803'
+    assert s.supports_5g is (busy == 1)
+    s.close()
+
+
+def test_band_lock_4g_modem_with_modes_unread_at_connect(modem):
+    """4G-модем, занятый при подключении: режимы перечитываются перед
+    записью, и Band Lock, как обычно, включает «только 4G»."""
+    busy = {'n': 1}
+
+    def factory(*a):
+        conn, client = demo_factory(modem)(*a)
+        real = client.net.net_mode_list
+
+        def mode_list():
+            if busy['n']:
+                busy['n'] -= 1
+                raise DemoApiError("Busy", 100004)
+            return real()
+        client.net.net_mode_list = mode_list
+        return conn, client
+    s = core.RouterSession("demo", "pw", factory=factory)
+    s.open()
+    assert not s.caps_known and not s.locks_lte_only
+    assert s.plan_band_lock([3]).networkmode == '03'
+    assert s.caps_known and s.locks_lte_only
+    s.close()
+
+
+def test_original_captured_before_first_write(session, modem):
+    session.original_net_mode = None            # при подключении роутер был занят
+    session.apply_plan(session.plan_band_lock([3]))
+    assert session.original_net_mode.lte_band == '7FFFFFFFFFFFFFFF'
+    assert session.plan_restore_original().lteband == '7FFFFFFFFFFFFFFF'
+
+
+def test_write_without_read_back_is_unconfirmed(session, modem):
+    plan = session.plan_band_lock([20])
+
+    def timeout():
+        raise TimeoutError("read-back")
+    session._client.net.net_mode = timeout
+    assert session.apply_plan(plan) is False     # «не подтверждено», не исключение
+    assert modem.lte_mask == 1 << 19
+
+
 def test_network_mode_arg():
     from huawei_lte_api.enums.net import NetworkModeEnum
     assert router_mod._network_mode_arg('03') is NetworkModeEnum.MODE_4G_ONLY
@@ -268,6 +379,36 @@ def test_reattach_failure_is_recovered_on_close(session, modem):
     assert modem.data_on is False
     session.close()                    # закрытие обязано включить данные
     assert modem.data_on is True
+
+
+def test_reattach_lost_response_still_restores_data(session, modem):
+    """Роутер выключил данные, но ответ потерялся — close() всё равно включит."""
+    dial = session._client.dial_up
+    real = dial.set_mobile_dataswitch
+
+    def lost(dataswitch=0):
+        real(dataswitch)
+        if dataswitch == 0:
+            raise TimeoutError("response lost")
+        return "OK"
+    dial.set_mobile_dataswitch = lost
+    with pytest.raises(TimeoutError):
+        session.reattach(pause=0, sleep=lambda s: None)
+    assert modem.data_on is False
+    session.close()
+    assert modem.data_on is True
+
+
+def test_relogin_restores_mobile_data(session, modem):
+    """Старая сессия не смогла включить данные — включает новая после входа."""
+    session._client.dial_up.set_mobile_dataswitch(0)
+    session._data_off_pending = True
+
+    def dead(dataswitch=0):
+        raise ConnectionError("old session")
+    session._client.dial_up.set_mobile_dataswitch = dead
+    session.open()
+    assert modem.data_on is True and not session._data_off_pending
 
 
 def test_diagnostics_are_read_only(session, modem):
@@ -404,6 +545,38 @@ def test_worker_login_fatal_on_relogin_stops(fast, modem, clock):
     assert not w.is_alive()
     assert error_code(rec.fatal[0]) == 108003
     assert core.classify_error(rec.fatal[0]) is core.ErrorKind.LOGIN_FATAL
+
+
+def test_worker_relogin_without_data_is_not_connected(fast):
+    """Вход удаётся, а опрос нет: статус «переподключаюсь», без мигания
+    «подключено» и без повторного входа на каждой секунде."""
+    class Expired:
+        supported_bands: list[int] = []
+        opens = 0
+
+        def open(self):
+            Expired.opens += 1
+            return {}
+
+        def close(self):
+            pass
+
+        def fetch(self):
+            raise DemoApiError("expired", 100003)
+
+    rec = Recorder()
+    delays = []
+    kwargs = rec.kwargs()
+    kwargs['on_status'] = lambda st, d, e: (rec.statuses.append(st), delays.append(d))
+    w = core.SessionWorker(Expired(), **kwargs)
+    w.start()
+    time.sleep(0.3)
+    w.stop()
+    w.join(2)
+    assert rec.statuses and set(rec.statuses) == {'reconnecting'}
+    # Пауза перед входом растёт до максимума, успешный вход её не сбрасывает.
+    assert Expired.opens >= 2
+    assert delays == sorted(delays) and delays[-1] == router_mod.RECONNECT_DELAY_MAX
 
 
 def test_worker_pause_resume(fast, modem):

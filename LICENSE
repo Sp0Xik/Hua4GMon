@@ -25,8 +25,14 @@ THIRD-PARTY COMPONENTS
 ================================================================================
 
 The Windows .exe and the Android APK bundle the following open-source
-components. Full license texts are in the LICENSES/ directory of the source
-repository and are attached to every release.
+components. The LICENSES/ directory of the source repository contains the
+LGPL-3.0/GPL-3.0 texts (huawei-lte-api), the DejaVu font license and the
+license and notice texts of the Python packages pinned in requirements.txt
+(LICENSES/THIRD-PARTY-NOTICES.txt); these files are attached to every
+release and included in the APK. The other components listed below (native
+runtimes and the Android build dependencies) are distributed under the
+licenses named for them; their full texts are published by the respective
+projects.
 
 * huawei-lte-api — https://github.com/Salamek/huawei-lte-api
   Copyright (c) Adam Schubert (Salamek) and contributors.
@@ -40,12 +46,20 @@ repository and are attached to every release.
   xmltodict (MIT), pycryptodome / pycryptodomex (BSD-2-Clause and public
   domain) — dependencies of huawei-lte-api.
 
-* Python (PSF License), Tcl/Tk (Tcl license) — Windows version runtime,
-  packaged with PyInstaller (bootloader: GPL-2.0 with an exception that
-  permits distributing packaged applications under any license).
+* Python (PSF License), Tcl/Tk (Tcl license), OpenSSL (Apache-2.0),
+  libffi (MIT), zlib (zlib), expat (MIT), bzip2 (bzip2 license),
+  xz/liblzma (public domain) — Windows version runtime, packaged with
+  PyInstaller (bootloader: GPL-2.0 with an exception that permits
+  distributing packaged applications under any license).
 
-* Kivy (MIT), python-for-android (MIT), pyjnius (MIT), SDL2 (zlib) —
-  Android version runtime.
+* Python (PSF License), Kivy (MIT), python-for-android (MIT),
+  pyjnius (MIT), SDL2 and its companion libraries (zlib), OpenSSL
+  (Apache-2.0) — Android version runtime. The python-for-android recipes
+  also add pycryptodome (instead of pycryptodomex), cffi (MIT), pycparser
+  (BSD-3-Clause), setuptools (MIT), six (MIT), SQLite (public domain) and
+  chardet (license of the version installed by the Kivy recipe, published
+  by the chardet project).
 
-* DejaVu Sans font (assets/DejaVuSans.ttf, Android version) — Bitstream Vera
+* DejaVu Sans and DejaVu Sans Bold fonts (assets/DejaVuSans.ttf,
+  assets/DejaVuSans-Bold.ttf, Android version, unmodified) — Bitstream Vera
   derived license, see LICENSES/DejaVu-Fonts.txt.

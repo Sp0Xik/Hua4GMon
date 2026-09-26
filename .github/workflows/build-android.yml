@@ -6,6 +6,9 @@ on:
   push:
     branches: [ main ]
     tags:     [ 'v*.*.*' ]
+  # PR (в том числе Dependabot) — поломка APK видна до слияния.
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       canary:
@@ -19,23 +22,29 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-${{ github.ref }}
+  # С типом события: еженедельная canary-сборка не отменяет сборку main и наоборот.
+  group: android-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  # APK собирается только из кода, прошедшего тесты.
+  # APK собирается только из кода, прошедшего тесты — включая тесты
+  # Android-интерфейса (Kivy под Xvfb), иначе они бы пропускались.
   test:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: requirements-dev.txt
-      - run: pip install -r requirements-dev.txt
-      - run: pytest -q
+      - name: Install system packages for UI tests
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1 libegl1 libmtdev1
+      - run: pip install -r requirements-dev.txt "kivy==2.3.0"
+      - run: xvfb-run -a pytest -q
 
   build:
     needs: test
@@ -43,30 +52,31 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write        # прикрепление APK к Release на тегах
-    env:
-      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # Release-подпись постоянным ключом из секретов репозитория.
       # Без секретов (форки, PR) собирается debug APK только как артефакт;
       # на тегах без секретов сборка падает — неподписанный релиз не выходит.
+      # Ключ и пароли не попадают в GITHUB_ENV: их получают только этот шаг
+      # и шаг сборки.
       - name: Select build mode and signing
         id: mode
         shell: bash
         env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
+            # Неполный набор секретов — ошибка сразу, а не после часа сборки.
+            for name in KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+              [ -n "${!name}" ] || { echo "::error::Секрет подписи для $name не задан"; exit 1; }
+            done
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-            {
-              echo "P4A_RELEASE_KEYSTORE=$RUNNER_TEMP/release.keystore"
-              echo "P4A_RELEASE_KEYSTORE_PASSWD=$KEYSTORE_PASSWORD"
-              echo "P4A_RELEASE_KEYALIAS=$KEY_ALIAS"
-              echo "P4A_RELEASE_KEYALIAS_PASSWD=$KEY_PASSWORD"
-            } >> "$GITHUB_ENV"
             echo "mode=release" >> "$GITHUB_OUTPUT"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "::error::Секреты подписи ANDROID_* не заданы — релизный APK не собирается."
@@ -84,6 +94,12 @@ jobs:
           [ "v$VER" = "$GITHUB_REF_NAME" ] || { echo "::error::Тег $GITHUB_REF_NAME != v$VER"; exit 1; }
 
       - uses: ./.github/actions/buildozer-apk
+        # Подпись release: buildozer читает P4A_RELEASE_* (в debug они не нужны).
+        env:
+          P4A_RELEASE_KEYSTORE: ${{ runner.temp }}/release.keystore
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         with:
           buildozer-version: '1.5.0'
           mode: ${{ steps.mode.outputs.mode }}
@@ -97,9 +113,14 @@ jobs:
           SRC=$(find build-android/bin -name '*.apk' -print -quit)
           [ -n "$SRC" ] || { echo "::error::APK не найден в build-android/bin"; exit 1; }
           if [ "${{ steps.mode.outputs.mode }}" = "release" ]; then
-            NAME="Hua4GMon-v$VER.apk"
             APKSIGNER=$(ls ~/.buildozer/android/platform/android-sdk/build-tools/*/apksigner | sort -V | tail -n1)
             "$APKSIGNER" verify --print-certs "$SRC"
+            # Имя релиза — только у тега; сборки коммитов помечены как dev.
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              NAME="Hua4GMon-v$VER.apk"
+            else
+              NAME="Hua4GMon-v$VER-dev-${GITHUB_SHA::7}.apk"
+            fi
           else
             NAME="Hua4GMon-v$VER-debug-${GITHUB_SHA::7}.apk"
           fi
@@ -114,22 +135,26 @@ jobs:
             ${{ steps.apk.outputs.name }}
             ${{ steps.apk.outputs.name }}.sha256
 
+      # Черновик: релиз публикуется вручную, когда есть и .exe, и APK.
       - name: Attach APK to Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
+          draft: true
           files: |
             ${{ steps.apk.outputs.name }}
             ${{ steps.apk.outputs.name }}.sha256
 
   # Проверка обновления инструментов без риска для релиза: тот же p4a
   # v2024.01.21, но buildozer 1.6.0. Результат не влияет на сборку.
+  # Падение видно в списке запусков (отдельный workflow-run по расписанию).
   canary:
     if: github.event_name == 'schedule' || inputs.canary
     runs-on: ubuntu-22.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/buildozer-apk
         with:
           buildozer-version: '1.6.0'

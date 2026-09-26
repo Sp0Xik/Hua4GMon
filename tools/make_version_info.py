@@ -1,6 +1,7 @@
 """Генерирует файл VERSIONINFO для PyInstaller (--version-file) из core.__version__.
 
-Использование (CI, Windows):
+Сборка импортирует модуль из packaging/windows.spec. Вручную (чтобы
+посмотреть результат):
     python tools/make_version_info.py version_info.txt
 
 Свойства .exe в Проводнике (версия файла и продукта, описание, авторские

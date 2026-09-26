@@ -34,7 +34,7 @@ from core.constants import (
     RECONNECT_DELAY_MAX,
     RECONNECT_REOPEN_AFTER,
 )
-from core.errors import ErrorKind, classify_error
+from core.errors import ErrorKind, NetModeUnavailable, classify_error
 from core.models import Snapshot, build_snapshot
 from core.parsers import (
     parse_access_modes,
@@ -168,6 +168,7 @@ class RouterSession:
         self.device_info: dict[str, Any] = {}
         self.supported_bands: list[int] = []
         self.access_modes: list[str] = []
+        self.caps_known = False         # net-mode-list прочитан (режимы и бэнды)
         self.original_net_mode: NetModeSettings | None = None
 
     # ---- жизненный цикл ----
@@ -179,6 +180,16 @@ class RouterSession:
     @property
     def supports_5g(self) -> bool:
         return modem_supports_5g(self.access_modes)
+
+    @property
+    def locks_lte_only(self) -> bool:
+        """Band Lock переводит модем в «только 4G».
+
+        Только если режимы модема прочитаны и среди них нет 5G: пока
+        net-mode-list не прочитан, режим сети не меняется — иначе
+        5G-модем, занятый при подключении, потерял бы 5G.
+        """
+        return self.caps_known and not self.supports_5g
 
     def open(self) -> dict[str, Any]:
         """Вход в роутер (или повторный вход). Старая сессия закрывается."""
@@ -197,21 +208,26 @@ class RouterSession:
             self._cache.clear()
             self._last_cell = None
             self._read_capabilities_locked()
+            if self._data_off_pending:
+                # reattach выключил данные, а старая сессия не успела их включить.
+                self._restore_mobile_data_locked()
             return self.device_info
 
     def close(self) -> None:
         with self._lock:
             self._close_locked()
 
+    def _restore_mobile_data_locked(self) -> None:
+        """Не оставляем мобильные данные выключенными после reattach."""
+        try:
+            self._require().dial_up.set_mobile_dataswitch(1)
+            self._data_off_pending = False
+        except Exception:
+            logger.warning("Could not re-enable mobile data", exc_info=True)
+
     def _close_locked(self) -> None:
         if self._data_off_pending and self._client is not None:
-            # Не оставляем мобильные данные выключенными.
-            try:
-                self._client.dial_up.set_mobile_dataswitch(1)
-                self._data_off_pending = False
-            except Exception:
-                logger.warning("Could not re-enable mobile data on close",
-                               exc_info=True)
+            self._restore_mobile_data_locked()
         connection = self._connection
         self._connection = None
         self._client = None
@@ -234,6 +250,7 @@ class RouterSession:
             return
         self.supported_bands = parse_supported_bands(nml)
         self.access_modes = parse_access_modes(nml)
+        self.caps_known = True
 
     # ---- опрос ----
 
@@ -295,13 +312,35 @@ class RouterSession:
         with self._lock:
             return self._read_net_mode_locked()
 
+    def _net_mode_for_write(self) -> NetModeSettings:
+        """Текущие настройки сети для read-modify-write перед записью.
+
+        Если их не удалось прочитать (роутер занят и т.п.), берутся
+        прочитанные при подключении: программа меняет только LTE-бэнды,
+        а NetworkBand (2G/3G) и режим сети 5G-модема не трогает, поэтому
+        они совпадают с исходными. Если нет и их — NetModeUnavailable:
+        иначе в модем ушли бы значения по умолчанию.
+        """
+        with self._lock:
+            current = self._read_net_mode_locked()
+            if current is not None and self.original_net_mode is None:
+                # Исходные настройки фиксируются до первой записи программы.
+                self.original_net_mode = current
+        current = current or self.original_net_mode
+        if current is None:
+            raise NetModeUnavailable()
+        return current
+
     def plan_band_lock(self, bands: Iterable[int]) -> BandLockPlan:
         """План фиксации. Для 5G-модемов режим сети не меняется."""
-        return plan_lock(self.read_net_mode(), bands,
-                         force_lte_only=not self.supports_5g)
+        current = self._net_mode_for_write()
+        with self._lock:
+            if not self.caps_known:
+                self._read_capabilities_locked()    # при подключении не прочитались
+        return plan_lock(current, bands, force_lte_only=self.locks_lte_only)
 
     def plan_all_bands(self) -> BandLockPlan:
-        return plan_auto(self.read_net_mode(), self.original_net_mode)
+        return plan_auto(self._net_mode_for_write(), self.original_net_mode)
 
     def plan_restore_original(self) -> BandLockPlan | None:
         if self.original_net_mode is None:
@@ -314,7 +353,13 @@ class RouterSession:
             client = self._require()
             client.net.set_net_mode(plan.lteband, plan.networkband,
                                     _network_mode_arg(plan.networkmode))
-            read_back = self._read_net_mode_locked()
+            try:
+                read_back = self._read_net_mode_locked()
+            except Exception:
+                # Запись прошла, а перечитать не удалось — «не подтверждено»,
+                # а не «роутер отклонил команду».
+                logger.warning("Net mode read-back failed after write", exc_info=True)
+                read_back = None
         return verify(plan, read_back)
 
     # ---- антенна, перезагрузка, связь ----
@@ -365,8 +410,11 @@ class RouterSession:
         Hardware validation required.
         """
         with self._lock:
-            self._require().dial_up.set_mobile_dataswitch(0)
+            client = self._require()
+            # Флаг — до запроса: если роутер выключил данные, а ответ
+            # потерялся, close()/open() всё равно включат их обратно.
             self._data_off_pending = True
+            client.dial_up.set_mobile_dataswitch(0)
         sleep(pause)
         for attempt in range(3):
             try:
@@ -486,7 +534,9 @@ class SessionWorker(threading.Thread):
                     self._on_fatal(exc)
                     return
                 failures += 1
-                logger.warning("Poll failed (%s): %s", kind.value, exc)
+                # Трассировка — для ошибок, не похожих на обрыв связи (баг в разборе).
+                logger.warning("Poll failed (%s): %s", kind.value, exc,
+                               exc_info=kind is ErrorKind.OTHER)
                 self._on_status('reconnecting', delay, exc)
                 if self._stop_evt.wait(delay):
                     return
@@ -502,9 +552,8 @@ class SessionWorker(threading.Thread):
                         continue
                     if self._stop_evt.is_set():
                         return
-                    failures = 0
-                    delay = RECONNECT_DELAY_INITIAL
-                    self._on_status('connected', None, None)
+                    # «Подключено» — только после успешного опроса (ниже):
+                    # вход удался, но данные могут по-прежнему не идти.
                 continue
             if failures:
                 failures = 0

@@ -195,3 +195,58 @@ def test_double_back_disconnects(app):
     assert app._on_keyboard(Window, 27) is True and app.link == 'online'
     assert app._on_keyboard(Window, 27) is True
     assert app.link == 'offline' and app.sm.current == 'connection'
+
+
+def test_beeper_survives_reconnect(app):
+    """Во время переподключения звук молчит, но не выключается навсегда."""
+    ensure_online(app)
+    beeps = []
+    app.beeper.beep = beeps.append
+    app.sound_on = True
+    app.link = 'reconnecting'
+    app._beep_tick(0)
+    assert not beeps and app._beep_ev is not None
+    app.link = 'online'
+    app._stop_beeps()
+    app._beep_tick(0)
+    assert beeps and app._beep_ev is not None
+    app.sound_on = False
+    app._stop_beeps()
+
+
+def test_error_line_cleared_after_recovery(app):
+    ensure_online(app)
+    ev = app.sm.get_screen('monitor').ids.event_lbl
+    app._on_status('reconnecting', 1.0, ConnectionError("x"))
+    assert ev.text
+    app._on_status('connected', None, None)
+    expected = app._event_text(app.state.events[-1]) if app.state.events else ""
+    assert ev.text == expected
+
+
+def test_new_session_clears_old_error_line(app):
+    ensure_online(app)
+    ev = app.sm.get_screen('monitor').ids.event_lbl
+    ev.text = "Роутер не отвечает"               # осталось от прошлой сессии
+    app._on_connected({})
+    expected = app._event_text(app.state.events[-1]) if app.state.events else ""
+    assert ev.text == expected
+
+
+def test_band_labels_follow_theme(app):
+    ensure_online(app)
+    app.go('tools')
+    app.build_band_checkboxes()
+    grid = app._tools().ids.bands_grid
+    app.apply_theme('sun')
+    try:
+        labels = [w for w in grid.children if hasattr(w, 'halign')]
+        assert labels and all(list(lb.color) == list(app.c_text) for lb in labels)
+    finally:
+        app.apply_theme('dark')
+        app.go('monitor')
+
+
+def test_bold_font_is_bundled():
+    import android_main
+    assert os.path.exists(android_main._FONT_BOLD_PATH)
