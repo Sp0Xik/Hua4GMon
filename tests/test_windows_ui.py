@@ -307,13 +307,15 @@ def test_shortcuts_work_with_russian_layout_and_caps(app, monkeypatch):
     monkeypatch.setattr(app, "reset_peaks", lambda: calls.append('r'))
     monkeypatch.setattr(app, "_toggle_sound", lambda: calls.append('m'))
     assert app.root.bind_all("<Control-KeyPress>")
+    # X11: клавиша — по keysym (тест идёт и на Windows, поэтому платформа задана явно).
+    monkeypatch.setattr(main, "IS_WINDOWS", False)
     for sym in ("r", "R", "Cyrillic_ka", "Cyrillic_KA", "m", "M",
                 "Cyrillic_softsign", "Cyrillic_SOFTSIGN", "c"):
         app._on_ctrl_key(types.SimpleNamespace(keysym=sym, keycode=0))
     assert calls == ['r'] * 4 + ['m'] * 4
     calls.clear()
     # Tk на Windows: keysym — символ раскладки (к, ь), keycode — VK_R / VK_M.
-    monkeypatch.setattr(main.sys, "platform", "win32")
+    monkeypatch.setattr(main, "IS_WINDOWS", True)
     for code, sym in ((0x52, "\u043a"), (0x4D, "\u044c"), (0x43, "c")):
         app._on_ctrl_key(types.SimpleNamespace(keysym=sym, keycode=code))
     assert calls == ['r', 'm']

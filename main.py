@@ -108,6 +108,7 @@ TREND_GLYPHS = {TREND_UP: ("↑", "#00b894"), TREND_DOWN: ("↓", "#d63031"),
 # На Windows клавиша берётся по виртуальному коду (VK_R, VK_M): Tk 8.6 на
 # Windows передаёт кириллицу как символ Unicode, и привязки вида
 # <Control-Cyrillic_ka> с ним не совпадают. В X11 — по keysym.
+IS_WINDOWS = sys.platform == 'win32'
 CTRL_KEYCODES_WIN = {0x52: 'reset', 0x4D: 'sound'}
 CTRL_KEYSYMS = {'r': 'reset', 'R': 'reset', 'Cyrillic_ka': 'reset', 'Cyrillic_KA': 'reset',
                 'm': 'sound', 'M': 'sound', 'Cyrillic_softsign': 'sound',
@@ -836,7 +837,7 @@ class Hua4GMon:
 
         Hardware validation required: русская раскладка и Caps Lock на Windows.
         """
-        if sys.platform == 'win32':
+        if IS_WINDOWS:
             action = CTRL_KEYCODES_WIN.get(event.keycode)
         else:
             action = CTRL_KEYSYMS.get(event.keysym)
