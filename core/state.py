@@ -142,16 +142,22 @@ class SignalState:
     def __init__(self, history: int = GRAPH_HISTORY,
                  log_max: int = SESSION_LOG_MAX,
                  trend_param: str = 'sinr') -> None:
+        self._history_len = history
+        self._log_max = log_max
+        self.trend_param = trend_param
+        self._clear()
+
+    def _clear(self) -> None:
+        """Пустое состояние сессии (размеры буферов и метрика тренда — прежние)."""
         self.history: dict[str, deque[float]] = {
-            p: deque(maxlen=history) for p in TRACKED}
+            p: deque(maxlen=self._history_len) for p in TRACKED}
         self.peaks: dict[str, float | None] = dict.fromkeys(TRACKED)
         self.session_min: dict[str, float | None] = dict.fromkeys(TRACKED)
         self.session_max: dict[str, float | None] = dict.fromkeys(TRACKED)
-        self.log: deque[dict] = deque(maxlen=log_max)
+        self.log: deque[dict] = deque(maxlen=self._log_max)
         self.events: deque[CellChange] = deque(maxlen=CELL_EVENTS_MAX)
         self.cells: dict[CellKey, CellStats] = {}
         self.observed_bands: set[int] = set()
-        self.trend_param = trend_param
         self.tracker = TrendTracker()
         self.last: Snapshot | None = None
         self.last_ok: float | None = None
@@ -170,10 +176,8 @@ class SignalState:
         self.peaks = dict.fromkeys(TRACKED)
 
     def reset(self) -> None:
-        """Полный сброс (новое подключение)."""
-        self.__init__(history=self.history['rsrp'].maxlen or GRAPH_HISTORY,
-                      log_max=self.log.maxlen or SESSION_LOG_MAX,
-                      trend_param=self.trend_param)
+        """Полный сброс (новое подключение). Выбранная метрика тренда сохраняется."""
+        self._clear()
 
     # ---- приём данных ----
 
@@ -189,11 +193,12 @@ class SignalState:
             if v is None:
                 continue
             self.history[p].append(v)
-            if self.peaks[p] is None or v > self.peaks[p]:
+            peak, lo, hi = self.peaks[p], self.session_min[p], self.session_max[p]
+            if peak is None or v > peak:
                 self.peaks[p] = v
-            if self.session_min[p] is None or v < self.session_min[p]:
+            if lo is None or v < lo:
                 self.session_min[p] = v
-            if self.session_max[p] is None or v > self.session_max[p]:
+            if hi is None or v > hi:
                 self.session_max[p] = v
 
         change = self._track_cell(snap, wall)
