@@ -1,0 +1,78 @@
+name: Результат проверки на железе / Hardware validation report
+description: Проверили функцию из HARDWARE_VALIDATION.md на своём роутере или устройстве
+labels: [ hardware-validation ]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо! Каждый такой отчёт подтверждает (или исправляет) работу
+        программы на модели, которой нет у разработчика. Список того, что
+        нужно проверить, и ожидаемый результат — в
+        [HARDWARE_VALIDATION.md](https://github.com/Sp0Xik/Hua4GMon/blob/main/HARDWARE_VALIDATION.md).
+
+        Диагностику можно получить в программе: Windows — «Сеть» →
+        «🧾 Сохранить диагностику», Android — «Сеть» → «Скопировать
+        диагностику». IMEI, IMSI, ICCID, номер и серийный номер в ней
+        замаскированы, MAC-адреса, IP и DNS скрыты полностью.
+  - type: input
+    id: items
+    attributes:
+      label: Пункты HARDWARE_VALIDATION.md
+      description: Номера проверенных пунктов через запятую.
+      placeholder: "1, 2, 4"
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Итог
+      options:
+        - Всё как ожидается
+        - Есть расхождения (подробности ниже)
+        - Не работает
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Платформа
+      options: [ Windows, Android ]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия Hua4GMon
+      placeholder: "1.4.0"
+    validations:
+      required: true
+  - type: input
+    id: router
+    attributes:
+      label: Модель роутера и прошивка
+      placeholder: "B636-336, 11.0.3.1"
+    validations:
+      required: true
+  - type: input
+    id: network
+    attributes:
+      label: Оператор и технология
+      placeholder: "МегаФон, LTE+ (CA B3+B7)"
+  - type: input
+    id: device
+    attributes:
+      label: Устройство с программой
+      description: Для Android — модель телефона и версия Android; для Windows — версия Windows и масштаб экрана.
+      placeholder: "Pixel 8, Android 15 / Windows 11, 150 %"
+  - type: textarea
+    id: details
+    attributes:
+      label: Что проверяли и что получилось
+      description: По каждому пункту — что сделали, что ожидалось и что показала программа.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Диагностика (JSON)
+      render: json
