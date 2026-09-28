@@ -1,0 +1,20 @@
+# Единые настройки редакторов: https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{py,spec,toml}]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+# В Markdown два пробела в конце строки — перенос строки.
+trim_trailing_whitespace = false

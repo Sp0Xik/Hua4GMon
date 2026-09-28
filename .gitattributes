@@ -1,0 +1,11 @@
+# Текстовые файлы хранятся с окончаниями строк LF — в том числе
+# загруженные с Windows через веб-интерфейс GitHub или git.
+* text=auto eol=lf
+
+# Двоичные файлы — без преобразований и текстовых diff.
+*.png  binary
+*.ico  binary
+*.ttf  binary
+*.apk  binary
+*.exe  binary
+*.keystore binary

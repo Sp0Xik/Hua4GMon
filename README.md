@@ -3,6 +3,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-blue)
 [![Release](https://img.shields.io/github/v/release/Sp0Xik/Hua4GMon)](https://github.com/Sp0Xik/Hua4GMon/releases)
 [![CI](https://github.com/Sp0Xik/Hua4GMon/actions/workflows/build.yml/badge.svg)](https://github.com/Sp0Xik/Hua4GMon/actions/workflows/build.yml)
+[![Android APK](https://github.com/Sp0Xik/Hua4GMon/actions/workflows/build-android.yml/badge.svg?event=push)](https://github.com/Sp0Xik/Hua4GMon/actions/workflows/build-android.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -21,6 +22,17 @@ B636, B818, E3372 и совместимых). Показывает в реаль
 
 Вся логика (опрос роутера, разбор данных, оценка сигнала, Band Lock,
 переводы) — в общем пакете `core/`, одинаковом для обеих версий.
+
+> **English.** Hua4GMon is a free antenna-alignment monitor for Huawei
+> LTE/5G routers and modems (HiLink API via
+> [huawei-lte-api](https://github.com/Salamek/huawei-lte-api)): live
+> RSRP/SINR/RSRQ with session peak and "Δ to peak", trend arrow, audio
+> "parking sensor", serving cell / eNodeB / band / carrier aggregation info,
+> safe Band Lock with read-back and one-click restore, antenna switching,
+> mobile-data reattach and a demo mode without a router. Portable Windows
+> `.exe` and Android APK are on the
+> [Releases](https://github.com/Sp0Xik/Hua4GMon/releases) page; the
+> interface is available in Russian and English.
 
 ## Возможности
 
@@ -164,6 +176,7 @@ pip install -r requirements-dev.txt
 python main.py --demo          # Windows-версия в тестовом режиме
 pytest                         # тесты (UI-тесты — при наличии дисплея)
 ruff check .
+mypy                           # типы core/ и tools/ (настройки — в pyproject.toml)
 ```
 
 UI-тесты в Linux запускаются под Xvfb: `xvfb-run -a pytest`. Тесты
@@ -203,7 +216,9 @@ v2024.01.21 + NDK 25b закреплён намеренно (новый p4a тя
 где ломается pyjnius); еженедельная задача «canary» проверяет Buildozer
 1.6.0 и на релиз не влияет. Известные ограничения стека: сборка идёт на
 раннере `ubuntu-22.04` (нужен пакет `libtinfo5`), который GitHub удаляет
-17.04.2027, — до этого сборку нужно перенести на ubuntu-24.04; NDK 25b
+17.04.2027 (а 23.03, 30.03, 6.04 и 13.04.2027 с 14:00 до 24:00 UTC
+намеренно роняет задачи на нём), — до этого сборку нужно перенести на
+ubuntu-24.04; NDK 25b
 собирает библиотеки для страниц памяти 4 КБ, поэтому на устройствах со
 страницами 16 КБ (часть Android 15+) APK может не запуститься.
 
@@ -238,7 +253,9 @@ v2024.01.21 + NDK 25b закреплён намеренно (новый p4a тя
 
 ## Вклад
 
-Issue и pull request приветствуются. Особенно ценны результаты проверки
-на разных моделях Huawei (см. [HARDWARE_VALIDATION.md](HARDWARE_VALIDATION.md))
-и диагностика из программы при ошибках — шаблон issue подскажет, что
-приложить.
+Issue и pull request приветствуются — порядок работы описан в
+[CONTRIBUTING.md](CONTRIBUTING.md). Особенно ценны результаты проверки на
+разных моделях Huawei (см. [HARDWARE_VALIDATION.md](HARDWARE_VALIDATION.md),
+для них есть отдельный шаблон issue) и диагностика из программы при
+ошибках — шаблон issue подскажет, что приложить. Об уязвимостях —
+не в открытом issue, а как описано в [SECURITY.md](SECURITY.md).
