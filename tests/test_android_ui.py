@@ -250,3 +250,22 @@ def test_band_labels_follow_theme(app):
 def test_bold_font_is_bundled():
     import android_main
     assert os.path.exists(android_main._FONT_BOLD_PATH)
+
+
+@pytest.mark.parametrize("start", [
+    lambda a: a.discover(""),
+    lambda a: a.whitelist_check(),
+], ids=["discover", "whitelist"])
+def test_repeated_tap_does_not_start_second_probe(app, monkeypatch, start):
+    """Повторное нажатие, пока идёт поиск/проверка, не запускает вторую
+    (результат первой мог бы прийти последним и затереть вторую)."""
+    calls = []
+    monkeypatch.setattr(app, "_run_bg", lambda work, done, fail: calls.append((done, fail)))
+    start(app)
+    start(app)
+    assert len(calls) == 1
+    _done, fail = calls[0]
+    fail(OSError("network down"))          # проверка закончилась — можно снова
+    start(app)
+    assert len(calls) == 2
+    calls[1][1](OSError("network down"))
