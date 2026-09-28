@@ -295,11 +295,17 @@ def test_state_trend_param_switch_resets():
 
 
 def test_state_reset():
-    st = core.SignalState(history=7, trend_param='rsrp')
-    st.ingest(snap(), 1.0, WALL)
+    st = core.SignalState(history=7, log_max=5, trend_param='rsrp')
+    for i in range(4):
+        st.ingest(snap(), float(i), WALL)
     st.reset()
-    assert st.last is None and not st.log
-    assert st.history['rsrp'].maxlen == 7 and st.trend_param == 'rsrp'
+    assert st.last is None and st.last_ok is None and not st.log
+    assert not st.cells and not st.observed_bands and not st.events
+    assert all(v is None for v in st.peaks.values())
+    assert st.trend == core.TREND_COLLECTING
+    # Размеры буферов и выбранная метрика — как при создании.
+    assert st.history['rsrp'].maxlen == 7 and st.log.maxlen == 5
+    assert st.trend_param == 'rsrp'
 
 
 # =========================================================

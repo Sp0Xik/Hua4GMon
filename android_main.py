@@ -1136,6 +1136,8 @@ class Hua4GMonApp(App):
         self._band_list: list[int] = list(REGION_BANDS)
         self._bands_shown: list[int] = []
         self._busy = False
+        self._discovering = False       # идёт автопоиск роутера
+        self._wl_running = False        # идёт проверка белых списков
         self._fs_graph: SignalGraph | None = None
         self._last_back = 0.0
         self._beep_ev: Any = None
@@ -1222,11 +1224,17 @@ class Hua4GMonApp(App):
         return self.sm.get_screen('connection')
 
     def discover(self, entered: str) -> None:
+        # Повторное нажатие во время поиска игнорируется: иначе результат
+        # первого поиска мог бы прийти последним и затереть второй.
+        if self._discovering:
+            return
+        self._discovering = True
         scr = self._conn_screen()
         scr.set_status(t("Ищу роутер…"), [0.3, 0.6, 0.95, 1])
         candidates = ([entered] if is_valid_ip(entered) else []) + list(DISCOVERY_CANDIDATES)
 
         def done(found: Any) -> None:
+            self._discovering = False
             if found is None:
                 scr.set_status(t("Роутер не найден. Проверьте подключение к его Wi-Fi/USB."),
                                [0.9, 0.3, 0.3, 1])
@@ -1767,6 +1775,7 @@ class Hua4GMonApp(App):
                 for label, code in ANTENNA_MODES.items():
                     if code == cfg.antenna:
                         tools.antenna_text = t(label)
+
         def failed(_exc: BaseException) -> None:
             if session is self.session:
                 self._tools().lock_state = unread
@@ -1924,12 +1933,16 @@ class Hua4GMonApp(App):
         self._net_action(work, done, t("Собираю диагностику…"))
 
     def whitelist_check(self) -> None:
+        if self._wl_running:
+            return                      # проверка уже идёт
+        self._wl_running = True
         tools = self._tools()
         tools.wl_verdict = t("Проверка…")
         tools.wl_color = hex_to_rgba('#e68033', self.theme_name == 'sun')
         tools.wl_detail = t("Проверка занимает несколько секунд.")
 
         def done(report: Any) -> None:
+            self._wl_running = False
             tools.wl_verdict = report.title
             tools.wl_color = hex_to_rgba(report.color, self.theme_name == 'sun')
             lines = [report.detail, ""]
@@ -1940,6 +1953,7 @@ class Hua4GMonApp(App):
             tools.wl_detail = "\n".join(lines)
 
         def failed(exc: BaseException) -> None:
+            self._wl_running = False
             tools.wl_verdict = t("Ошибка")
             tools.wl_detail = humanize_error(exc)
         self._run_bg(run_whitelist_check, done, failed)

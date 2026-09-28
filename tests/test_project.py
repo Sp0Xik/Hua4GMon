@@ -228,6 +228,15 @@ def test_workflow_supply_chain_hygiene(workflow):
     assert "_PASSWD=$" not in wf
 
 
+def test_lint_checks_types():
+    """mypy (core/, tools/) идёт в CI закреплённой версией."""
+    wf = read(".github/workflows/build.yml")
+    lint = wf[wf.index("  lint:"):wf.index("  test:")]
+    assert "- run: mypy" in lint
+    assert re.search(r"^mypy==\S+$", read("requirements-dev.txt"), re.MULTILINE)
+    assert 'files = ["core", "tools"]' in read("pyproject.toml")
+
+
 def test_android_gate_runs_android_ui_tests():
     """APK собирается только после тестов Android-интерфейса (Kivy под Xvfb)."""
     wf = read(".github/workflows/build-android.yml")

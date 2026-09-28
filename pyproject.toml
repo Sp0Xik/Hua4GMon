@@ -31,6 +31,18 @@ known-first-party = ["main", "android_main", "core", "tools"]
 # импорта huawei_lte_api, поэтому часть импортов идёт после кода (E402).
 "android_main.py" = ["E402"]
 
+[tool.mypy]
+# Проверка типов общего ядра и сборочных скриптов (CI, задача lint).
+# UI-слои (main.py, android_main.py) не проверяются: заглушки типов
+# tkinter/Kivy дают много ложных срабатываний.
+python_version = "3.11"
+files = ["core", "tools"]
+# huawei-lte-api и xmltodict не публикуют аннотации типов.
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

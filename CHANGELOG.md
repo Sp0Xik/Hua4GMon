@@ -4,7 +4,30 @@
 Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версионирование: [SemVer](https://semver.org/lang/ru/).
 
-## [1.4.0] - 2026-09-24
+## [Unreleased]
+
+### Добавлено
+- CI: проверка типов **mypy** для `core/` и `tools/` (задача lint;
+  настройки — в `pyproject.toml`, версия закреплена в
+  `requirements-dev.txt`).
+- Оформление репозитория: `CONTRIBUTING.md` (порядок работы, проверки
+  перед PR), `SECURITY.md` (как сообщить об уязвимости), шаблоны issue
+  «Результат проверки на железе» и pull request, `.gitattributes`
+  (окончания строк LF, двоичные файлы) и `.editorconfig`.
+- README: краткое описание на английском, бейдж сборки APK.
+
+### Исправлено
+- Android: повторное нажатие «Найти» (автопоиск роутера) и «Проверить
+  сейчас» (белые списки), пока идёт проверка, больше не запускает вторую
+  параллельную проверку, результат которой мог затереть более свежий.
+  На Windows эти кнопки и раньше блокировались.
+
+### Изменено
+- `SignalState.reset()` очищает состояние отдельным методом, а не
+  повторным вызовом `__init__`; размеры буферов и выбранная метрика
+  тренда сохраняются, как и прежде.
+
+## [1.4.0] - 2026-09-26
 
 Релиз модернизации: переход на huawei-lte-api 2.0.1, общее ядро сессии
 для обеих платформ, динамический Band Lock, RF-аналитика для наведения
@@ -291,6 +314,8 @@
 Исходная версия с matplotlib-графиком, сохранением конфига и
 монолитной архитектурой (только Windows).
 
+[Unreleased]: https://github.com/Sp0Xik/Hua4GMon/compare/v1.4.0...HEAD
 [1.4.0]: https://github.com/Sp0Xik/Hua4GMon/releases/tag/v1.4.0
 [1.3.0]: https://github.com/Sp0Xik/Hua4GMon/releases/tag/1.3.0
 [1.2.0]: https://github.com/Sp0Xik/Hua4GMon/releases/tag/1.2.0
+[1.1]: https://github.com/Sp0Xik/Hua4GMon/releases/tag/1.1

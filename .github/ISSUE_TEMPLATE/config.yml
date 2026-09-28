@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Что проверить на реальном оборудовании
+    url: https://github.com/Sp0Xik/Hua4GMon/blob/main/HARDWARE_VALIDATION.md
+    about: Список функций, которые ждут подтверждения на роутерах и устройствах, и ожидаемый результат.
+  - name: Сообщить об уязвимости
+    url: https://github.com/Sp0Xik/Hua4GMon/security/advisories/new
+    about: Приватно, не в открытом issue (см. SECURITY.md).

@@ -316,8 +316,9 @@ def format_modulation(raw: Any, uplink: bool = False) -> str | None:
     if codes:
         return f"MCS {'/'.join(str(c) for c in codes)}"
     mod = mcs_to_modulation(raw, uplink)
-    if mod is not None:
-        return f"{mod} (MCS {int(extract_number(raw))})"
+    number = extract_number(raw)
+    if mod is not None and number is not None:
+        return f"{mod} (MCS {int(number)})"
     return None
 
 
