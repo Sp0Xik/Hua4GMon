@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   # =================================================================
-  # LINT — ruff закреплённой версии (requirements-dev.txt)
+  # LINT — ruff и mypy (core/, tools/) закреплённых версий (requirements-dev.txt)
   # =================================================================
   lint:
     runs-on: ubuntu-latest
@@ -32,6 +32,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
+      - run: mypy                 # настройки и список файлов — в pyproject.toml
 
   # =================================================================
   # TEST — core + интеграция с huawei-lte-api + UI в тестовом режиме.
