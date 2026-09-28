@@ -17,7 +17,8 @@ updates:
         patterns: [ "huawei-lte-api", "requests", "urllib3", "certifi",
                     "idna", "charset-normalizer", "xmltodict", "pycryptodomex" ]
       dev-tools:
-        patterns: [ "pytest", "pytest-cov", "ruff", "pyinstaller*", "fonttools" ]
+        patterns: [ "pytest", "pytest-cov", "ruff", "mypy", "pyinstaller*",
+                    "fonttools" ]
 
   - package-ecosystem: github-actions
     # Корень — workflows; отдельно — общий шаг сборки APK.
