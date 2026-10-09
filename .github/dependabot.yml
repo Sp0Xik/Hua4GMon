@@ -1,10 +1,15 @@
 # Автоматические предложения обновлений зависимостей.
 #
-# Важно: версии Python-пакетов закреплены в двух местах —
-# requirements.txt (Windows/тесты) и buildozer.spec (Android).
-# Тест tests/test_project.py::test_android_pins_match_requirements
-# упадёт, пока версия в buildozer.spec не обновлена так же — это
-# намеренно: Android-сборка не должна отставать незаметно.
+# Важно: PR группы runtime (requirements.txt) приходит красным — это
+# намеренно, Android-сборка и лицензии не должны отставать незаметно.
+# Перед слиянием в той же ветке нужно:
+#   1. Поставить те же версии в buildozer.spec (строка requirements) —
+#      test_android_pins_match_requirements. pycryptodomex там нет:
+#      на Android вместо него рецепт pycryptodome.
+#   2. Обновить версии в LICENSES/THIRD-PARTY-NOTICES.txt (команда
+#      перегенерации — в начале файла) —
+#      test_third_party_notices_cover_runtime_packages.
+# Оба теста — в tests/test_project.py.
 version: 2
 updates:
   - package-ecosystem: pip

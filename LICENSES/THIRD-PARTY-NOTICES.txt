@@ -49,7 +49,7 @@ one at http://mozilla.org/MPL/2.0/.
 UNKNOWN
 
 charset-normalizer
-3.5.1
+3.5.2
 MIT
 https://github.com/jawah/charset_normalizer/blob/master/CHANGELOG.md
 MIT License
@@ -287,7 +287,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 UNKNOWN
 
 pycryptodomex
-3.23.0
+3.24.0
 BSD License; Public Domain
 https://www.pycryptodome.org
 The source code in PyCryptodome is partially in the public domain
