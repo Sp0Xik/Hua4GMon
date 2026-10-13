@@ -222,10 +222,33 @@ def test_workflow_supply_chain_hygiene(workflow):
     wf = read(f".github/workflows/{workflow}")
     checkouts = len(re.findall(r"uses: actions/checkout@v\d+", wf))
     assert checkouts and wf.count("persist-credentials: false") == checkouts
-    release = wf[re.search(r"softprops/action-gh-release@v\d+", wf).start():]
+    release = wf[wf.index("softprops/action-gh-release@"):]
     assert "draft: true" in release.split("files:")[0]
+    # Сторонние actions (не actions/* и не свои ./) — только по SHA коммита:
+    # тег можно переписать, а у шага публикации есть право записи.
+    for ref in re.findall(r"uses: (\S+)", wf):
+        if not ref.startswith(("actions/", "./")):
+            assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", ref), \
+                f"сторонний action не закреплён по SHA: {ref}"
     # Пароли подписи APK — только в env шага сборки, не в GITHUB_ENV всех шагов.
     assert "_PASSWD=$" not in wf
+
+
+def test_signing_material_removed_before_release_steps():
+    """После сборки APK ключ подписи удаляется, а демон Gradle (пароли в его
+    окружении) останавливается — до загрузки артефакта и стороннего action
+    публикации, даже если сборка упала."""
+    wf = read(".github/workflows/build-android.yml")
+    build = wf[wf.index("\n  build:"):wf.index("\n  canary:")]
+    after_build = build[build.index("uses: ./.github/actions/buildozer-apk"):]
+    # Шаг сразу после сборки — очистка.
+    steps = re.split(r"\n      - ", after_build)
+    cleanup = steps[1]
+    assert cleanup.startswith("name: Remove signing material")
+    assert "if: always()" in cleanup
+    assert 'rm -f "$RUNNER_TEMP/release.keystore"' in cleanup
+    assert '> "$RUNNER_TEMP/release.keystore"' in build, "удаляется тот же файл, что записан"
+    assert "pkill -f 'org.gradle.launcher.daemon' || true" in cleanup
 
 
 def test_lint_checks_types():
