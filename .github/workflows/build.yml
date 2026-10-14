@@ -178,7 +178,9 @@ jobs:
 
     - name: Create GitHub Release (только на тегах vX.Y.Z)
       if: startsWith(github.ref, 'refs/tags/v')
-      uses: softprops/action-gh-release@v3
+      # Сторонний action с правом записи — по SHA коммита: тег можно
+      # переписать, коммит — нет. Номер версии в комментарии обновляет Dependabot.
+      uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
       with:
         # Черновик: публикуется вручную, когда к нему прикреплены и .exe,
         # и APK (их собирают два workflow) — релиз не выйдет «наполовину».

@@ -105,6 +105,17 @@ jobs:
           mode: ${{ steps.mode.outputs.mode }}
           cache-prefix: buildozer-v3
 
+      # Подпись закончена. p4a запускает Gradle с демоном, а демон остаётся
+      # жить после сборки с паролями подписи в своём окружении; файл ключа
+      # тоже остаётся на диске. Следующие шаги (в том числе сторонний action
+      # публикации релиза) не должны иметь доступа ни к тому, ни к другому.
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/release.keystore"
+          pkill -f 'org.gradle.launcher.daemon' || true
+
       - name: Name, verify and hash APK
         id: apk
         shell: bash
@@ -136,9 +147,10 @@ jobs:
             ${{ steps.apk.outputs.name }}.sha256
 
       # Черновик: релиз публикуется вручную, когда есть и .exe, и APK.
+      # Сторонний action — по SHA коммита (см. build.yml).
       - name: Attach APK to Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           draft: true
           files: |
