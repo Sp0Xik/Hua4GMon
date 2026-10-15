@@ -11,4 +11,4 @@ certifi==2026.7.22
 idna==3.20
 charset-normalizer==3.5.2
 xmltodict==1.0.4
-pycryptodomex==3.24.0
+pycryptodomex==3.24.1
