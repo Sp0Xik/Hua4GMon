@@ -287,7 +287,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 UNKNOWN
 
 pycryptodomex
-3.24.0
+3.24.1
 BSD License; Public Domain
 https://www.pycryptodome.org
 The source code in PyCryptodome is partially in the public domain
