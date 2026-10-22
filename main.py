@@ -26,6 +26,7 @@ import argparse
 import contextlib
 import datetime
 import logging
+import math
 import platform
 import queue
 import sys
@@ -44,6 +45,7 @@ from core import (
     GRAPH_HISTORY,
     GRAPH_MIN_SPAN,
     LANGUAGES,
+    MEASURE_SECONDS,
     MIMO_LABELS,
     PARAM_RANGES,
     RAT_LABELS,
@@ -53,6 +55,7 @@ from core import (
     TREND_UP,
     UPLINK_LABELS,
     WHITELIST_HOSTS_RU,
+    WINDOWS_BG,
     DemoModem,
     RouterSession,
     SessionWorker,
@@ -65,6 +68,7 @@ from core import (
     configure_library_logging,
     current_language,
     default_csv_name,
+    default_points_csv_name,
     demo_angle_hint,
     demo_factory,
     diagnostics_json,
@@ -74,6 +78,7 @@ from core import (
     format_mimo,
     format_modulation,
     format_rate_mbps,
+    format_summary,
     humanize_error,
     is_valid_ip,
     library_self_test,
@@ -83,10 +88,12 @@ from core import (
     lte_band_label,
     mimo_status,
     parse_antenna_value,
+    readable_on,
     run_whitelist_check,
     set_language,
     t,
     uplink_status,
+    write_points_csv,
     write_session_csv,
 )
 
@@ -104,6 +111,19 @@ PARAM_TITLES = {'rsrp': 'RSRP', 'rssi': 'RSSI', 'sinr': 'SINR', 'rsrq': 'RSRQ',
                 'nr_rsrp': 'NR RSRP', 'nr_sinr': 'NR SINR', 'nr_rsrq': 'NR RSRQ'}
 TREND_GLYPHS = {TREND_UP: ("↑", "#00b894"), TREND_DOWN: ("↓", "#d63031"),
                 TREND_FLAT: ("→", "#fdcb6e")}
+
+
+def ink(color: str) -> str:
+    """Цвет текста, читаемый на светлом фоне окна (контраст ≥ 4,5:1).
+
+    Цвета статусов из core подобраны для тёмного фона; в крышном режиме
+    (чёрный фон) они остаются исходными.
+    """
+    return readable_on(color, WINDOWS_BG)
+
+
+OK_FG, ERR_FG, INFO_FG, WARN_FG, MUTED_FG = (
+    ink('#00b894'), ink('#d63031'), ink('#0078D7'), ink('#b35900'), ink('gray'))
 # Ctrl+R — сброс пиков, Ctrl+M — звук, при любой раскладке и Caps Lock.
 # На Windows клавиша берётся по виртуальному коду (VK_R, VK_M): Tk 8.6 на
 # Windows передаёт кириллицу как символ Unicode, и привязки вида
@@ -288,16 +308,16 @@ class CanvasGraph(tk.Canvas):
 
         if self.peak is not None:
             py = y_of(self.peak)
-            self.create_line(pl, py, w - pr, py, fill='#00b894', dash=(4, 3))
+            self.create_line(pl, py, w - pr, py, fill=OK_FG, dash=(4, 3))
             self.create_text(pl + 4, py - 2, anchor='sw', font=("Segoe UI", 8),
-                             fill='#00b894', text=t("пик {v}").format(v=fmt_num(self.peak)))
+                             fill=OK_FG, text=t("пик {v}").format(v=fmt_num(self.peak)))
         if not self.values:
             return
         span = max(self.history - 1, 1)
         pts: list[float] = []
         for i, v in enumerate(self.values):
             pts.extend([pl + plot_w * i / span, y_of(v)])
-        color = '#aaaaaa' if self.stale else '#0078D7'
+        color = '#aaaaaa' if self.stale else INFO_FG
         if len(pts) >= 4:
             self.create_line(*pts, fill=color, width=max(2, int(2 * s)))
         lx, ly = pts[-2], pts[-1]
@@ -307,7 +327,7 @@ class CanvasGraph(tk.Canvas):
                          font=("Segoe UI", 9, "bold"),
                          text=f"{fmt_num(self.values[-1])} {unit_of(self.param)}")
         if self.stale:
-            self.create_text((pl + w - pr) / 2, pt + plot_h / 2, fill='#d63031',
+            self.create_text((pl + w - pr) / 2, pt + plot_h / 2, fill=ERR_FG,
                              font=("Segoe UI", 12, "bold"), text=t("нет свежих данных"))
 
 
@@ -394,7 +414,7 @@ class Hua4GMon:
 
         self.top_bar = ttk.Frame(self.root)
         self.top_bar.pack(fill=tk.X, padx=5, pady=2)
-        self.status_label = ttk.Label(self.top_bar, text=t("Отключено"), foreground='red',
+        self.status_label = ttk.Label(self.top_bar, text=t("Отключено"), foreground=ERR_FG,
                                       font=("Segoe UI", 10, "bold"))
         self.status_label.pack(side=tk.LEFT, padx=5)
 
@@ -477,6 +497,8 @@ class Hua4GMon:
             self._fill_device(self.session.device_info)
         if self.state.last is not None:
             self._render(self.state.last)
+        self._render_points()
+        self._render_point_button(time.monotonic())
 
     # ---------- вкладка «Подключение» ----------
 
@@ -521,7 +543,7 @@ class Hua4GMon:
                                       command=self.start_demo)
         self.demo_button.pack(side=tk.LEFT, padx=5)
 
-        self.conn_msg = self._wrap(tk.Label(self.tab_settings, text="", fg='#d63031',
+        self.conn_msg = self._wrap(tk.Label(self.tab_settings, text="", fg=ERR_FG,
                                             font=("Segoe UI", 10, "bold"), justify='left'))
         self.conn_msg.pack(fill=tk.X, padx=15, pady=(2, 6), anchor='w')
 
@@ -555,12 +577,12 @@ class Hua4GMon:
                                                mode="determinate")
         self.health_progress.pack(fill=tk.X, side=tk.TOP, pady=4)
         self.health_text_lbl = tk.Label(self.health_frame, text=t("Подключитесь к роутеру"),
-                                        font=("Segoe UI", 12, "bold"), fg="gray")
+                                        font=("Segoe UI", 12, "bold"), fg=MUTED_FG)
         self.health_text_lbl.pack(side=tk.TOP, pady=1)
         self.tower_line = self._wrap(tk.Label(self.health_frame, text="—", fg='#333',
                                               font=("Segoe UI", 11, "bold")), 80)
         self.tower_line.pack(side=tk.TOP)
-        self.event_line = self._wrap(tk.Label(self.health_frame, text="", fg='#0078D7',
+        self.event_line = self._wrap(tk.Label(self.health_frame, text="", fg=INFO_FG,
                                               font=("Segoe UI", 9)), 80)
         self.event_line.pack(side=tk.TOP)
 
@@ -571,23 +593,26 @@ class Hua4GMon:
             f = ttk.LabelFrame(self.digits_frame, text=param.upper(), padding=4)
             f.grid(row=0, column=i, padx=4, sticky='nsew')
             self.digits_frame.columnconfigure(i, weight=1)
-            val = tk.Label(f, text="-", font=("Segoe UI", 20, "bold"), fg='gray')
+            val = tk.Label(f, text="-", font=("Segoe UI", 20, "bold"), fg=MUTED_FG)
             val.pack()
-            status = tk.Label(f, text=t("Нет данных"), font=("Segoe UI", 9, "bold"), fg='gray')
+            status = tk.Label(f, text=t("Нет данных"), font=("Segoe UI", 9, "bold"), fg=MUTED_FG)
             status.pack(pady=1)
-            peak = tk.Label(f, text=t("Пик: -"), font=("Segoe UI", 9), fg='gray')
+            peak = tk.Label(f, text=t("Пик: -"), font=("Segoe UI", 9), fg=MUTED_FG)
             peak.pack(side=tk.BOTTOM)
             self.lbl_vars[param] = {'val': val, 'status': status, 'peak': peak}
 
         self.dir_frame = ttk.LabelFrame(self.tab_monitor, text="", padding=6)
         self.dir_frame.pack(fill=tk.X, padx=10, pady=4)
         self.dir_label = tk.Label(self.dir_frame, text="—", font=("Segoe UI", 30, "bold"),
-                                  fg='gray')
+                                  fg=MUTED_FG)
         self.dir_label.pack()
         self.dir_text = tk.Label(self.dir_frame, text=t("Накапливаю данные..."),
-                                 font=("Segoe UI", 10), fg='gray')
+                                 font=("Segoe UI", 10), fg=MUTED_FG)
         self.dir_text.pack()
-        self.advice_lbl = self._wrap(tk.Label(self.dir_frame, text="", fg='#b35900',
+        self.point_lbl = tk.Label(self.dir_frame, text="", fg=INFO_FG,
+                                  font=("Segoe UI", 10, "bold"))
+        self.point_lbl.pack()
+        self.advice_lbl = self._wrap(tk.Label(self.dir_frame, text="", fg=WARN_FG,
                                               font=("Segoe UI", 9), justify='left'), 80)
         self.advice_lbl.pack(fill=tk.X)
 
@@ -598,6 +623,9 @@ class Hua4GMon:
         self.jitter_label.pack(side=tk.LEFT)
         ttk.Button(self.tools_frame, text=t("🖥 Крышный режим (F11)"),
                    command=self.toggle_roof_mode).pack(side=tk.RIGHT, padx=5)
+        self.point_btn = ttk.Button(self.tools_frame, text=t("📍 Замер точки"),
+                                    command=self.toggle_point)
+        self.point_btn.pack(side=tk.RIGHT, padx=5)
         self.sound_var = tk.BooleanVar(value=self._saved['sound'] and HAS_WINSOUND)
         sound_cb = ttk.Checkbutton(self.tools_frame, text=t("🔊 Звук (Ctrl+M)"),
                                    variable=self.sound_var)
@@ -732,6 +760,26 @@ class Hua4GMon:
             self.cells_tree.column(c, width=self.px(110), anchor='center')
         self.cells_tree.pack(fill=tk.BOTH, expand=True)
 
+        points = ttk.LabelFrame(self.tab_tower, text=t("Замеры точек (медиана и разброс p10…p90)"),
+                                padding=6)
+        points.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
+        cols = ('n', 'time', 'sinr', 'rsrp', 'rsrq', 'cell', 'samples')
+        heads = ("№", t("Время"), "SINR, dB", "RSRP, dBm", "RSRQ, dB", t("Сота"), t("Отсчётов"))
+        self.points_tree = ttk.Treeview(points, columns=cols, show='headings', height=4)
+        for c, h in zip(cols, heads, strict=True):
+            self.points_tree.heading(c, text=h)
+            self.points_tree.column(c, width=self.px(120 if c in ('sinr', 'rsrp', 'rsrq', 'cell') else 70),
+                                    anchor='center')
+        self.points_tree.pack(fill=tk.BOTH, expand=True)
+        pbtn = ttk.Frame(points)
+        pbtn.pack(fill=tk.X, pady=(4, 0))
+        ttk.Label(pbtn, text=t("★ — лучшая точка по выбранной метрике"),
+                  foreground=MUTED_FG).pack(side=tk.LEFT)
+        ttk.Button(pbtn, text=t("Очистить замеры"),
+                   command=self.clear_points).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(pbtn, text=t("💾 Замеры в CSV"),
+                   command=self.export_points_csv).pack(side=tk.RIGHT, padx=5)
+
         sim = ttk.LabelFrame(self.tab_tower, text=t("SIM / Устройство"), padding=8)
         sim.pack(fill=tk.X, padx=10, pady=4)
         self.sim_labels: dict[str, ttk.Label] = {}
@@ -798,10 +846,10 @@ class Hua4GMon:
         verdict = ttk.LabelFrame(self.tab_whitelist, text=t("Вердикт"), padding=12)
         verdict.pack(fill=tk.X, padx=10, pady=5)
         self.wl_title = tk.Label(verdict, text=t("Не проверялось"),
-                                 font=("Segoe UI", 14, "bold"), fg='gray')
+                                 font=("Segoe UI", 14, "bold"), fg=MUTED_FG)
         self.wl_title.pack(anchor='w')
         self.wl_detail = self._wrap(tk.Label(verdict, text="—", font=("Segoe UI", 10),
-                                             fg='gray', justify='left'), 80)
+                                             fg=MUTED_FG, justify='left'), 80)
         self.wl_detail.pack(anchor='w', pady=(4, 0))
 
         details = ttk.Frame(self.tab_whitelist)
@@ -813,7 +861,7 @@ class Hua4GMon:
             box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=side_pad)
             for host, port in hosts:
                 lbl = tk.Label(box, text=f"{host}:{port} — ⏳ {t('не проверено')}",
-                               font=("Consolas", 10), fg='gray', anchor='w')
+                               font=("Consolas", 10), fg=MUTED_FG, anchor='w')
                 lbl.pack(fill=tk.X, padx=4, pady=2)
                 self.wl_labels[host] = lbl
 
@@ -872,7 +920,7 @@ class Hua4GMon:
     def _net_ready(self) -> bool:
         """Можно ли отправить команду роутеру прямо сейчас."""
         if self.session is None or self.link != 'online':
-            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
+            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
             return False
         return not self._busy
 
@@ -883,7 +931,7 @@ class Hua4GMon:
             return
         self._busy = True
         self._set_net_buttons('disabled')
-        self.net_msg.config(text=busy_text, fg='#0078D7')
+        self.net_msg.config(text=busy_text, fg=INFO_FG)
         session = self.session
 
         def finish(result: Any) -> None:
@@ -899,7 +947,7 @@ class Hua4GMon:
             self._busy = False
             self._set_net_buttons('normal')
             self.net_msg.config(text=t("Команда не выполнена: {err}").format(
-                err=humanize_error(exc)), fg='#d63031')
+                err=humanize_error(exc)), fg=ERR_FG)
         self._run_bg(work, finish, failed)
 
     def _set_net_buttons(self, state: str) -> None:
@@ -913,7 +961,7 @@ class Hua4GMon:
 
     def start_discovery(self) -> None:
         self.find_button.config(state='disabled')
-        self.conn_msg.config(text=t("Ищу роутер…"), fg='#0078D7')
+        self.conn_msg.config(text=t("Ищу роутер…"), fg=INFO_FG)
         entered = self.ip_entry.get().strip()
         candidates = ([entered] if is_valid_ip(entered) else []) + list(DISCOVERY_CANDIDATES)
 
@@ -921,12 +969,12 @@ class Hua4GMon:
             self.find_button.config(state='normal')
             if found is None:
                 self.conn_msg.config(text=t(
-                    "Роутер не найден. Проверьте подключение к его Wi-Fi/USB."), fg='#d63031')
+                    "Роутер не найден. Проверьте подключение к его Wi-Fi/USB."), fg=ERR_FG)
                 return
             self.ip_entry.delete(0, tk.END)
             self.ip_entry.insert(0, found.ip)
             self.conn_msg.config(text=t("Найден роутер {model} на {ip}").format(
-                model=found.model or "Huawei", ip=found.ip), fg='#00b894')
+                model=found.model or "Huawei", ip=found.ip), fg=OK_FG)
             self.password_entry.focus()
 
         self._run_bg(lambda: discover_router(candidates), done,
@@ -939,7 +987,7 @@ class Hua4GMon:
         ip = self.ip_entry.get().strip()
         if not is_valid_ip(ip):
             self.conn_msg.config(text=t("Неверный IP-адрес: {ip}\nПример: 192.168.8.1").format(
-                ip=repr(ip)), fg='#d63031')
+                ip=repr(ip)), fg=ERR_FG)
             return
         self.demo_modem = None
         self._start_session(RouterSession(ip, self.password_entry.get()))
@@ -989,6 +1037,8 @@ class Hua4GMon:
         self.link = 'offline'
         self._busy = False
         self._set_net_buttons('normal')
+        self.state.cancel_point()
+        self._render_point_button(time.monotonic())
         self._render_link_state()
 
     def _render_link_state(self) -> None:
@@ -999,7 +1049,7 @@ class Hua4GMon:
             'online': (t("🧪 Тестовый режим") if demo else t("Подключено"), 'green'),
             'reconnecting': (t("Нет связи с роутером — переподключаюсь…"), 'orange'),
         }[self.link]
-        self.status_label.config(text=text, foreground=color)
+        self.status_label.config(text=text, foreground=ink(color))
         self.connect_button.config(
             text=t("🚀 Подключиться") if self.link == 'offline' else t("⏹ Отключиться"))
 
@@ -1023,7 +1073,7 @@ class Hua4GMon:
         if status == 'reconnecting':
             self.link = 'reconnecting'
             if exc is not None:
-                self.conn_msg.config(text=humanize_error(exc), fg='#b35900')
+                self.conn_msg.config(text=humanize_error(exc), fg=WARN_FG)
         else:
             self.link = 'online'
             self.conn_msg.config(text="")
@@ -1032,11 +1082,11 @@ class Hua4GMon:
     def _on_fatal(self, exc: BaseException) -> None:
         was_online = self.link in ('online', 'reconnecting')
         self.disconnect()
-        self.conn_msg.config(text=humanize_error(exc), fg='#d63031')
+        self.conn_msg.config(text=humanize_error(exc), fg=ERR_FG)
         if not was_online:
             self.notebook.select(self.tab_settings)
         else:
-            self.status_label.config(text=t("Связь с роутером потеряна"), foreground='red')
+            self.status_label.config(text=t("Связь с роутером потеряна"), foreground=ERR_FG)
 
     def _show_lock_state(self, text: Callable[[], str]) -> None:
         """Строка «Сейчас на модеме»; text заново переводится при смене языка."""
@@ -1085,7 +1135,7 @@ class Hua4GMon:
         change = self.state.ingest(snap, time.monotonic())
         if change is not None:
             self.event_line.config(text=t("{at} смена соты: {old} → {new}").format(
-                at=change.at, old=change.old_label, new=change.new_label))
+                at=change.at, old=change.old_label, new=change.new_label), fg=INFO_FG)
         if snap.has_nr and 'nr_sinr' not in self._graph_params:
             self._graph_params = list(LTE_PARAMS + NR_PARAMS)
             self.graph_cb.config(values=self._graph_params)
@@ -1106,6 +1156,7 @@ class Hua4GMon:
             if self.link in ('online', 'reconnecting') and self.state.last is not None:
                 stale = self.state.is_stale(time.monotonic(), self._interval_seconds)
                 self._render_staleness(stale)
+            self._point_tick(time.monotonic())
         finally:
             self._tick_id = self.root.after(500, self._tick)
 
@@ -1116,7 +1167,7 @@ class Hua4GMon:
         if stale:
             age = self.state.age(time.monotonic()) or 0
             self.health_text_lbl.config(text=t("⚠ Данные устарели — нет ответа {s:.0f} с").format(
-                s=age), fg='#d63031')
+                s=age), fg=ERR_FG)
             for widgets in self.lbl_vars.values():
                 widgets['val'].config(fg='#aaaaaa')
             # Без свежих данных стрелка не должна подсказывать направление.
@@ -1128,28 +1179,29 @@ class Hua4GMon:
         st = self.state
         score, summary, color = calculate_overall_health(snap.rsrp, snap.sinr)
         self.health_progress.config(value=score)
-        self.health_text_lbl.config(text=t(summary).format(pct=score), fg=color)
+        self.health_text_lbl.config(text=t(summary).format(pct=score), fg=ink(color))
         self.tower_line.config(text=self._tower_summary(snap))
 
         for param, widgets in self.lbl_vars.items():
             val = snap.metric(param)
             label, col, _ = evaluate_signal(param, val)
-            widgets['val'].config(text=fmt_num(val), fg=col)
-            widgets['status'].config(text=t(label), fg=col)
+            widgets['val'].config(text=fmt_num(val), fg=ink(col))
+            widgets['status'].config(text=t(label), fg=ink(col))
             peak, delta = st.peaks.get(param), st.delta_to_peak(param)
             if peak is None or delta is None:
-                widgets['peak'].config(text=t("Пик: -"), fg='gray')
+                widgets['peak'].config(text=t("Пик: -"), fg=MUTED_FG)
             else:
                 widgets['peak'].config(
                     text=t("Пик: {v} (Δ {d})").format(v=fmt_num(peak), d=f"{delta:+g}"),
-                    fg='#00b894' if delta > -1 else '#555')
+                    fg=OK_FG if delta > -1 else '#555')
 
         self._render_trend()
+        self._render_point_delta()
         jitter = st.jitter()
         if jitter is not None:
             jcol = 'green' if jitter < 3 else 'orange' if jitter < 7 else 'red'
             self.jitter_label.config(text=t("Джиттер: {j:.1f} dB").format(j=jitter),
-                                     foreground=jcol)
+                                     foreground=ink(jcol))
         mimo = mimo_status(snap.cqi0, snap.cqi1)
         up = uplink_status(snap.pusch_dbm)
         tips = advice(rsrp=snap.rsrp, sinr=snap.sinr, rsrq=snap.rsrq, jitter=jitter,
@@ -1192,8 +1244,8 @@ class Hua4GMon:
             "↓": t("Сигнал ухудшается — поверните обратно"),
             "→": t("Сигнал стабилен — зафиксируйте антенну"),
         }.get(arrow, t("Накапливаю данные..."))
-        self.dir_label.config(text=arrow, fg=color)
-        self.dir_text.config(text=text, fg=color)
+        self.dir_label.config(text=arrow, fg=ink(color))
+        self.dir_text.config(text=text, fg=ink(color))
 
     def _render_tower(self, snap: Snapshot) -> None:
         mhz = t('МГц')
@@ -1233,6 +1285,98 @@ class Hua4GMon:
                 f"{fmt_num(c.enodeb)}/{fmt_num(c.sector)}", fmt_num(c.best_sinr),
                 fmt_num(c.best_rsrp), c.samples))
 
+    # ---------- замер точки ----------
+
+    def toggle_point(self) -> None:
+        """Начать замер точки или отменить идущий."""
+        now = time.monotonic()
+        if self.state.point_running:
+            self.state.cancel_point()
+            self.event_line.config(text=t("Замер точки отменён."), fg=MUTED_FG)
+        elif self.link != 'online' or self.state.last is None:
+            self.event_line.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
+        else:
+            self.state.start_point(now)
+            self.event_line.config(text=t(
+                "Замер точки: держите антенну неподвижно {s} с.").format(s=int(MEASURE_SECONDS)),
+                fg=INFO_FG)
+        self._render_point_button(now)
+
+    def _point_tick(self, now: float) -> None:
+        if not self.state.point_running:
+            return
+        res = self.state.finish_point(now)
+        self._render_point_button(now)
+        if res is None:
+            return
+        if not res.ok:
+            self.event_line.config(text=t(
+                "Замер не засчитан: мало данных от роутера ({n} отсчётов).").format(n=res.samples),
+                fg=ERR_FG)
+            return
+        msg = t("Точка {n}: SINR {sinr} dB, RSRP {rsrp} dBm").format(
+            n=res.number, sinr=format_summary(res.metrics.get('sinr')),
+            rsrp=format_summary(res.metrics.get('rsrp')))
+        if res.cell_changed:
+            msg += " · " + t("сота менялась — повторите замер")
+        self.event_line.config(text=msg, fg=WARN_FG if res.cell_changed else OK_FG)
+        self._render_points()
+        self._render_point_delta()
+
+    def _render_point_button(self, now: float) -> None:
+        left = self.state.point_remaining(now)
+        text = (t("📍 Замер точки") if left is None
+                else t("⏹ Замер… {s} с").format(s=math.ceil(left)))
+        with contextlib.suppress(tk.TclError, AttributeError):
+            self.point_btn.config(text=text)
+
+    def _render_point_delta(self) -> None:
+        param = self.graph_param.get()
+        best = self.state.delta_to_best(param)
+        if best is None:
+            self.point_lbl.config(text="")
+            return
+        point, delta = best
+        self.point_lbl.config(
+            text=t("До лучшей точки {n}: Δ {d} {unit}").format(
+                n=point.number, d=f"{delta:+g}", unit=unit_of(param)),
+            fg=OK_FG if delta >= -1 else INFO_FG)
+
+    def _render_points(self) -> None:
+        tree = self.points_tree
+        for item in tree.get_children():
+            tree.delete(item)
+        best = self.state.best_point(self.graph_param.get())
+        for p in self.state.points:
+            mark = "★ " if p is best else ""
+            cell = p.cell_label + (" ⚠" if p.cell_changed else "")
+            tree.insert('', tk.END, values=(
+                f"{mark}{p.number}", p.at, format_summary(p.metrics.get('sinr')),
+                format_summary(p.metrics.get('rsrp')), format_summary(p.metrics.get('rsrq')),
+                cell, p.samples))
+
+    def clear_points(self) -> None:
+        self.state.clear_points()
+        self._render_points()
+        self._render_point_delta()
+
+    def export_points_csv(self) -> None:
+        if not self.state.points:
+            messagebox.showinfo(t("Экспорт"), t(
+                "Замеров пока нет. Нажмите «Замер точки» на вкладке «Монитор»."))
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV", "*.csv"), ("All", "*.*")],
+            initialfile=default_points_csv_name())
+        if not path:
+            return
+        try:
+            n = write_points_csv(path, self.state.points, current_language())
+            messagebox.showinfo(t("Экспорт"), t("Сохранено {n} записей в:\n{path}").format(
+                n=n, path=path))
+        except OSError as e:
+            messagebox.showerror(t("Ошибка"), t("Не удалось записать файл: {e}").format(e=e))
+
     def _render_status(self, snap: Snapshot, mimo: str | None, up: str | None) -> None:
         lbl = self.stat_labels
         uptime = str(datetime.timedelta(seconds=snap.connect_time)) \
@@ -1241,7 +1385,7 @@ class Hua4GMon:
         lbl['temp'].config(text=snap.temperature or t('Н/Д'))
         lbl['data'].config(text={True: t("включены"), False: t("ВЫКЛЮЧЕНЫ"),
                                  None: "-"}[snap.data_enabled],
-                           foreground='#d63031' if snap.data_enabled is False else '')
+                           foreground=ERR_FG if snap.data_enabled is False else '')
         lbl['dl_rate'].config(text=format_rate_mbps(snap.dl_rate))
         lbl['ul_rate'].config(text=format_rate_mbps(snap.ul_rate))
         lbl['total_dl'].config(text=format_bytes_mb(snap.total_dl))
@@ -1288,11 +1432,13 @@ class Hua4GMon:
         self._render_trend()
         self.signal_graph.update_series(list(self.state.history.get(param, [])),
                                         self.state.peaks.get(param), False)
+        self._render_point_delta()
+        self._render_points()
 
     def reset_peaks(self) -> None:
         self.state.reset_peaks()
         for widgets in self.lbl_vars.values():
-            widgets['peak'].config(text=t("Пик: -"), fg='gray')
+            widgets['peak'].config(text=t("Пик: -"), fg=MUTED_FG)
         if self.state.last is not None:
             self._render(self.state.last)
 
@@ -1303,7 +1449,7 @@ class Hua4GMon:
     def mark_current_bands(self) -> None:
         snap = self.state.last
         if snap is None or not snap.bands:
-            self.net_msg.config(text=t("Текущий бэнд ещё не определён."), fg='#d63031')
+            self.net_msg.config(text=t("Текущий бэнд ещё не определён."), fg=ERR_FG)
             return
         missing = [b for b in snap.bands if b not in self.band_vars]
         if missing:
@@ -1312,16 +1458,16 @@ class Hua4GMon:
         for b, var in self.band_vars.items():
             var.set(b in snap.bands)
         self.net_msg.config(text=t("Отмечены текущие бэнды: {bands}").format(
-            bands=", ".join(f"B{b}" for b in snap.bands)), fg='#0078D7')
+            bands=", ".join(f"B{b}" for b in snap.bands)), fg=INFO_FG)
 
     def apply_bands(self) -> None:
         session = self.session
         selected = [b for b, v in self.band_vars.items() if v.get()]
         if session is None or self.link != 'online':
-            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
+            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
             return
         if not selected:
-            self.net_msg.config(text=t("Выберите хотя бы один диапазон!"), fg='#d63031')
+            self.net_msg.config(text=t("Выберите хотя бы один диапазон!"), fg=ERR_FG)
             return
         names = ", ".join(f"B{b}" for b in selected)
         lines = [t("Зафиксировать бэнды: {bands}?").format(bands=names)]
@@ -1339,7 +1485,7 @@ class Hua4GMon:
     def reset_bands(self) -> None:
         session = self.session
         if session is None:
-            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
+            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
             return
         self._net_action(lambda: session.apply_plan(session.plan_all_bands()),
                          lambda ok: self._after_write(ok, t("Включены все бэнды (AUTO).")),
@@ -1348,12 +1494,12 @@ class Hua4GMon:
     def restore_bands(self) -> None:
         session = self.session
         if session is None:
-            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
+            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
             return
         plan = session.plan_restore_original()
         if plan is None:
             self.net_msg.config(text=t(
-                "Исходные настройки не прочитаны — роутер не отдал net-mode."), fg='#d63031')
+                "Исходные настройки не прочитаны — роутер не отдал net-mode."), fg=ERR_FG)
             return
         self._net_action(lambda: session.apply_plan(plan),
                          lambda ok: self._after_write(ok, t(
@@ -1363,11 +1509,11 @@ class Hua4GMon:
     def _after_write(self, verified: bool, success_text: str) -> None:
         if verified:
             self.net_msg.config(text=success_text + " " + t(
-                "Модем перерегистрируется в сети (до ~30 с)."), fg='#00b894')
+                "Модем перерегистрируется в сети (до ~30 с)."), fg=OK_FG)
         else:
             self.net_msg.config(text=t(
                 "Команда отправлена, но роутер не подтвердил запись — "
-                "проверьте строку «Сейчас на модеме»."), fg='#b35900')
+                "проверьте строку «Сейчас на модеме»."), fg=WARN_FG)
         self.load_router_config()
 
     def apply_antenna(self) -> None:
@@ -1376,10 +1522,10 @@ class Hua4GMon:
         label = rev.get(self.antenna_var.get(), self.antenna_var.get())
         code = parse_antenna_value(label)
         if session is None:
-            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
+            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
             return
         if code is None:
-            self.net_msg.config(text=t("Неизвестный режим антенны."), fg='#d63031')
+            self.net_msg.config(text=t("Неизвестный режим антенны."), fg=ERR_FG)
             return
 
         def work() -> int | None:
@@ -1389,16 +1535,16 @@ class Hua4GMon:
         def done(read_back: int | None) -> None:
             if read_back == code or read_back is None:
                 self.net_msg.config(text=t("Тип антенны изменён: {mode}").format(
-                    mode=self.antenna_var.get()), fg='#00b894')
+                    mode=self.antenna_var.get()), fg=OK_FG)
             else:
                 self.net_msg.config(text=t(
-                    "Роутер принял команду, но сообщает другой режим антенны."), fg='#b35900')
+                    "Роутер принял команду, но сообщает другой режим антенны."), fg=WARN_FG)
         self._net_action(work, done, t("Переключаю антенну…"))
 
     def reattach(self) -> None:
         session = self.session
         if session is None:
-            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
+            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
             return
         if not messagebox.askyesno(t("Подтверждение"), t(
                 "Переподключить мобильную связь?\n\nИнтернет пропадёт примерно "
@@ -1407,12 +1553,12 @@ class Hua4GMon:
         self._net_action(session.reattach, lambda ok: self.net_msg.config(
             text=t("Связь переподключена.") if ok else
             t("Не удалось включить мобильные данные — включите их в веб-интерфейсе роутера."),
-            fg='#00b894' if ok else '#d63031'), t("Переподключаю связь…"))
+            fg=OK_FG if ok else ERR_FG), t("Переподключаю связь…"))
 
     def reboot_router(self) -> None:
         session, worker = self.session, self.worker
         if session is None or worker is None or self.link != 'online':
-            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
+            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
             return
         if not messagebox.askyesno(t("Подтверждение"), t(
                 "Перезагрузить роутер?\n\nСоединение с интернетом прервётся "
@@ -1426,13 +1572,13 @@ class Hua4GMon:
 
         def done(_: Any) -> None:
             self.net_msg.config(text=t(
-                "Роутер перезагружается — переподключусь автоматически."), fg='#0078D7')
+                "Роутер перезагружается — переподключусь автоматически."), fg=INFO_FG)
         self._net_action(session.reboot, done, t("Отправляю команду перезагрузки…"))
 
     def save_diagnostics(self) -> None:
         session = self.session
         if session is None or self.link != 'online':
-            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg='#d63031')
+            self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
             return
         path = filedialog.asksaveasfilename(
             defaultextension=".json", filetypes=[("JSON", "*.json")],
@@ -1457,7 +1603,7 @@ class Hua4GMon:
 
         def done(result: tuple[bool, str]) -> None:
             saved, msg = result
-            self.net_msg.config(text=msg, fg='#00b894' if saved else '#d63031')
+            self.net_msg.config(text=msg, fg=OK_FG if saved else ERR_FG)
         self._net_action(work, done, t("Собираю диагностику…"))
 
     # =====================================================
@@ -1501,10 +1647,10 @@ class Hua4GMon:
     def _start_whitelist_check(self) -> None:
         self.wl_button.config(state='disabled')
         self.wl_progress.start(10)
-        self.wl_title.config(text=t("Проверка…"), fg='orange')
-        self.wl_detail.config(text=t("Проверка занимает несколько секунд."), fg='gray')
+        self.wl_title.config(text=t("Проверка…"), fg=ink('orange'))
+        self.wl_detail.config(text=t("Проверка занимает несколько секунд."), fg=MUTED_FG)
         for lbl in self.wl_labels.values():
-            lbl.config(text=lbl.cget('text').split(' — ')[0] + " — ⏳", fg='gray')
+            lbl.config(text=lbl.cget('text').split(' — ')[0] + " — ⏳", fg=MUTED_FG)
         self._run_bg(run_whitelist_check, self._render_whitelist, self._whitelist_failed)
 
     def _render_whitelist(self, report: Any) -> None:
@@ -1515,14 +1661,14 @@ class Hua4GMon:
             if lbl is None:
                 continue
             sym, col = ("✅", '#00b894') if r.ok else ("❌", '#d63031')
-            lbl.config(text=f"{r.host} — {sym} {r.detail}", fg=col)
-        self.wl_title.config(text=report.title, fg=report.color)
+            lbl.config(text=f"{r.host} — {sym} {r.detail}", fg=ink(col))
+        self.wl_title.config(text=report.title, fg=ink(report.color))
         self.wl_detail.config(text=report.detail, fg='#444444')
 
     def _whitelist_failed(self, exc: BaseException) -> None:
         self.wl_progress.stop()
         self.wl_button.config(state='normal')
-        self.wl_title.config(text=t("Ошибка"), fg='#d63031')
+        self.wl_title.config(text=t("Ошибка"), fg=ERR_FG)
         self.wl_detail.config(text=humanize_error(exc), fg='#444444')
 
     # =====================================================
@@ -1564,8 +1710,12 @@ class Hua4GMon:
     def _roof_line(self, param: str) -> tuple[str, str]:
         val = self.state.current(param)
         _, col, _ = evaluate_signal(param.replace('nr_', ''), val)
-        delta = self.state.delta_to_peak(param)
-        d = f" Δ{delta:+g}" if delta is not None else ""
+        best = self.state.delta_to_best(param)
+        if best is not None:
+            d = " · " + t("точка {n}: {d}").format(n=best[0].number, d=f"{best[1]:+g}")
+        else:
+            delta = self.state.delta_to_peak(param)
+            d = f" Δ{delta:+g}" if delta is not None else ""
         return f"{PARAM_TITLES.get(param, param.upper())} {fmt_num(val)}{d}", col
 
     def _render_roof(self, stale: bool) -> None:

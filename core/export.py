@@ -17,8 +17,10 @@ from __future__ import annotations
 import csv
 import datetime
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
+
+from core.measure import POINT_METRICS, PointResult
 
 CSV_FIELDS: tuple[str, ...] = (
     'ts', 'rsrp', 'rssi', 'sinr', 'rsrq', 'nr_rsrp', 'nr_sinr', 'plmn',
@@ -60,6 +62,33 @@ def write_session_csv(path: str, rows: Iterable[Mapping[str, Any]],
             writer.writerow([_cell(row.get(k), decimal) for k in CSV_FIELDS])
             count += 1
     return count
+
+
+POINT_CSV_FIELDS: tuple[str, ...] = (
+    'point', 'time', 'samples', 'cell', 'band', 'cell_changed',
+    *(f"{m}_{s}" for m in POINT_METRICS for s in ('median', 'p10', 'p90')),
+)
+
+
+def write_points_csv(path: str, points: Sequence[PointResult], lang: str = 'ru') -> int:
+    """Замеры точек: медиана и p10/p90 каждой метрики. Возвращает число строк."""
+    delimiter, decimal = csv_dialect(lang)
+    with open(path, 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f, delimiter=delimiter)
+        writer.writerow(POINT_CSV_FIELDS)
+        for p in points:
+            row: list[Any] = [p.number, p.at, p.samples, p.cell_label, p.band_label,
+                              int(p.cell_changed)]
+            for m in POINT_METRICS:
+                s = p.metrics.get(m)
+                row += [None, None, None] if s is None else [s.median, s.p10, s.p90]
+            writer.writerow([_cell(v, decimal) for v in row])
+    return len(points)
+
+
+def default_points_csv_name(now: datetime.datetime | None = None) -> str:
+    now = now or datetime.datetime.now()
+    return f"hua4gmon-points-{now:%Y%m%d-%H%M%S}.csv"
 
 
 def default_csv_name(now: datetime.datetime | None = None) -> str:
