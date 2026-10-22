@@ -158,6 +158,12 @@ jobs:
             Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
         if ($p.ExitCode -ne 0) { Write-Error 'Самопроверка собранного .exe не пройдена'; exit 1 }
 
+    # Уведомления о лицензиях — из метаданных установленных пакетов, тех же
+    # версий, что в .exe. Шаг падает, если версия не совпадает с
+    # requirements.txt или у пакета нет текста лицензии.
+    - name: Generate third-party notices
+      run: python -m tools.third_party_notices requirements.txt LICENSES/THIRD-PARTY-NOTICES.txt
+
     - name: Stage release assets
       shell: pwsh
       run: |

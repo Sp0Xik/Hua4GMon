@@ -33,6 +33,18 @@ runs:
       with:
         python-version: '3.11'
 
+    # Версии Android-пакетов — из requirements.txt (единственный источник,
+    # его обновляет Dependabot). Уведомления о лицензиях — из метаданных тех
+    # же версий, установленных в отдельное окружение (не мешают buildozer).
+    - name: Pin requirements and generate license notices
+      shell: bash
+      run: |
+        python -m tools.android_requirements build-android/buildozer.spec requirements.txt
+        python -m venv "$RUNNER_TEMP/runtime-deps"
+        "$RUNNER_TEMP/runtime-deps/bin/pip" install --quiet -r requirements.txt
+        "$RUNNER_TEMP/runtime-deps/bin/python" -m tools.third_party_notices \
+          requirements.txt build-android/LICENSES/THIRD-PARTY-NOTICES.txt
+
     # Android Gradle Plugin требует Java 17.
     - uses: actions/setup-java@v6
       with:

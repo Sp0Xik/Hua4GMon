@@ -1,15 +1,13 @@
 # Автоматические предложения обновлений зависимостей.
 #
-# Важно: PR группы runtime (requirements.txt) приходит красным — это
-# намеренно, Android-сборка и лицензии не должны отставать незаметно.
-# Перед слиянием в той же ветке нужно:
-#   1. Поставить те же версии в buildozer.spec (строка requirements) —
-#      test_android_pins_match_requirements. pycryptodomex там нет:
-#      на Android вместо него рецепт pycryptodome.
-#   2. Обновить версии в LICENSES/THIRD-PARTY-NOTICES.txt (команда
-#      перегенерации — в начале файла) —
-#      test_third_party_notices_cover_runtime_packages.
-# Оба теста — в tests/test_project.py.
+# requirements.txt — единственный источник версий: Android-сборка берёт
+# версии из него (tools/android_requirements.py), уведомления о лицензиях
+# собираются при сборке из установленных пакетов
+# (tools/third_party_notices.py). Ручных правок после обновления нет.
+# Каждый PR проверяет новые версии полностью: тесты на Python 3.11–3.14
+# (в том числе с настоящей huawei-lte-api против поддельного роутера),
+# сборка .exe и его самопроверка на Windows, тесты Android-интерфейса и
+# сборка APK. Зелёный PR можно сливать.
 version: 2
 updates:
   - package-ecosystem: pip
