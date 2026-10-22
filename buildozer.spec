@@ -16,15 +16,19 @@ version.filename = %(source.dir)s/core/__init__.py
 
 # ЗАВИСИМОСТИ.
 # python-for-android ставит чистые Python-пакеты с --no-deps, поэтому все
-# транзитивные зависимости программы перечислены явно и закреплены (те же
-# версии, что в requirements.txt — это проверяет тест).
+# транзитивные зависимости программы перечислены явно. Здесь — только
+# имена: версии CI дописывает перед сборкой из requirements.txt
+# (tools/android_requirements.py), поэтому Windows и Android всегда
+# собираются с одними версиями, а обновление Dependabot не требует правки
+# этого файла. Для локальной сборки сначала выполните в папке сборки:
+#   python -m tools.android_requirements buildozer.spec requirements.txt
 #   * kivy, pycryptodome — рецепты p4a (версию задаёт рецепт закреплённого
 #     p4a: Kivy 2.3.0, pycryptodome 3.6.3). Рецепт Kivy дополнительно
 #     ставит chardet без закреплённой версии — requests принимает 3.0.2–7.x.
 #   * huawei-lte-api требует pycryptodomex (неймспейс Cryptodome), но у
 #     p4a нет его рецепта. Ставим pycryptodome (неймспейс Crypto), а
 #     android_main.py перенаправляет Cryptodome.* -> Crypto.* на старте.
-requirements = python3,kivy,huawei-lte-api==2.0.1,requests==2.34.2,urllib3==2.8.0,certifi==2026.7.22,idna==3.20,charset-normalizer==3.5.2,xmltodict==1.0.4,pycryptodome
+requirements = python3,kivy,huawei-lte-api,requests,urllib3,certifi,idna,charset-normalizer,xmltodict,pycryptodome
 
 # Ориентация и полноэкранность
 orientation = portrait

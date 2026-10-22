@@ -148,17 +148,42 @@ def test_version_single_source_in_buildozer():
     assert m and m.group(1) == core.__version__
 
 
-def test_android_pins_match_requirements():
-    pins = _requirements()
-    assert pins["huawei-lte-api"] == "2.0.1"
-    reqs = {}
-    for item in _spec_value("requirements").split(","):
-        if "==" in item:
-            name, ver = item.split("==")
-            reqs[name.strip().lower()] = ver.strip()
-    for name, ver in reqs.items():
-        assert pins.get(name) == ver, f"{name}: spec {ver} != requirements {pins.get(name)}"
-    assert set(reqs) == set(pins) - {"pycryptodomex"}
+def test_android_requirements_come_from_requirements_txt():
+    """Версии Android-пакетов не дублируются в buildozer.spec: CI дописывает их
+    из requirements.txt перед сборкой. Обновление от Dependabot не требует
+    ручной правки spec, а APK собирается с теми же версиями, что .exe."""
+    from tools.android_requirements import P4A_RECIPES, pin_spec, read_pins, spec_names
+    spec = read("buildozer.spec")
+    pins = read_pins(read("requirements.txt"))
+    assert pins == _requirements()
+    assert not [n for n in spec_names(spec) if "==" in n], "версии в buildozer.spec не пишутся"
+    pinned = set(spec_names(pin_spec(spec, pins)))
+    expected = {f"{n}=={v}" for n, v in pins.items() if n != "pycryptodomex"} | P4A_RECIPES
+    assert pinned == expected
+
+
+@pytest.mark.parametrize(("spec_line", "error"), [
+    ("python3,kivy,requests==2.0,pycryptodome", "версии в buildozer.spec"),
+    ("python3,kivy,pycryptodome", "нет в buildozer.spec: requests"),
+    ("python3,kivy,requests,pycryptodome,six", "six: нет в requirements.txt"),
+])
+def test_android_requirements_refuses_bad_spec(spec_line, error):
+    """Пропущенный пакет сломал бы APK (p4a ставит без зависимостей),
+    незакреплённый посторонний сделал бы сборку невоспроизводимой."""
+    from tools.android_requirements import pin_spec
+    with pytest.raises(ValueError, match=error):
+        pin_spec(f"[app]\nrequirements = {spec_line}\n", {"requests": "2.34.2"})
+
+
+def test_android_build_pins_requirements_before_cache_and_build():
+    """Версии дописываются в копию spec до ключа кэша и сборки; уведомления
+    о лицензиях кладутся в APK из тех же версий."""
+    action = read(".github/actions/buildozer-apk/action.yml")
+    pin = action.index("python -m tools.android_requirements build-android/buildozer.spec requirements.txt")
+    notices = action.index("-m tools.third_party_notices")
+    assert action.index("- name: Stage Android sources") < pin < notices
+    assert notices < action.index("uses: actions/cache@") < action.index("buildozer -v android")
+    assert "requirements.txt build-android/LICENSES/THIRD-PARTY-NOTICES.txt" in action
 
 
 def test_android_toolchain_pinned():
@@ -374,15 +399,38 @@ def test_hardware_markers_registered():
 
 
 def test_license_texts_present():
-    for name in ("LGPL-3.0.txt", "GPL-3.0.txt", "DejaVu-Fonts.txt", "THIRD-PARTY-NOTICES.txt"):
+    for name in ("LGPL-3.0.txt", "GPL-3.0.txt", "DejaVu-Fonts.txt"):
         assert (ROOT / "LICENSES" / name).stat().st_size > 1000, name
 
 
-def test_third_party_notices_cover_runtime_packages():
-    """Каждый пакет из requirements.txt есть в тексте уведомлений (после
-    обновления зависимостей — перегенерировать, команда в начале файла)."""
-    notices = read("LICENSES/THIRD-PARTY-NOTICES.txt").splitlines()
+def test_third_party_notices_generated_from_installed_packages():
+    """Уведомления собираются при сборке из метаданных установленных пакетов:
+    каждый пакет requirements.txt — с закреплённой версией и текстом лицензии."""
+    from tools.third_party_notices import render
+    text = render(_requirements())
     for name, version in _requirements().items():
-        assert name in notices, f"{name}: нет в LICENSES/THIRD-PARTY-NOTICES.txt"
-        found = notices[notices.index(name) + 1]
-        assert found == version, f"{name}: в уведомлениях {found}, закреплена {version}"
+        parts = text.split(f"\n{name} {version}\n", 1)
+        assert len(parts) == 2, f"{name} {version}: нет в уведомлениях"
+        body = parts[1].split("=" * 80, 1)[0]
+        assert "License: " in body and len(body) > 500, f"{name}: нет текста лицензии"
+
+
+def test_third_party_notices_refuse_wrong_version_or_missing_package():
+    """Сборка не выйдет с уведомлениями не от тех версий или без лицензии."""
+    from tools.third_party_notices import package_section
+    with pytest.raises(ValueError, match="закреплён 0.0.1"):
+        package_section("requests", "0.0.1")
+    with pytest.raises(ValueError, match="не установлен"):
+        package_section("hua4gmon-no-such-package", "1.0")
+
+
+def test_release_attaches_generated_notices():
+    """.exe-задача создаёт уведомления до публикации и прикладывает их к релизу;
+    в репозитории файла нет — он не может устареть."""
+    wf = read(".github/workflows/build.yml")
+    job = wf[wf.index("  build-windows:"):]
+    gen = job.index("python -m tools.third_party_notices requirements.txt LICENSES/THIRD-PARTY-NOTICES.txt")
+    release = job.index("- name: Create GitHub Release")
+    assert gen < release
+    assert "LICENSES/THIRD-PARTY-NOTICES.txt" in job[release:]
+    assert "LICENSES/THIRD-PARTY-NOTICES.txt" in read(".gitignore")

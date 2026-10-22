@@ -71,3 +71,6 @@ hua4gmon-diag-*.json
 # version_info.txt — вывод tools/make_version_info.py при ручном запуске
 # (spec-файл пишет его в папку сборки).
 version_info.txt
+
+# Создаётся при сборке (tools/third_party_notices.py), в репозиторий не входит
+LICENSES/THIRD-PARTY-NOTICES.txt
