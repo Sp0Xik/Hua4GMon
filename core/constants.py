@@ -256,6 +256,8 @@ STALE_FACTOR: float = 2.5           # данные устарели, если н
 STALE_MIN_SECONDS: float = 3.0
 CELL_EVENTS_MAX: int = 20
 BEST_CELLS_SHOWN: int = 5
+MEASURE_SECONDS: float = 20.0       # длительность замера точки
+MEASURE_MIN_SAMPLES: int = 5        # меньше отсчётов — замер не засчитывается
 
 # Сколько тиков между запросами к необязательным эндпоинтам
 # (device/signal — каждый тик).

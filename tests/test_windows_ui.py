@@ -405,3 +405,37 @@ def test_status_colors_readable_on_window_background(app):
     jitter_fg = str(app.jitter_label.cget('foreground'))
     r, g, b = (v // 257 for v in app.root.winfo_rgb(jitter_fg))
     assert core.contrast_ratio(f"#{r:02x}{g:02x}{b:02x}", core.WINDOWS_BG) >= 4.5
+
+
+def test_point_measurement_flow(app, tmp_path, monkeypatch):
+    """Замер точки: кнопка, таймер, итог в таблице, Δ к лучшей точке,
+    отмена, CSV, очистка; без подключения замер не начинается."""
+    import core.measure as measure_mod
+    import core.state as state_mod
+    monkeypatch.setattr(state_mod, "MEASURE_SECONDS", 2.0)
+    monkeypatch.setattr(measure_mod, "MEASURE_MIN_SAMPLES", 2)
+    app.toggle_point()
+    assert not app.state.point_running                      # не подключены
+    online(app)
+    app.toggle_point()
+    assert app.state.point_running and "⏹" in app.point_btn.cget('text')
+    assert pump(app, lambda: len(app.state.points) == 1)
+    assert "📍" in app.point_btn.cget('text')
+    assert "Точка 1" in app.event_line.cget('text')
+    rows = app.points_tree.get_children()
+    assert len(rows) == 1 and str(app.points_tree.item(rows[0])['values'][0]).startswith("★")
+    assert pump(app, lambda: app.point_lbl.cget('text').startswith("До лучшей точки 1"))
+    app.toggle_point()
+    app.toggle_point()                                      # повторное нажатие — отмена
+    assert not app.state.point_running and len(app.state.points) == 1
+    path = tmp_path / "points.csv"
+    monkeypatch.setattr(main.filedialog, "asksaveasfilename", lambda **k: str(path))
+    app.export_points_csv()
+    assert path.read_text(encoding="utf-8-sig").count("\n") == 2
+    app.rebuild_ui()                                        # смена языка не теряет замеры
+    assert len(app.points_tree.get_children()) == 1
+    app.toggle_roof_mode()                                  # крышный режим — Δ к точке
+    assert pump(app, lambda: "точка 1:" in app.r_primary.cget('text'))
+    app.toggle_roof_mode()
+    app.clear_points()
+    assert not app.points_tree.get_children() and app.point_lbl.cget('text') == ""

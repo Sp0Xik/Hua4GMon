@@ -21,6 +21,7 @@ from core.constants import (
     DIRECTION_LOOKBACK,
     GRAPH_HISTORY,
     JITTER_WINDOW,
+    MEASURE_SECONDS,
     SESSION_LOG_MAX,
     STALE_FACTOR,
     STALE_MIN_SECONDS,
@@ -28,6 +29,7 @@ from core.constants import (
     TREND_ENTER_DB,
     TREND_EXIT_DB,
 )
+from core.measure import PointRecorder, PointResult, best_point, current_median
 from core.models import METRICS, NR_METRICS, CellKey, Snapshot
 
 TRACKED: tuple[str, ...] = METRICS + NR_METRICS
@@ -164,6 +166,9 @@ class SignalState:
         self._cell: CellKey | None = None
         self._cell_label = ''
         self._rsrp_in_cell = 0          # отсчётов RSRP с последней смены соты
+        self.points: list[PointResult] = []
+        self._recorder: PointRecorder | None = None
+        self._point_number = 0
 
     # ---- управление ----
 
@@ -217,7 +222,66 @@ class SignalState:
 
         self.observed_bands.update(snap.bands)
         self._append_log(snap, wall)
+        if self._recorder is not None:
+            self._recorder.add(snap, now, cell_label(snap))
         return change
+
+    # ---- замер точки ----
+
+    def start_point(self, now: float, wall: datetime.datetime | None = None,
+                    duration: float | None = None) -> None:
+        """Начать замер точки (антенна неподвижна). Идущий замер сбрасывается.
+
+        duration по умолчанию — MEASURE_SECONDS.
+        """
+        self._recorder = PointRecorder(now, duration or MEASURE_SECONDS, wall)
+
+    def cancel_point(self) -> None:
+        self._recorder = None
+
+    @property
+    def point_running(self) -> bool:
+        return self._recorder is not None
+
+    def point_remaining(self, now: float) -> float | None:
+        """Сколько секунд осталось до конца замера (None — замер не идёт)."""
+        return self._recorder.remaining(now) if self._recorder is not None else None
+
+    def finish_point(self, now: float) -> PointResult | None:
+        """Завершает замер, если его время вышло (вызывать по таймеру UI).
+
+        Возвращает итог; пригодный (``ok``) добавляется в ``points``.
+        None — замер не идёт или ещё не закончен.
+        """
+        rec = self._recorder
+        if rec is None or not rec.due(now):
+            return None
+        self._recorder = None
+        result = rec.result(self._point_number + 1)
+        if result.ok:
+            self._point_number += 1
+            self.points.append(result)
+        return result
+
+    def clear_points(self) -> None:
+        self.points.clear()
+        self._point_number = 0
+
+    def best_point(self, param: str) -> PointResult | None:
+        return best_point(self.points, param)
+
+    def delta_to_best(self, param: str) -> tuple[PointResult, float] | None:
+        """(лучшая точка, текущая медиана − медиана точки), дБ.
+
+        Текущее значение — медиана последних отсчётов, а не одиночный
+        отсчёт: сравнение не прыгает от выброса.
+        """
+        best = self.best_point(param)
+        cur = current_median(self.history.get(param, ()))
+        if best is None or cur is None:
+            return None
+        ref = best.median(param)
+        return (best, round(cur - ref, 1)) if ref is not None else None
 
     def _track_cell(self, snap: Snapshot, wall: datetime.datetime) -> CellChange | None:
         key = snap.cell

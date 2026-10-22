@@ -198,8 +198,26 @@ EN: dict[str, str] = {
         "timeout",
     "⚠ Вероятна фильтрация (белые списки)":
         "⚠ Filtering likely (whitelist)",
+    "Точка {n}":
+        "Point {n}",
+    "сота менялась":
+        "cell changed",
 
     # --- Общие строки Windows и Android ---
+    "Замер точки отменён.":
+        "Point measurement cancelled.",
+    "Замер точки: держите антенну неподвижно {s} с.":
+        "Point measurement: keep the antenna still for {s} s.",
+    "Замер не засчитан: мало данных от роутера ({n} отсчётов).":
+        "Measurement discarded: too little data from the router ({n} samples).",
+    "Точка {n}: SINR {sinr} dB, RSRP {rsrp} dBm":
+        "Point {n}: SINR {sinr} dB, RSRP {rsrp} dBm",
+    "сота менялась — повторите замер":
+        "cell changed — measure again",
+    "Замеры точек (медиана и разброс p10…p90)":
+        "Point measurements (median and p10…p90 spread)",
+    "Очистить замеры":
+        "Clear points",
     "Band Lock применён: {bands}.":
         "Band Lock applied: {bands}.",
     "CQI (потоки)":
@@ -428,6 +446,26 @@ EN: dict[str, str] = {
         "🧪 Test mode",
 
     # --- Windows (main.py) ---
+    "📍 Замер точки":
+        "📍 Measure point",
+    "⏹ Замер… {s} с":
+        "⏹ Measuring… {s} s",
+    "До лучшей точки {n}: Δ {d} {unit}":
+        "To best point {n}: Δ {d} {unit}",
+    "точка {n}: {d}":
+        "point {n}: {d}",
+    "Время":
+        "Time",
+    "Сота":
+        "Cell",
+    "Отсчётов":
+        "Samples",
+    "★ — лучшая точка по выбранной метрике":
+        "★ — best point for the selected metric",
+    "💾 Замеры в CSV":
+        "💾 Points to CSV",
+    "Замеров пока нет. Нажмите «Замер точки» на вкладке «Монитор».":
+        "No points yet. Press “Measure point” on the Monitor tab.",
     ("IP по умолчанию: 192.168.8.1 (для B315/B525 — 192.168.1.1 или "
      "192.168.3.1) — кнопка «Найти роутер» проверит их сама. Логин: admin, "
      "пароль — на наклейке роутера.\n"
@@ -606,6 +644,22 @@ EN: dict[str, str] = {
         "🧾 Save diagnostics",
 
     # --- Android (android_main.py) ---
+    "Замеры точек":
+        "Point measurements",
+    "◎ Замер":
+        "◎ Point",
+    "◎ {s} с":
+        "◎ {s} s",
+    "Точка {n}: Δ {d}":
+        "Point {n}: Δ {d}",
+    "Копировать":
+        "Copy",
+    "Замеров пока нет.":
+        "No points yet.",
+    "Замеры скопированы в буфер обмена.":
+        "Points copied to the clipboard.",
+    "Замеров пока нет: нажмите «◎ Замер» на экране мониторинга и держите антенну неподвижно {s} с.":
+        "No points yet: press “◎ Point” on the monitor screen and keep the antenna still for {s} s.",
     "В белых списках:":
         "Whitelisted:",
     "ДЕМО · азимут {a}":
