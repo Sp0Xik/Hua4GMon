@@ -149,6 +149,17 @@ def test_sun_theme(app):
     assert app.c_bg[0] < 0.2
 
 
+def test_sun_theme_status_colors_readable(app):
+    """В «Солнце» цвета статусов читаются на светлой карточке (≥ 4,5:1);
+    в тёмной теме остаются исходными."""
+    import android_main
+    for color in ('#00b894', '#2ecc71', '#fdcb6e', '#d63031', 'gray', 'orange', '#e68033'):
+        r, g, b, _ = android_main.hex_to_rgba(color, sun=True)
+        sun_hex = "#{:02x}{:02x}{:02x}".format(*(round(c * 255) for c in (r, g, b)))
+        assert core.contrast_ratio(sun_hex, core.SUN_CARD_BG) >= 4.5, color
+    assert android_main.hex_to_rgba('#fdcb6e') == [0xfd / 255, 0xcb / 255, 0x6e / 255, 1.0]
+
+
 def test_reboot_reconnects(app):
     ensure_online(app)
     app.confirm_reboot()

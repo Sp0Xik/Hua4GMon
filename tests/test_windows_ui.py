@@ -390,3 +390,18 @@ def test_diagnostics_file_error_is_not_router_error(app, tmp_path, monkeypatch):
     assert pump(app, lambda: not app._busy)
     text = app.net_msg.cget('text')
     assert "Не удалось записать файл" in text and "Команда не выполнена" not in text
+
+
+def test_status_colors_readable_on_window_background(app):
+    """Цифры и подписи статусов читаются на светлом фоне окна (≥ 4,5:1)."""
+    online(app)
+    assert pump(app, lambda: app.state.jitter() is not None)
+    widgets = [app.health_text_lbl, app.dir_label, app.dir_text]
+    for w in app.lbl_vars.values():
+        widgets += [w['val'], w['status'], w['peak']]
+    for w in widgets:
+        r, g, b = (v // 257 for v in app.root.winfo_rgb(w.cget('fg')))
+        assert core.contrast_ratio(f"#{r:02x}{g:02x}{b:02x}", core.WINDOWS_BG) >= 4.5, w.cget('text')
+    jitter_fg = str(app.jitter_label.cget('foreground'))
+    r, g, b = (v // 257 for v in app.root.winfo_rgb(jitter_fg))
+    assert core.contrast_ratio(f"#{r:02x}{g:02x}{b:02x}", core.WINDOWS_BG) >= 4.5
