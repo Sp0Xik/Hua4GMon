@@ -161,6 +161,15 @@ def test_android_pins_match_requirements():
     assert set(reqs) == set(pins) - {"pycryptodomex"}
 
 
+def test_linux_runners_pinned_to_ubuntu_24_04():
+    """Образ раннера меняется только явно: ubuntu-latest переходит на 26.04,
+    ubuntu-22.04 удаляется 17.04.2027."""
+    for workflow in ("build.yml", "build-android.yml"):
+        runners = re.findall(r"runs-on:\s*(\S+)", read(f".github/workflows/{workflow}"))
+        linux = [r for r in runners if not r.startswith("windows")]
+        assert linux and set(linux) == {"ubuntu-24.04"}, f"{workflow}: {runners}"
+
+
 def test_android_toolchain_pinned():
     """Закреплённый стек: свежий p4a тянет Python 3.14 и ломает pyjnius."""
     assert _spec_value("p4a.branch") == "v2024.01.21"
