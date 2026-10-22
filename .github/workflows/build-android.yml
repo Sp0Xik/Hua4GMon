@@ -32,6 +32,9 @@ jobs:
   test:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
+    # Ограничения времени: зависший apt или раннер не держит PR часами
+    # (по умолчанию GitHub ждёт 6 ч).
+    timeout-minutes: 30          # обычно ~3 мин
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,6 +54,7 @@ jobs:
     # Версия образа закреплена: ubuntu-latest переходит на 26.04, а для неё
     # buildozer требует p4a develop, API 36 и NDK 29 — не наш закреплённый стек.
     runs-on: ubuntu-24.04
+    timeout-minutes: 120         # обычно ~20 мин, без кэша SDK/NDK — дольше
     permissions:
       contents: write        # прикрепление APK к Release на тегах
     steps:
@@ -164,6 +168,7 @@ jobs:
   canary:
     if: github.event_name == 'schedule' || inputs.canary
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
         with:

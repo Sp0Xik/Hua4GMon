@@ -269,6 +269,16 @@ def test_linux_runners_pinned_to_ubuntu_24_04():
         assert linux and set(linux) == {"ubuntu-24.04"}, f"{workflow}: {runners}"
 
 
+def test_every_ci_job_has_timeout():
+    """Зависший раннер или apt не держит PR часами (по умолчанию — 6 ч)."""
+    for workflow in ("build.yml", "build-android.yml"):
+        wf = read(f".github/workflows/{workflow}")
+        jobs = re.findall(r"^  ([\w-]+):\n((?:    .*\n|\n)+)", wf.split("\njobs:\n", 1)[1], re.MULTILINE)
+        assert jobs, workflow
+        for name, body in jobs:
+            assert re.search(r"^    timeout-minutes: \d+", body, re.MULTILINE), f"{workflow}: {name}"
+
+
 def test_android_gate_runs_android_ui_tests():
     """APK собирается только после тестов Android-интерфейса (Kivy под Xvfb)."""
     wf = read(".github/workflows/build-android.yml")

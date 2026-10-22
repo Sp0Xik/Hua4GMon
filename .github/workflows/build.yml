@@ -23,6 +23,9 @@ jobs:
     # Образ закреплён: ubuntu-latest с 19.10.2026 переходит на Ubuntu 26.04
     # (actions/runner-images#14748) — смена ОС не должна приходить молча.
     runs-on: ubuntu-24.04
+    # Ограничение времени: зависший apt или раннер не держит PR часами
+    # (по умолчанию GitHub ждёт 6 ч). Обычно задача идёт ~1 мин.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -44,6 +47,7 @@ jobs:
   # =================================================================
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30          # обычно ~3 мин
     strategy:
       fail-fast: false
       matrix:
@@ -75,6 +79,7 @@ jobs:
   build-windows:
     needs: [ lint, test ]
     runs-on: windows-latest
+    timeout-minutes: 45          # обычно ~5 мин
     permissions:
       contents: write           # нужно для создания Release
     steps:
