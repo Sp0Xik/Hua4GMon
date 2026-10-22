@@ -468,3 +468,60 @@ def test_humanize():
         assert "not responding" in core.humanize_error(OSError()).lower()
     finally:
         core.set_language("ru")
+
+
+# =========================================================
+# Читаемость цветов на светлом фоне (core.palette)
+# =========================================================
+
+def _status_colors() -> set[str]:
+    """Все цвета статусов, которые core отдаёт интерфейсам."""
+    from core.constants import SIGNAL_THRESHOLDS
+    from core.signal_analysis import calculate_overall_health
+    from core.whitelist import analyze_whitelist_results
+    colors = {rule[2] for rules in SIGNAL_THRESHOLDS.values() for rule in rules}
+    for rsrp, sinr in ((-70, 25), (-85, 15), (-100, 3), (-120, -5), (None, None)):
+        colors.add(calculate_overall_health(rsrp, sinr)[2])
+    for white, neutral in (([("a", True)], [("b", True)]), ([("a", True)], [("b", False)]),
+                           ([("a", False)], [("b", True)]), ([("a", False)], [("b", False)])):
+        colors.add(analyze_whitelist_results(white, neutral)[2])
+    return colors | {"green", "orange", "red", "gray"}
+
+
+def test_contrast_ratio_reference_values():
+    from core.palette import contrast_ratio
+    assert round(contrast_ratio("#000000", "#ffffff"), 1) == 21.0
+    assert contrast_ratio("#777777", "#777777") == pytest.approx(1.0)
+    assert contrast_ratio("white", "black") == contrast_ratio("black", "white")
+
+
+@pytest.mark.parametrize("background", ["#f0f0f0", "#ebedf0", "#ffffff"])
+def test_status_colors_readable_on_light_backgrounds(background):
+    """Окно Windows, карточка темы «Солнце», график: контраст ≥ 4,5:1 (WCAG AA)."""
+    from core.palette import contrast_ratio, readable_on
+    for color in _status_colors():
+        fixed = readable_on(color, background)
+        assert contrast_ratio(fixed, background) >= 4.5, (color, fixed)
+
+
+def test_readable_on_keeps_good_colors_and_dark_backgrounds():
+    from core.palette import readable_on
+    assert readable_on("#333333", "#f0f0f0") == "#333333"      # уже читаемый
+    assert readable_on("#fdcb6e", "#000000") == "#fdcb6e"      # тёмный фон — как есть
+    assert readable_on("#fdcb6e", "#f0f0f0") == "#8a6100"      # тёмный янтарный, не олива
+
+
+def test_readable_on_keeps_hue():
+    """Затемнение равномерное: порядок каналов (оттенок) не меняется."""
+    from core.palette import readable_on, to_rgb
+    for color in ("#00b894", "#2ecc71", "#d63031", "#0078D7", "#e68033"):
+        src, out = to_rgb(color), to_rgb(readable_on(color, "#f0f0f0"))
+        order = sorted(range(3), key=lambda i: src[i])
+        assert sorted(range(3), key=lambda i: out[i]) == order, (color, out)
+
+
+def test_to_rgb_rejects_garbage():
+    from core.palette import to_rgb
+    assert to_rgb("#0b9") == (0, 187, 153)
+    with pytest.raises(ValueError):
+        to_rgb("#12")

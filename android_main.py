@@ -88,6 +88,7 @@ from core import (
     PARAM_RANGES,
     RAT_LABELS,
     REGION_BANDS,
+    SUN_CARD_BG,
     TREND_DOWN,
     TREND_FLAT,
     TREND_UP,
@@ -120,6 +121,7 @@ from core import (
     lte_band_label,
     mimo_status,
     parse_antenna_value,
+    readable_on,
     run_whitelist_check,
     set_language,
     t,
@@ -178,15 +180,20 @@ def fmt_num(value: float | None) -> str:
 
 
 def hex_to_rgba(color: str, sun: bool = False) -> list[float]:
-    """'#00b894' или 'gray' → RGBA. В режиме «Солнце» цвета темнее."""
+    """'#00b894' или 'gray' → RGBA.
+
+    В режиме «Солнце» (светлый фон) цвет затемняется до контраста не ниже
+    4,5:1 с карточкой (core.readable_on); тёмная тема — исходные цвета.
+    """
     named = {'gray': '#808080', 'green': '#33cc66', 'orange': '#e68033', 'red': '#d93333'}
-    h = named.get(color, color).lstrip('#')
+    h = named.get(color, color)
     try:
+        if sun:
+            h = readable_on(h, SUN_CARD_BG)
+        h = h.lstrip('#')
         rgb = [int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
     except (ValueError, IndexError):
         rgb = [0.5, 0.5, 0.5]
-    if sun:
-        rgb = [c * 0.7 for c in rgb]
     return [*rgb, 1.0]
 
 
