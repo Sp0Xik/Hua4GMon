@@ -41,12 +41,14 @@ runs:
 
     # Список пакетов — по документации Buildozer для Ubuntu 24.04
     # (libtinfo6 вместо libtinfo5 из 22.04, плюс automake, autopoint, gettext).
+    # libltdl-dev: рецепт libffi вызывает макрос LT_SYS_SYMBOL_USCORE из
+    # ltdl.m4; в образе 22.04 пакет стоял, в 24.04 его нет.
     - name: Install system dependencies
       shell: bash
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          git zip unzip autoconf automake autopoint gettext libtool \
+          git zip unzip autoconf automake autopoint gettext libtool libltdl-dev \
           pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev \
           libtinfo6 cmake libffi-dev libssl-dev build-essential ccache
 
