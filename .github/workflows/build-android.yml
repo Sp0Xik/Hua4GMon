@@ -31,7 +31,10 @@ jobs:
   # Android-интерфейса (Kivy под Xvfb), иначе они бы пропускались.
   test:
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # Ограничения времени: зависший apt или раннер не держит PR часами
+    # (по умолчанию GitHub ждёт 6 ч).
+    timeout-minutes: 30          # обычно ~3 мин
     steps:
       - uses: actions/checkout@v7
         with:
@@ -48,8 +51,10 @@ jobs:
 
   build:
     needs: test
-    # 22.04: там есть libtinfo5, нужный Android SDK build-tools (aidl/aapt).
-    runs-on: ubuntu-22.04
+    # Версия образа закреплена: ubuntu-latest переходит на 26.04, а для неё
+    # buildozer требует p4a develop, API 36 и NDK 29 — не наш закреплённый стек.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120         # обычно ~20 мин, без кэша SDK/NDK — дольше
     permissions:
       contents: write        # прикрепление APK к Release на тегах
     steps:
@@ -103,7 +108,7 @@ jobs:
         with:
           buildozer-version: '1.5.0'
           mode: ${{ steps.mode.outputs.mode }}
-          cache-prefix: buildozer-v3
+          cache-prefix: buildozer-v4    # v4 — кэш образа 24.04
 
       # Подпись закончена. p4a запускает Gradle с демоном, а демон остаётся
       # жить после сборки с паролями подписи в своём окружении; файл ключа
@@ -162,7 +167,8 @@ jobs:
   # Падение видно в списке запусков (отдельный workflow-run по расписанию).
   canary:
     if: github.event_name == 'schedule' || inputs.canary
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
         with:
@@ -171,4 +177,4 @@ jobs:
         with:
           buildozer-version: '1.6.0'
           mode: debug
-          cache-prefix: buildozer-canary-v1
+          cache-prefix: buildozer-canary-v2

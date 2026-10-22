@@ -20,14 +20,19 @@ jobs:
   # LINT — ruff и mypy (core/, tools/) закреплённых версий (requirements-dev.txt)
   # =================================================================
   lint:
-    runs-on: ubuntu-latest
+    # Образ закреплён: ubuntu-latest с 19.10.2026 переходит на Ubuntu 26.04
+    # (actions/runner-images#14748) — смена ОС не должна приходить молча.
+    runs-on: ubuntu-24.04
+    # Ограничение времени: зависший apt или раннер не держит PR часами
+    # (по умолчанию GitHub ждёт 6 ч). Обычно задача идёт ~1 мин.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: '3.14'
           cache: 'pip'
           cache-dependency-path: requirements-dev.txt
       - run: pip install -r requirements-dev.txt
@@ -41,7 +46,8 @@ jobs:
   # рецепта python-for-android), на остальных Android-UI пропускается.
   # =================================================================
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30          # обычно ~3 мин
     strategy:
       fail-fast: false
       matrix:
@@ -73,6 +79,7 @@ jobs:
   build-windows:
     needs: [ lint, test ]
     runs-on: windows-latest
+    timeout-minutes: 45          # обычно ~5 мин
     permissions:
       contents: write           # нужно для создания Release
     steps:
@@ -80,10 +87,12 @@ jobs:
       with:
         persist-credentials: false
 
+    # Python 3.14: у 3.13 закончилась поддержка с исправлениями (01.10.2026),
+    # новых сборок для Windows не будет.
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
-        python-version: '3.13'
+        python-version: '3.14'
         cache: 'pip'
         cache-dependency-path: requirements-build.txt
 

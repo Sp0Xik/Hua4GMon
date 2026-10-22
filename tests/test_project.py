@@ -285,6 +285,25 @@ def test_lint_checks_types():
     assert 'files = ["core", "tools"]' in read("pyproject.toml")
 
 
+def test_linux_runners_pinned_to_ubuntu_24_04():
+    """Образ раннера меняется только явно: ubuntu-latest переходит на 26.04,
+    ubuntu-22.04 удаляется 17.04.2027."""
+    for workflow in ("build.yml", "build-android.yml"):
+        runners = re.findall(r"runs-on:\s*(\S+)", read(f".github/workflows/{workflow}"))
+        linux = [r for r in runners if not r.startswith("windows")]
+        assert linux and set(linux) == {"ubuntu-24.04"}, f"{workflow}: {runners}"
+
+
+def test_every_ci_job_has_timeout():
+    """Зависший раннер или apt не держит PR часами (по умолчанию — 6 ч)."""
+    for workflow in ("build.yml", "build-android.yml"):
+        wf = read(f".github/workflows/{workflow}")
+        jobs = re.findall(r"^  ([\w-]+):\n((?:    .*\n|\n)+)", wf.split("\njobs:\n", 1)[1], re.MULTILINE)
+        assert jobs, workflow
+        for name, body in jobs:
+            assert re.search(r"^    timeout-minutes: \d+", body, re.MULTILINE), f"{workflow}: {name}"
+
+
 def test_android_gate_runs_android_ui_tests():
     """APK собирается только после тестов Android-интерфейса (Kivy под Xvfb)."""
     wf = read(".github/workflows/build-android.yml")
