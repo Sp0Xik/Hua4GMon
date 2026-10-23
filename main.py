@@ -26,7 +26,6 @@ import argparse
 import contextlib
 import datetime
 import logging
-import math
 import platform
 import queue
 import sys
@@ -45,7 +44,6 @@ from core import (
     GRAPH_HISTORY,
     GRAPH_MIN_SPAN,
     LANGUAGES,
-    MEASURE_SECONDS,
     MIMO_LABELS,
     PARAM_RANGES,
     RAT_LABELS,
@@ -68,7 +66,6 @@ from core import (
     configure_library_logging,
     current_language,
     default_csv_name,
-    default_points_csv_name,
     demo_angle_hint,
     demo_factory,
     diagnostics_json,
@@ -78,7 +75,6 @@ from core import (
     format_mimo,
     format_modulation,
     format_rate_mbps,
-    format_summary,
     humanize_error,
     is_valid_ip,
     library_self_test,
@@ -93,7 +89,6 @@ from core import (
     set_language,
     t,
     uplink_status,
-    write_points_csv,
     write_session_csv,
 )
 
@@ -497,8 +492,6 @@ class Hua4GMon:
             self._fill_device(self.session.device_info)
         if self.state.last is not None:
             self._render(self.state.last)
-        self._render_points()
-        self._render_point_button(time.monotonic())
 
     # ---------- вкладка «Подключение» ----------
 
@@ -609,9 +602,6 @@ class Hua4GMon:
         self.dir_text = tk.Label(self.dir_frame, text=t("Накапливаю данные..."),
                                  font=("Segoe UI", 10), fg=MUTED_FG)
         self.dir_text.pack()
-        self.point_lbl = tk.Label(self.dir_frame, text="", fg=INFO_FG,
-                                  font=("Segoe UI", 10, "bold"))
-        self.point_lbl.pack()
         self.advice_lbl = self._wrap(tk.Label(self.dir_frame, text="", fg=WARN_FG,
                                               font=("Segoe UI", 9), justify='left'), 80)
         self.advice_lbl.pack(fill=tk.X)
@@ -623,9 +613,6 @@ class Hua4GMon:
         self.jitter_label.pack(side=tk.LEFT)
         ttk.Button(self.tools_frame, text=t("🖥 Крышный режим (F11)"),
                    command=self.toggle_roof_mode).pack(side=tk.RIGHT, padx=5)
-        self.point_btn = ttk.Button(self.tools_frame, text=t("📍 Замер точки"),
-                                    command=self.toggle_point)
-        self.point_btn.pack(side=tk.RIGHT, padx=5)
         self.sound_var = tk.BooleanVar(value=self._saved['sound'] and HAS_WINSOUND)
         sound_cb = ttk.Checkbutton(self.tools_frame, text=t("🔊 Звук (Ctrl+M)"),
                                    variable=self.sound_var)
@@ -752,33 +739,15 @@ class Hua4GMon:
 
         cells = ttk.LabelFrame(self.tab_tower, text=t("Лучшие соты за сессию"), padding=6)
         cells.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
-        cols = ('band', 'pci', 'enb', 'sinr', 'rsrp', 'n')
-        heads = (t("Бэнд"), "PCI", "eNB / Cell", t("Лучший SINR"), t("Лучший RSRP"), t("Замеров"))
+        cols = ('plmn', 'band', 'pci', 'enb', 'sinr', 'rsrp')
+        heads = (t("Оператор (PLMN)"), t("Бэнд"), "PCI", "eNB / Cell", t("Лучший SINR"),
+                 t("Лучший RSRP"))
         self.cells_tree = ttk.Treeview(cells, columns=cols, show='headings', height=5)
         for c, h in zip(cols, heads, strict=True):
             self.cells_tree.heading(c, text=h)
-            self.cells_tree.column(c, width=self.px(110), anchor='center')
+            self.cells_tree.column(c, width=self.px(150 if c in ('plmn', 'band') else 100),
+                                   anchor='center')
         self.cells_tree.pack(fill=tk.BOTH, expand=True)
-
-        points = ttk.LabelFrame(self.tab_tower, text=t("Замеры точек (медиана и разброс p10…p90)"),
-                                padding=6)
-        points.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
-        cols = ('n', 'time', 'sinr', 'rsrp', 'rsrq', 'cell', 'samples')
-        heads = ("№", t("Время"), "SINR, dB", "RSRP, dBm", "RSRQ, dB", t("Сота"), t("Отсчётов"))
-        self.points_tree = ttk.Treeview(points, columns=cols, show='headings', height=4)
-        for c, h in zip(cols, heads, strict=True):
-            self.points_tree.heading(c, text=h)
-            self.points_tree.column(c, width=self.px(120 if c in ('sinr', 'rsrp', 'rsrq', 'cell') else 70),
-                                    anchor='center')
-        self.points_tree.pack(fill=tk.BOTH, expand=True)
-        pbtn = ttk.Frame(points)
-        pbtn.pack(fill=tk.X, pady=(4, 0))
-        ttk.Label(pbtn, text=t("★ — лучшая точка по выбранной метрике"),
-                  foreground=MUTED_FG).pack(side=tk.LEFT)
-        ttk.Button(pbtn, text=t("Очистить замеры"),
-                   command=self.clear_points).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(pbtn, text=t("💾 Замеры в CSV"),
-                   command=self.export_points_csv).pack(side=tk.RIGHT, padx=5)
 
         sim = ttk.LabelFrame(self.tab_tower, text=t("SIM / Устройство"), padding=8)
         sim.pack(fill=tk.X, padx=10, pady=4)
@@ -1037,8 +1006,6 @@ class Hua4GMon:
         self.link = 'offline'
         self._busy = False
         self._set_net_buttons('normal')
-        self.state.cancel_point()
-        self._render_point_button(time.monotonic())
         self._render_link_state()
 
     def _render_link_state(self) -> None:
@@ -1135,7 +1102,7 @@ class Hua4GMon:
         change = self.state.ingest(snap, time.monotonic())
         if change is not None:
             self.event_line.config(text=t("{at} смена соты: {old} → {new}").format(
-                at=change.at, old=change.old_label, new=change.new_label), fg=INFO_FG)
+                at=change.at, old=change.old_label, new=change.new_label))
         if snap.has_nr and 'nr_sinr' not in self._graph_params:
             self._graph_params = list(LTE_PARAMS + NR_PARAMS)
             self.graph_cb.config(values=self._graph_params)
@@ -1156,7 +1123,6 @@ class Hua4GMon:
             if self.link in ('online', 'reconnecting') and self.state.last is not None:
                 stale = self.state.is_stale(time.monotonic(), self._interval_seconds)
                 self._render_staleness(stale)
-            self._point_tick(time.monotonic())
         finally:
             self._tick_id = self.root.after(500, self._tick)
 
@@ -1196,7 +1162,6 @@ class Hua4GMon:
                     fg=OK_FG if delta > -1 else '#555')
 
         self._render_trend()
-        self._render_point_delta()
         jitter = st.jitter()
         if jitter is not None:
             jcol = 'green' if jitter < 3 else 'orange' if jitter < 7 else 'red'
@@ -1277,105 +1242,12 @@ class Hua4GMon:
         tree = self.cells_tree
         for item in tree.get_children():
             tree.delete(item)
-        current = self.state.last.cell if self.state.last else None
         for c in self.state.top_cells():
-            mark = "▶ " if c.key == current else ""
+            mark = "▶ " if c.is_current(self.state.last) else ""
             tree.insert('', tk.END, values=(
-                mark + c.band_label.replace('МГц', t('МГц')), fmt_num(c.key.pci),
-                f"{fmt_num(c.enodeb)}/{fmt_num(c.sector)}", fmt_num(c.best_sinr),
-                fmt_num(c.best_rsrp), c.samples))
-
-    # ---------- замер точки ----------
-
-    def toggle_point(self) -> None:
-        """Начать замер точки или отменить идущий."""
-        now = time.monotonic()
-        if self.state.point_running:
-            self.state.cancel_point()
-            self.event_line.config(text=t("Замер точки отменён."), fg=MUTED_FG)
-        elif self.link != 'online' or self.state.last is None:
-            self.event_line.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
-        else:
-            self.state.start_point(now)
-            self.event_line.config(text=t(
-                "Замер точки: держите антенну неподвижно {s} с.").format(s=int(MEASURE_SECONDS)),
-                fg=INFO_FG)
-        self._render_point_button(now)
-
-    def _point_tick(self, now: float) -> None:
-        if not self.state.point_running:
-            return
-        res = self.state.finish_point(now)
-        self._render_point_button(now)
-        if res is None:
-            return
-        if not res.ok:
-            self.event_line.config(text=t(
-                "Замер не засчитан: мало данных от роутера ({n} отсчётов).").format(n=res.samples),
-                fg=ERR_FG)
-            return
-        msg = t("Точка {n}: SINR {sinr} dB, RSRP {rsrp} dBm").format(
-            n=res.number, sinr=format_summary(res.metrics.get('sinr')),
-            rsrp=format_summary(res.metrics.get('rsrp')))
-        if res.cell_changed:
-            msg += " · " + t("сота менялась — повторите замер")
-        self.event_line.config(text=msg, fg=WARN_FG if res.cell_changed else OK_FG)
-        self._render_points()
-        self._render_point_delta()
-
-    def _render_point_button(self, now: float) -> None:
-        left = self.state.point_remaining(now)
-        text = (t("📍 Замер точки") if left is None
-                else t("⏹ Замер… {s} с").format(s=math.ceil(left)))
-        with contextlib.suppress(tk.TclError, AttributeError):
-            self.point_btn.config(text=text)
-
-    def _render_point_delta(self) -> None:
-        param = self.graph_param.get()
-        best = self.state.delta_to_best(param)
-        if best is None:
-            self.point_lbl.config(text="")
-            return
-        point, delta = best
-        self.point_lbl.config(
-            text=t("До лучшей точки {n}: Δ {d} {unit}").format(
-                n=point.number, d=f"{delta:+g}", unit=unit_of(param)),
-            fg=OK_FG if delta >= -1 else INFO_FG)
-
-    def _render_points(self) -> None:
-        tree = self.points_tree
-        for item in tree.get_children():
-            tree.delete(item)
-        best = self.state.best_point(self.graph_param.get())
-        for p in self.state.points:
-            mark = "★ " if p is best else ""
-            cell = p.cell_label + (" ⚠" if p.cell_changed else "")
-            tree.insert('', tk.END, values=(
-                f"{mark}{p.number}", p.at, format_summary(p.metrics.get('sinr')),
-                format_summary(p.metrics.get('rsrp')), format_summary(p.metrics.get('rsrq')),
-                cell, p.samples))
-
-    def clear_points(self) -> None:
-        self.state.clear_points()
-        self._render_points()
-        self._render_point_delta()
-
-    def export_points_csv(self) -> None:
-        if not self.state.points:
-            messagebox.showinfo(t("Экспорт"), t(
-                "Замеров пока нет. Нажмите «Замер точки» на вкладке «Монитор»."))
-            return
-        path = filedialog.asksaveasfilename(
-            defaultextension=".csv", filetypes=[("CSV", "*.csv"), ("All", "*.*")],
-            initialfile=default_points_csv_name())
-        if not path:
-            return
-        try:
-            n = write_points_csv(path, self.state.points, current_language())
-            messagebox.showinfo(t("Экспорт"), t("Сохранено {n} записей в:\n{path}").format(
-                n=n, path=path))
-        except OSError as e:
-            messagebox.showerror(t("Ошибка"), t("Не удалось записать файл: {e}").format(e=e))
+                mark + c.operator_label, c.band_label.replace('МГц', t('МГц')),
+                fmt_num(c.key.pci), f"{fmt_num(c.enodeb)}/{fmt_num(c.sector)}",
+                fmt_num(c.best_sinr), fmt_num(c.best_rsrp)))
 
     def _render_status(self, snap: Snapshot, mimo: str | None, up: str | None) -> None:
         lbl = self.stat_labels
@@ -1432,8 +1304,6 @@ class Hua4GMon:
         self._render_trend()
         self.signal_graph.update_series(list(self.state.history.get(param, [])),
                                         self.state.peaks.get(param), False)
-        self._render_point_delta()
-        self._render_points()
 
     def reset_peaks(self) -> None:
         self.state.reset_peaks()
@@ -1710,12 +1580,8 @@ class Hua4GMon:
     def _roof_line(self, param: str) -> tuple[str, str]:
         val = self.state.current(param)
         _, col, _ = evaluate_signal(param.replace('nr_', ''), val)
-        best = self.state.delta_to_best(param)
-        if best is not None:
-            d = " · " + t("точка {n}: {d}").format(n=best[0].number, d=f"{best[1]:+g}")
-        else:
-            delta = self.state.delta_to_peak(param)
-            d = f" Δ{delta:+g}" if delta is not None else ""
+        delta = self.state.delta_to_peak(param)
+        d = f" Δ{delta:+g}" if delta is not None else ""
         return f"{PARAM_TITLES.get(param, param.upper())} {fmt_num(val)}{d}", col
 
     def _render_roof(self, stale: bool) -> None:

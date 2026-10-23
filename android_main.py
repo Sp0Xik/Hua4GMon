@@ -27,7 +27,6 @@ import importlib
 import importlib.abc
 import importlib.util
 import logging
-import math
 import os
 import platform as py_platform
 import sys
@@ -85,7 +84,6 @@ from core import (
     GRAPH_HISTORY,
     GRAPH_MIN_SPAN,
     LANGUAGES,
-    MEASURE_SECONDS,
     MIMO_LABELS,
     PARAM_RANGES,
     RAT_LABELS,
@@ -115,7 +113,6 @@ from core import (
     format_mimo,
     format_modulation,
     format_rate_mbps,
-    format_summary,
     humanize_error,
     is_valid_ip,
     library_version,
@@ -124,7 +121,6 @@ from core import (
     lte_band_label,
     mimo_status,
     parse_antenna_value,
-    point_lines,
     readable_on,
     run_whitelist_check,
     set_language,
@@ -769,9 +765,6 @@ ScreenManager:
                 text: root.lbl_peaks
                 on_release: app.reset_peaks()
             FlatButton:
-                text: root.lbl_point
-                on_release: app.toggle_point()
-            FlatButton:
                 text: root.lbl_menu
                 on_release: app.open_menu()
 
@@ -808,22 +801,6 @@ ScreenManager:
                     InfoLabel:
                         id: cells_block
                         text: ''
-                SectionCard:
-                    SectionTitle:
-                        text: root.lbl_points_title
-                    InfoLabel:
-                        id: points_block
-                        text: ''
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(48)
-                        spacing: dp(8)
-                        FlatButton:
-                            text: root.lbl_points_copy
-                            on_release: app.copy_points()
-                        FlatButton:
-                            text: root.lbl_points_clear
-                            on_release: app.clear_points()
                 SectionCard:
                     SectionTitle:
                         text: root.lbl_sim_title
@@ -1031,7 +1008,6 @@ class MonitorScreen(Screen):
     lbl_fullscreen = StringProperty("")
     lbl_sound = StringProperty("")
     lbl_peaks = StringProperty("")
-    lbl_point = StringProperty("")
     lbl_menu = StringProperty("")
     graph_values = ListProperty(list(LTE_PARAMS))
     status_color = ListProperty([0.2, 0.8, 0.4, 1])
@@ -1044,8 +1020,6 @@ class MonitorScreen(Screen):
         self.lbl_fullscreen = t("Во весь экран")
         self.lbl_sound = t("♪ Звук")
         self.lbl_peaks = t("⟲ Пики")
-        app = App.get_running_app()
-        self.lbl_point = app.point_button_text() if app is not None else t("◎ Замер")
         self.lbl_menu = t("☰ Меню")
 
 
@@ -1053,9 +1027,6 @@ class InfoScreen(Screen):
     lbl_title = StringProperty("")
     lbl_tower_title = StringProperty("")
     lbl_cells_title = StringProperty("")
-    lbl_points_title = StringProperty("")
-    lbl_points_copy = StringProperty("")
-    lbl_points_clear = StringProperty("")
     lbl_sim_title = StringProperty("")
     lbl_status_title = StringProperty("")
 
@@ -1067,9 +1038,6 @@ class InfoScreen(Screen):
         self.lbl_title = t("Информация")
         self.lbl_tower_title = t("Информация о станции")
         self.lbl_cells_title = t("Лучшие соты за сессию")
-        self.lbl_points_title = t("Замеры точек")
-        self.lbl_points_copy = t("Копировать")
-        self.lbl_points_clear = t("Очистить замеры")
         self.lbl_sim_title = t("SIM / Устройство")
         self.lbl_status_title = t("Состояние")
 
@@ -1329,8 +1297,6 @@ class Hua4GMonApp(App):
         self.demo_modem = None
         self.link = 'offline'
         self._busy = False
-        self.state.cancel_point()
-        self._render_point_button()
         self._stop_beeps()
         set_keep_screen_on(False)
         self._conn_screen().set_status("", [0.5, 0.5, 0.5, 1])
@@ -1404,11 +1370,10 @@ class Hua4GMonApp(App):
         self._render(snap)
 
     def _tick(self, _dt: float) -> None:
-        """Каждые 0.5 с: замер точки и признак устаревших данных."""
-        now = time.monotonic()
-        self._point_tick(now)
+        """Каждые 0.5 с: признак устаревших данных."""
         if self.link not in ('online', 'reconnecting') or self.state.last is None:
             return
+        now = time.monotonic()
         if self.state.is_stale(now, self.interval):
             scr = self.sm.get_screen('monitor')
             lbl = scr.ids.get('status_lbl')
@@ -1425,11 +1390,6 @@ class Hua4GMonApp(App):
         card.m_value = fmt_num(val)
         card.m_status = t(label)
         card.m_color = hex_to_rgba(color, self.theme_name == 'sun')
-        best = self.state.delta_to_best(param)
-        if best is not None:
-            # Есть замеры — ориентир лучшая точка (медиана), а не шумный пик.
-            card.m_peak = t("Точка {n}: Δ {d}").format(n=best[0].number, d=f"{best[1]:+g}")
-            return
         peak, delta = self.state.peaks.get(param), self.state.delta_to_peak(param)
         card.m_peak = "" if peak is None or delta is None else \
             t("Пик: {v} (Δ {d})").format(v=fmt_num(peak), d=f"{delta:+g}")
@@ -1608,13 +1568,8 @@ class Hua4GMonApp(App):
         from kivy.core.window import Window
         from kivy.graphics import Color, RoundedRectangle
         from kivy.uix.label import Label
-        lbl = Label(text=text, font_size=sp(15), size_hint=(None, None), color=(1, 1, 1, 1),
-                    halign='center')
+        lbl = Label(text=text, font_size=sp(15), size_hint=(None, None), color=(1, 1, 1, 1))
         lbl.texture_update()
-        max_w = Window.width - dp(48)
-        if lbl.texture_size[0] > max_w:         # длинный текст — переносом, не за край
-            lbl.text_size = (max_w, None)
-            lbl.texture_update()
         lbl.size = (lbl.texture_size[0] + dp(24), lbl.texture_size[1] + dp(16))
         lbl.pos = ((Window.width - lbl.width) / 2, dp(80))
         with lbl.canvas.before:
@@ -1622,62 +1577,6 @@ class Hua4GMonApp(App):
             RoundedRectangle(pos=lbl.pos, size=lbl.size, radius=[dp(8)])
         Window.add_widget(lbl)
         Clock.schedule_once(lambda dt: Window.remove_widget(lbl), seconds)
-
-    # ---------- замер точки ----------
-
-    def point_button_text(self) -> str:
-        left = self.state.point_remaining(time.monotonic())
-        return t("◎ Замер") if left is None else t("◎ {s} с").format(s=math.ceil(left))
-
-    def _render_point_button(self) -> None:
-        self.sm.get_screen('monitor').lbl_point = self.point_button_text()
-
-    def toggle_point(self) -> None:
-        """Начать замер точки или отменить идущий."""
-        if self.state.point_running:
-            self.state.cancel_point()
-            self.toast(t("Замер точки отменён."))
-        elif self.link != 'online' or self.state.last is None:
-            self.toast(t("Сначала подключитесь к роутеру."))
-        else:
-            self.state.start_point(time.monotonic())
-            self.toast(t("Замер точки: держите антенну неподвижно {s} с.").format(
-                s=int(MEASURE_SECONDS)), seconds=3.0)
-        self._render_point_button()
-
-    def _point_tick(self, now: float) -> None:
-        if not self.state.point_running:
-            return
-        res = self.state.finish_point(now)
-        self._render_point_button()
-        if res is None:
-            return
-        if not res.ok:
-            self.toast(t("Замер не засчитан: мало данных от роутера ({n} отсчётов).").format(
-                n=res.samples), seconds=3.0)
-            return
-        msg = t("Точка {n}: SINR {sinr} dB, RSRP {rsrp} dBm").format(
-            n=res.number, sinr=format_summary(res.metrics.get('sinr')),
-            rsrp=format_summary(res.metrics.get('rsrp')))
-        if res.cell_changed:
-            msg += " · " + t("сота менялась — повторите замер")
-        self.toast(msg, seconds=4.0)
-        if self.state.last is not None:
-            self._render(self.state.last)
-
-    def copy_points(self) -> None:
-        if not self.state.points:
-            self.toast(t("Замеров пока нет."))
-            return
-        from kivy.core.clipboard import Clipboard
-        Clipboard.copy("\n".join(point_lines(self.state.points, self.state.trend_param)))
-        self.toast(t("Замеры скопированы в буфер обмена."))
-
-    def clear_points(self) -> None:
-        self.state.clear_points()
-        self.refresh_info_screen()
-        if self.state.last is not None:
-            self._render(self.state.last)
 
     def open_fullscreen_graph(self) -> None:
         from kivy.uix.boxlayout import BoxLayout
@@ -1729,11 +1628,11 @@ class Hua4GMonApp(App):
             row('TAC (зона)', snap.tac),
             row('5G NR', nr),
         ]
-        current = snap.cell
         cells = [
-            f"{'▶ ' if c.key == current else ''}{c.band_label.replace('МГц', mhz)}"
-            f" · PCI {fmt_num(c.key.pci)} · SINR {fmt_num(c.best_sinr)}"
-            f" · RSRP {fmt_num(c.best_rsrp)}"
+            escape_markup(f"{'▶ ' if c.is_current(self.state.last) else ''}{c.operator_label}"
+                          f" · {c.band_label.replace('МГц', mhz)}"
+                          f" · PCI {fmt_num(c.key.pci)} · SINR {fmt_num(c.best_sinr)}"
+                          f" · RSRP {fmt_num(c.best_rsrp)}")
             for c in self.state.top_cells()]
         info = self.session.device_info if self.session is not None else {}
         sim = [row(name, info.get(key)) for key, name in (
@@ -1777,12 +1676,8 @@ class Hua4GMonApp(App):
             row('RSRP мин / макс', minmax('rsrp')),
             row('SINR мин / макс', minmax('sinr')),
         ]
-        points = [escape_markup(line) for line in point_lines(st.points, st.trend_param)] or [
-            t("Замеров пока нет: нажмите «◎ Замер» на экране мониторинга и держите "
-              "антенну неподвижно {s} с.").format(s=int(MEASURE_SECONDS))]
         for key, lines in (('tower_block', tower), ('cells_block', cells or [nd]),
-                           ('points_block', points), ('sim_block', sim),
-                           ('status_block', status)):
+                           ('sim_block', sim), ('status_block', status)):
             ids[key].text = "\n".join(lines)
 
     # ---------- экран «Сеть» ----------

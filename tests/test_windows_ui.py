@@ -120,10 +120,18 @@ def test_band_lock_flow(app):
     assert {b for b, v in app.band_vars.items() if v.get()} == set(app.state.last.bands)
     for b, v in app.band_vars.items():
         v.set(b == 20)
+    before = set(app.state.cells)
     app.apply_bands()
     assert pump(app, lambda: not app._busy)
     assert modem.lte_mask == 1 << 19 and modem.network_mode == '03'
     assert pump(app, lambda: "B20" in app.lock_state_lbl.cget('text'))
+    # Сота B20 добавилась в «Лучшие соты», прежние строки остались.
+    assert pump(app, lambda: any(c.key.earfcn and 6150 <= c.key.earfcn <= 6449
+                                 for c in app.state.cells.values()))
+    assert before <= set(app.state.cells)
+    app._render_cells()
+    rows = [app.cells_tree.item(i)['values'] for i in app.cells_tree.get_children()]
+    assert len(rows) >= 2 and all("25002" in str(r[0]) for r in rows)
     app.restore_bands()
     assert pump(app, lambda: not app._busy)
     assert modem.lte_mask == core.constants.LTE_ALL_MASK and modem.network_mode == '00'
@@ -145,11 +153,15 @@ def test_antenna_and_reattach(app):
 def test_reboot_reconnects_automatically(app):
     app.reconnect_var.set(False)
     online(app)
+    cells = set(app.state.cells)
     app.reboot_router()
     assert pump(app, lambda: app.link == 'reconnecting', timeout=10)
     assert pump(app, lambda: app.link == 'online', timeout=15)
     n = len(app.state.log)
     assert pump(app, lambda: len(app.state.log) > n)
+    # Перезагрузка (в том числе с заменой SIM «на холодную») с
+    # автопереподключением — та же сессия: «Лучшие соты» сохраняются.
+    assert cells and cells <= set(app.state.cells)
 
 
 def test_staleness_is_shown(app):
@@ -405,37 +417,3 @@ def test_status_colors_readable_on_window_background(app):
     jitter_fg = str(app.jitter_label.cget('foreground'))
     r, g, b = (v // 257 for v in app.root.winfo_rgb(jitter_fg))
     assert core.contrast_ratio(f"#{r:02x}{g:02x}{b:02x}", core.WINDOWS_BG) >= 4.5
-
-
-def test_point_measurement_flow(app, tmp_path, monkeypatch):
-    """Замер точки: кнопка, таймер, итог в таблице, Δ к лучшей точке,
-    отмена, CSV, очистка; без подключения замер не начинается."""
-    import core.measure as measure_mod
-    import core.state as state_mod
-    monkeypatch.setattr(state_mod, "MEASURE_SECONDS", 2.0)
-    monkeypatch.setattr(measure_mod, "MEASURE_MIN_SAMPLES", 2)
-    app.toggle_point()
-    assert not app.state.point_running                      # не подключены
-    online(app)
-    app.toggle_point()
-    assert app.state.point_running and "⏹" in app.point_btn.cget('text')
-    assert pump(app, lambda: len(app.state.points) == 1)
-    assert "📍" in app.point_btn.cget('text')
-    assert "Точка 1" in app.event_line.cget('text')
-    rows = app.points_tree.get_children()
-    assert len(rows) == 1 and str(app.points_tree.item(rows[0])['values'][0]).startswith("★")
-    assert pump(app, lambda: app.point_lbl.cget('text').startswith("До лучшей точки 1"))
-    app.toggle_point()
-    app.toggle_point()                                      # повторное нажатие — отмена
-    assert not app.state.point_running and len(app.state.points) == 1
-    path = tmp_path / "points.csv"
-    monkeypatch.setattr(main.filedialog, "asksaveasfilename", lambda **k: str(path))
-    app.export_points_csv()
-    assert path.read_text(encoding="utf-8-sig").count("\n") == 2
-    app.rebuild_ui()                                        # смена языка не теряет замеры
-    assert len(app.points_tree.get_children()) == 1
-    app.toggle_roof_mode()                                  # крышный режим — Δ к точке
-    assert pump(app, lambda: "точка 1:" in app.r_primary.cget('text'))
-    app.toggle_roof_mode()
-    app.clear_points()
-    assert not app.points_tree.get_children() and app.point_lbl.cget('text') == ""
