@@ -172,10 +172,11 @@ def test_trend_reset():
 WALL = datetime.datetime(2026, 9, 24, 12, 0, 0)
 
 
-def snap(rsrp=-90.0, sinr=10.0, pci=287, earfcn=1300, **kw):
+def snap(rsrp=-90.0, sinr=10.0, pci=287, earfcn=1300, plmn="25002", bands=(3,), **kw):
     return core.Snapshot(rsrp=rsrp, sinr=sinr, rsrq=-9.0, rssi=-60.0,
-                         pci=pci, earfcn=earfcn, bands=(3,), band_label="B3",
-                         plmn="25002", enodeb=100, sector=1, **kw)
+                         pci=pci, earfcn=earfcn, bands=bands,
+                         band_label="+".join(f"B{b}" for b in bands),
+                         plmn=plmn, enodeb=100, sector=1, **kw)
 
 
 def test_state_peaks_and_delta():
@@ -261,6 +262,36 @@ def test_state_top_cells_sorted_by_sinr():
     top = st.top_cells(2)
     assert [c.key.pci for c in top] == [2, 1]
     assert top[1].best_sinr == 12 and top[1].samples == 2
+
+
+def test_best_cells_split_by_operator():
+    """Одна и та же сота (общая сеть) у двух операторов — две строки: после
+    смены SIM-карты операторы сравниваются, а не смешиваются."""
+    st = core.SignalState()
+    st.ingest(snap(sinr=9, plmn="25002", operator="МегаФон"), 1.0, WALL)
+    st.ingest(snap(sinr=14, plmn="25001", operator="МТС"), 2.0, WALL)
+    top = st.top_cells()
+    assert [(c.operator_label, c.best_sinr) for c in top] == [("МТС (25001)", 14), ("МегаФон (25002)", 9)]
+    assert top[0].is_current(st.last) and not top[1].is_current(st.last)
+
+
+def test_best_cells_survive_cell_and_band_changes():
+    """Смена соты или бэнда (Band Lock) в той же сессии не стирает таблицу:
+    результаты разных бэндов сравниваются."""
+    st = core.SignalState()
+    st.ingest(snap(sinr=12, earfcn=1300, pci=287, bands=(3,)), 1.0, WALL)
+    st.ingest(snap(sinr=7, earfcn=6200, pci=101, bands=(20,)), 2.0, WALL)
+    st.ingest(snap(sinr=8, earfcn=6200, pci=101, bands=(20,)), 3.0, WALL)
+    assert [(c.key.earfcn, c.best_sinr) for c in st.top_cells()] == [(1300, 12), (6200, 8)]
+
+
+def test_operator_label_fallbacks():
+    cs = core.CellStats(core.CellKey(1300, 1), "B3", None, None)
+    assert cs.operator_label == "-"
+    cs.plmn = "25002"
+    assert cs.operator_label == "25002"
+    cs.operator = "МегаФон"
+    assert cs.operator_label == "МегаФон (25002)"
 
 
 def test_state_log_and_observed_bands():
@@ -525,112 +556,3 @@ def test_to_rgb_rejects_garbage():
     assert to_rgb("#0b9") == (0, 187, 153)
     with pytest.raises(ValueError):
         to_rgb("#12")
-
-
-# =========================================================
-# Замер точки (core.measure + SignalState)
-# =========================================================
-
-def _measure(state, values, start=0.0, step=1.0, cell=(1300, 287), **kw):
-    """Замер: отсчёты SINR values по одному в step секунд, затем завершение."""
-    state.start_point(start, duration=len(values) * step)
-    for i, v in enumerate(values):
-        state.ingest(snap(sinr=v, earfcn=cell[0], pci=cell[1], **kw), start + i * step)
-    return state.finish_point(start + len(values) * step)
-
-
-def test_percentile_and_summary():
-    from core.measure import percentile, summarize
-    assert percentile([1, 2, 3, 4], 0.5) == 2.5
-    assert percentile([5], 0.9) == 5
-    s = summarize([10, 11, 12, 13, 30])         # выброс 30 не тянет медиану
-    assert s.median == 12 and s.p10 == 10.4 and s.p90 == 23.2 and s.spread == 12.8
-    assert summarize([]) is None
-
-
-def test_point_measurement_median_and_numbering():
-    st = core.SignalState()
-    r1 = _measure(st, [10, 11, 12, 40, 11, 12, 10, 11])
-    assert r1.ok and r1.number == 1 and r1.samples == 8
-    assert r1.median('sinr') == 11.0 and r1.cell == core.CellKey(1300, 287)
-    assert not r1.cell_changed and r1.cell_label == "B3 · PCI 287"
-    r2 = _measure(st, [15] * 6, start=100)
-    assert r2.number == 2 and [p.number for p in st.points] == [1, 2]
-    assert not st.point_running
-
-
-def test_point_not_finished_early_and_late_samples_ignored():
-    st = core.SignalState()
-    st.start_point(0.0, duration=10)
-    for i in range(6):
-        st.ingest(snap(sinr=10), float(i))
-    assert st.finish_point(9.0) is None and st.point_running
-    assert st.point_remaining(9.0) == pytest.approx(1.0)
-    st.ingest(snap(sinr=99), 10.5)              # после конца — не в замер
-    res = st.finish_point(10.5)
-    assert res.samples == 6 and res.median('sinr') == 10
-
-
-def test_point_with_too_few_samples_is_not_counted():
-    """Данные не шли (роутер молчал) — замер не засчитывается, номер не тратится."""
-    st = core.SignalState()
-    res = _measure(st, [10, 11])
-    assert res is not None and not res.ok
-    assert st.points == []
-    assert _measure(st, [12] * 6, start=50).number == 1
-
-
-def test_point_marks_cell_change():
-    st = core.SignalState()
-    st.start_point(0.0, duration=10)
-    for i in range(10):
-        cell = (1300, 287) if i < 7 else (6200, 101)
-        st.ingest(snap(sinr=10, earfcn=cell[0], pci=cell[1]), float(i))
-    res = st.finish_point(10.0)
-    assert res.cell_changed and res.cell == core.CellKey(1300, 287)
-
-
-def test_best_point_and_delta_use_medians():
-    st = core.SignalState()
-    _measure(st, [8] * 6, rsrp=-95)
-    _measure(st, [14] * 6, start=50, rsrp=-90)
-    _measure(st, [14] * 6, start=100, rsrp=-85)     # равный SINR — решает RSRP
-    best = st.best_point('sinr')
-    assert best.number == 3
-    for i, v in enumerate((13, 40, 12)):             # выброс 40 не меняет медиану
-        st.ingest(snap(sinr=v), 200.0 + i)
-    point, delta = st.delta_to_best('sinr')
-    assert point.number == 3 and delta == -1.0
-    assert st.delta_to_best('nr_sinr') is None
-    st.clear_points()
-    assert st.best_point('sinr') is None and st.delta_to_best('sinr') is None
-
-
-def test_reset_clears_points_and_running_measurement():
-    st = core.SignalState()
-    _measure(st, [10] * 6)
-    st.start_point(100.0)
-    st.reset()
-    assert st.points == [] and not st.point_running
-
-
-def test_point_lines_mark_best_and_cell_change():
-    st = core.SignalState()
-    _measure(st, [8] * 6)
-    _measure(st, [14] * 6, start=50)
-    lines = core.point_lines(st.points)
-    assert lines[1].startswith("★ Точка 2") and "SINR 14 (14…14)" in lines[1]
-    assert not lines[0].startswith("★")
-    assert core.format_summary(None) == "-"
-
-
-def test_write_points_csv(tmp_path):
-    from core.export import POINT_CSV_FIELDS
-    st = core.SignalState()
-    _measure(st, [10.5] * 6)
-    path = tmp_path / "points.csv"
-    assert core.write_points_csv(str(path), st.points, 'ru') == 1
-    rows = path.read_text(encoding="utf-8-sig").splitlines()
-    assert rows[0].split(";") == list(POINT_CSV_FIELDS)
-    row = dict(zip(POINT_CSV_FIELDS, rows[1].split(";"), strict=True))
-    assert row['point'] == "1" and row['sinr_median'] == "10,5" and row['nr_sinr_median'] == ""

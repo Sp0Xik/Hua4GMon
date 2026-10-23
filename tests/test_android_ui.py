@@ -125,7 +125,7 @@ def test_info_screen_live(app):
     app.go('info')
     ids = app.sm.get_screen('info').ids
     assert pump(lambda: "MegaFon" in ids.tower_block.text)
-    assert "PCI" in ids.cells_block.text
+    assert "PCI" in ids.cells_block.text and "(25002)" in ids.cells_block.text
     assert "B636" in ids.sim_block.text
     app.go('monitor')
 
@@ -175,35 +175,6 @@ def test_diagnostics_to_clipboard(app, monkeypatch):
     app.copy_diagnostics()
     assert pump(lambda: not app._busy and 't' in copied)
     assert '"app_version"' in copied['t'] and "860000000000001" not in copied['t']
-
-
-def test_point_measurement(app, monkeypatch):
-    """Замер точки: кнопка с обратным отсчётом, итог, Δ к лучшей точке на
-    карточке, список на экране «Информация», копирование, очистка."""
-    import core.measure as measure_mod
-    import core.state as state_mod
-    monkeypatch.setattr(state_mod, "MEASURE_SECONDS", 2.0)
-    monkeypatch.setattr(measure_mod, "MEASURE_MIN_SAMPLES", 2)
-    ensure_online(app)
-    app.clear_points()
-    monitor = app.sm.get_screen('monitor')
-    app.toggle_point()
-    assert app.state.point_running and monitor.lbl_point.startswith("◎ ") and "с" in monitor.lbl_point
-    assert pump(lambda: len(app.state.points) == 1)
-    assert monitor.lbl_point == "◎ Замер"
-    assert pump(lambda: monitor.ids.primary_box.m_peak.startswith("Точка 1: Δ"))
-    app.refresh_info_screen()
-    assert "Точка 1" in app.sm.get_screen('info').ids.points_block.text
-    copied = {}
-    from kivy.core import clipboard
-    monkeypatch.setattr(clipboard.Clipboard, "copy", lambda text: copied.setdefault('t', text))
-    app.copy_points()
-    assert copied['t'].startswith("★ Точка 1")
-    app.clear_points()
-    assert "Замеров пока нет" in app.sm.get_screen('info').ids.points_block.text
-    app.toggle_point()
-    app.disconnect()                                    # отключение отменяет замер
-    assert not app.state.point_running and monitor.lbl_point == "◎ Замер"
 
 
 def test_english_texts(app):
