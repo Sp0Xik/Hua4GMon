@@ -406,6 +406,10 @@ class Hua4GMon:
         with contextlib.suppress(tk.TclError):
             style.theme_use('clam')
         style.configure("Treeview", rowheight=self.px(22))
+        # Классические tk.Label (цветные цифры и статусы) — на фоне темы ttk.
+        # Иначе за каждой надписью светлый прямоугольник системного цвета
+        # (SystemButtonFace, #f0f0f0). Крышный режим задаёт свой фон явно.
+        self.root.option_add('*Label.background', WINDOWS_BG)
 
         self.top_bar = ttk.Frame(self.root)
         self.top_bar.pack(fill=tk.X, padx=5, pady=2)
