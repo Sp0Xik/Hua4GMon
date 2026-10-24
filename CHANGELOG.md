@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-24
+
+Исправления и доработки после 1.4.0: оператор в «Лучших сотах», читаемые
+цвета статусов, обновление certifi (безопасность), README со
+скриншотами; зависимости обновляются без ручных правок.
+
 ### Добавлено
 - CI: проверка типов **mypy** для `core/` и `tools/` (задача lint;
   настройки — в `pyproject.toml`, версия закреплена в
@@ -362,7 +368,8 @@
 Исходная версия с matplotlib-графиком, сохранением конфига и
 монолитной архитектурой (только Windows).
 
-[Unreleased]: https://github.com/Sp0Xik/Hua4GMon/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/Sp0Xik/Hua4GMon/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/Sp0Xik/Hua4GMon/releases/tag/v1.4.1
 [1.4.0]: https://github.com/Sp0Xik/Hua4GMon/releases/tag/v1.4.0
 [1.3.0]: https://github.com/Sp0Xik/Hua4GMon/releases/tag/1.3.0
 [1.2.0]: https://github.com/Sp0Xik/Hua4GMon/releases/tag/1.2.0
