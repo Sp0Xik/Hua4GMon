@@ -526,7 +526,7 @@ def test_contrast_ratio_reference_values():
     assert contrast_ratio("white", "black") == contrast_ratio("black", "white")
 
 
-@pytest.mark.parametrize("background", ["#f0f0f0", "#ebedf0", "#ffffff"])
+@pytest.mark.parametrize("background", ["#dcdad5", "#f0f0f0", "#ebedf0", "#ffffff"])
 def test_status_colors_readable_on_light_backgrounds(background):
     """Окно Windows, карточка темы «Солнце», график: контраст ≥ 4,5:1 (WCAG AA)."""
     from core.palette import contrast_ratio, readable_on
@@ -540,6 +540,7 @@ def test_readable_on_keeps_good_colors_and_dark_backgrounds():
     assert readable_on("#333333", "#f0f0f0") == "#333333"      # уже читаемый
     assert readable_on("#fdcb6e", "#000000") == "#fdcb6e"      # тёмный фон — как есть
     assert readable_on("#fdcb6e", "#f0f0f0") == "#8a6100"      # тёмный янтарный, не олива
+    assert readable_on("#fdcb6e", "#dcdad5") == "#7d5800"      # на фоне окна — темнее
 
 
 def test_readable_on_keeps_hue():
