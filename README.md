@@ -1,11 +1,25 @@
-# Hua4GMon — наведение LTE/5G-антенн для роутеров Huawei
+<div align="center">
 
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-blue)
+<img src="assets/icon-512.png" width="112" alt="">
+
+# Hua4GMon
+
+**Наведение LTE/5G-антенн для роутеров Huawei**<br>
+Крутите антенну — программа в реальном времени покажет, стало лучше или хуже
+
+[![Windows 10/11 — скачать .exe](https://img.shields.io/badge/Windows_10%2F11-%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C_.exe-0078D4?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS40djExLjRIMHpNMTIuNiAwSDI0djExLjRIMTIuNnpNMCAxMi42aDExLjRWMjRIMHpNMTIuNiAxMi42SDI0VjI0SDEyLjZ6Ii8+PC9zdmc+)](https://github.com/Sp0Xik/Hua4GMon/releases/latest)
+[![Android 7–16 — скачать APK](https://img.shields.io/badge/Android_7%E2%80%9316-%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C_APK-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Sp0Xik/Hua4GMon/releases/latest)
+
 [![Release](https://img.shields.io/github/v/release/Sp0Xik/Hua4GMon)](https://github.com/Sp0Xik/Hua4GMon/releases)
+[![Downloads](https://img.shields.io/github/downloads/Sp0Xik/Hua4GMon/total)](https://github.com/Sp0Xik/Hua4GMon/releases)
 [![CI](https://github.com/Sp0Xik/Hua4GMon/actions/workflows/build.yml/badge.svg)](https://github.com/Sp0Xik/Hua4GMon/actions/workflows/build.yml)
 [![Android APK](https://github.com/Sp0Xik/Hua4GMon/actions/workflows/build-android.yml/badge.svg?event=push)](https://github.com/Sp0Xik/Hua4GMon/actions/workflows/build-android.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+<img src="docs/images/hero.png" width="860" alt="Hua4GMon в тестовом режиме: окно Windows и экран Android">
+
+</div>
 
 Бесплатный инструмент для **монтажников антенн** и всех, кто сам ставит
 внешнюю MIMO-антенну к роутеру или модему Huawei (B315, B525, B535, B628,
@@ -13,15 +27,9 @@ B636, B818, E3372 и совместимых). Показывает в реаль
 меняется сигнал при повороте антенны, к какой вышке и соте вы
 подключены, и помогает зафиксировать лучший результат.
 
-Один репозиторий — **две платформы**:
-
-| Платформа | Технологии | Точка входа |
-| :-------- | :--------- | :---------- |
-| Windows 10/11 | Tkinter + PyInstaller (один .exe) | `main.py` |
-| Android 7–16 | Kivy + Buildozer | `android_main.py` |
-
-Вся логика (опрос роутера, разбор данных, оценка сигнала, Band Lock,
-переводы) — в общем пакете `core/`, одинаковом для обеих версий.
+Один репозиторий — **две платформы**: портативный `.exe` для Windows и
+APK для Android. Вся логика (опрос роутера, разбор данных, оценка сигнала,
+Band Lock, переводы) — в общем пакете `core/`, одинаковом для обеих версий.
 
 > **English.** Hua4GMon is a free antenna-alignment monitor for Huawei
 > LTE/5G routers and modems (HiLink API via
@@ -34,9 +42,47 @@ B636, B818, E3372 и совместимых). Показывает в реаль
 > [Releases](https://github.com/Sp0Xik/Hua4GMon/releases) page; the
 > interface is available in Russian and English.
 
-## Возможности
+## 🎯 Как пользоваться
 
-**Наведение антенны**
+<table>
+<tr>
+<td width="300" align="center">
+<img src="docs/images/demo.gif" width="280" alt="Тестовый режим Android: антенна поворачивается к вышке, SINR растёт с 2 до 20 дБ">
+<br><sub>Тестовый режим: поворот антенны к вышке —<br>SINR растёт с 2 до 20 дБ, стрелка ↓ → ↑</sub>
+</td>
+<td valign="top">
+
+1. **Подключитесь.** Компьютер или телефон — к Wi-Fi (или USB) роутера.
+   Нажмите **«Найти роутер»** или введите IP (обычно `192.168.8.1`),
+   введите пароль с наклейки. Без роутера — **«Тестовый режим»**.
+2. **Крутите антенну** по стрелке и «Δ до пика». Удобнее всего — по
+   SINR: он лучше всего показывает, насколько чисто антенна «видит»
+   нужную вышку. Включите звук, чтобы не смотреть на экран.
+3. **Закрепите результат.** На экране **«Сеть»** нажмите «Отметить
+   текущие» → «Применить Band Lock», если нужно закрепиться на бэнде.
+   Если что-то пошло не так — «Вернуть как было».
+4. **«Переподключить связь»** помогает модему заново выбрать соту после
+   поворота антенны.
+
+</td>
+</tr>
+</table>
+
+Горячие клавиши Windows: **F11** — крышный режим, **Ctrl+R** — сбросить
+пики, **Ctrl+M** — звук (работают и в русской раскладке). Параметры
+командной строки: `--ip`, `--password` (автоподключение), `--demo`,
+`--self-test`. У .exe нет консоли, поэтому `--verbose` (подробный лог) и
+`--version` выводят текст только при запуске из исходников
+(`python main.py`).
+
+## ✨ Возможности
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 📡 Наведение антенны
+
 - Крупные RSRP / SINR / RSRQ / RSSI с оценкой, пиком сессии и
   **«Δ до пика»** — сколько дБ не хватает до лучшего положения.
 - **Стрелка тенденции** (↑ / → / ↓) по выбранной метрике (по умолчанию
@@ -50,7 +96,25 @@ B636, B818, E3372 и совместимых). Показывает в реаль
 - **Крышный режим** (Windows, F11) и режим **«Солнце»** с высоким
   контрастом (Android).
 
-**Вышка и сота**
+</td>
+<td width="50%" valign="top">
+
+<img src="docs/images/windows-roof.png" alt="Крышный режим Windows">
+<p align="center"><sub>Крышный режим (F11): цифры видно с расстояния</sub></p>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+<img src="docs/images/windows-tower.png" alt="Вкладка «Вышка»: параметры соты и лучшие соты за сессию">
+<p align="center"><sub>«Вышка»: параметры соты и лучшие соты за сессию</sub></p>
+
+</td>
+<td width="50%" valign="top">
+
+### 🗼 Вышка и сота
+
 - Оператор, технология (LTE / LTE+ CA / 5G NSA / 5G SA), бэнд и
   **частота DL по EARFCN**, PCI, eNodeB и сектор, TAC, ширина канала.
 - Агрегация несущих по данным роутера, 5G NR-метрики.
@@ -59,7 +123,15 @@ B636, B818, E3372 и совместимых). Показывает в реаль
   числе с заменой SIM-карты), поэтому бэнды и операторы можно сравнить.
 - CQI и состояние потоков MIMO, модуляция DL/UL, мощность передатчика.
 
-**Настройка роутера** (всё — через официальный веб-API роутера)
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🎛️ Настройка роутера
+
+Всё — через официальный веб-API роутера.
+
 - **Band Lock** по списку бэндов, которые поддерживает ваш модем;
   бэнды, замеченные в эфире, — первыми; «Отметить текущие» одной кнопкой.
 - Перед записью программа читает текущие настройки и меняет **только
@@ -71,7 +143,25 @@ B636, B818, E3372 и совместимых). Показывает в реаль
   выбирает лучшую соту. Перезагрузка роутера с автоматическим
   переподключением программы.
 
-**Сервис**
+</td>
+<td width="50%" valign="top">
+
+<img src="docs/images/windows-network.png" alt="Вкладка «Сеть»: Band Lock, антенны, управление роутером">
+<p align="center"><sub>«Сеть»: Band Lock, антенны, переподключение</sub></p>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top" align="center">
+
+<img src="docs/images/android-connection.png" width="220" alt="Экран подключения Android">
+<p align="center"><sub>Подключение: автопоиск и тестовый режим</sub></p>
+
+</td>
+<td width="50%" valign="top">
+
+### 🧰 Сервис
+
 - **Автопоиск роутера** по типовым адресам.
 - **Тестовый режим** на обеих платформах: симулятор модема (вращение
   антенны, смена сот, CA, 5G, Band Lock, перезагрузка) — можно освоить
@@ -85,7 +175,25 @@ B636, B818, E3372 и совместимых). Показывает в реаль
   SNI, различает блокировку по IP и по имени сайта.
 - Два языка: русский и английский.
 
-## Установка
+</td>
+</tr>
+</table>
+
+## 📱 Android
+
+<table>
+<tr>
+<td align="center" width="25%"><img src="docs/images/android-monitor.png" alt="Монитор, тёмная тема"><br><sub>Монитор</sub></td>
+<td align="center" width="25%"><img src="docs/images/android-monitor-sun.png" alt="Монитор, тема «Солнце»"><br><sub>Тема «Солнце»</sub></td>
+<td align="center" width="25%"><img src="docs/images/android-info.png" alt="Информация о станции и лучшие соты"><br><sub>Вышка и лучшие соты</sub></td>
+<td align="center" width="25%"><img src="docs/images/android-tools.png" alt="Band Lock и антенны"><br><sub>Band Lock и антенны</sub></td>
+</tr>
+</table>
+
+<sub>Все скриншоты сняты в тестовом режиме: оператор, соты и номера —
+вымышленные данные симулятора.</sub>
+
+## 📥 Установка
 
 ### Windows
 
@@ -97,20 +205,26 @@ B636, B818, E3372 и совместимых). Показывает в реаль
 антивируса. Всё это время видна заставка с ходом запуска: распаковка,
 загрузка программы, построение окна.
 
+<details>
+<summary><b>SmartScreen, браузер или антивирус блокирует файл</b></summary>
+
+<br>
+
 При первом запуске неподписанного .exe Windows SmartScreen может
 предупредить «Неизвестный издатель» — нажмите «Подробнее» →
 «Выполнить в любом случае». Если файл не открывается, в PowerShell:
 `Unblock-File .\Hua4GMon-vX.Y.Z.exe`.
 
-**Если браузер или антивирус блокирует файл.** Hua4GMon не подписан
-цифровой подписью, а упаковщиком PyInstaller пользуются и авторы
-вредоносных программ, поэтому Chrome («Заблокировано скачивание опасного
-файла»), SmartScreen или антивирус иногда принимают новую сборку за
-опасную. Это ложное срабатывание: каждая сборка — новый файл, и его
-репутация начинается с нуля. Скачивайте программу только со страницы
-[Releases] и сверяйте SHA256 с указанным в релизе — в PowerShell:
+Hua4GMon не подписан цифровой подписью, а упаковщиком PyInstaller
+пользуются и авторы вредоносных программ, поэтому Chrome («Заблокировано
+скачивание опасного файла»), SmartScreen или антивирус иногда принимают
+новую сборку за опасную. Это ложное срабатывание: каждая сборка — новый
+файл, и его репутация начинается с нуля. Скачивайте программу только со
+страницы [Releases] и сверяйте SHA256 с указанным в релизе — в PowerShell:
 `Get-FileHash .\Hua4GMon-vX.Y.Z.exe`. В Chrome заблокированный файл можно
 сохранить из списка загрузок: стрелка «>» справа от файла.
+
+</details>
 
 Проверка программы без роутера (для обращения в поддержку):
 `Hua4GMon-vX.Y.Z.exe --self-test отчёт.txt` — в файле отчёта версия и
@@ -122,34 +236,14 @@ B636, B818, E3372 и совместимых). Показывает в реаль
 Скачайте `Hua4GMon-vX.Y.Z.apk` из [Releases] и установите (понадобится
 разрешить установку из этого источника). Android 7.0–16.
 
+> [!NOTE]
 > **Обновление с 1.3.0 и старше:** начиная с 1.4.0 APK подписывается
 > постоянным ключом. Старую версию нужно один раз удалить, дальше
 > обновления ставятся поверх.
 
 [Releases]: https://github.com/Sp0Xik/Hua4GMon/releases
 
-## Как пользоваться
-
-1. Подключите компьютер или телефон к Wi-Fi (или USB) роутера. Нажмите
-   **«Найти роутер»** или введите IP (обычно `192.168.8.1`), введите
-   пароль с наклейки и подключитесь. Без роутера — **«Тестовый режим»**.
-2. На мониторе крутите антенну по стрелке и «Δ до пика». Удобнее всего —
-   по SINR: он лучше всего показывает, насколько чисто антенна «видит»
-   нужную вышку. Включите звук, чтобы не смотреть на экран.
-3. Найдя лучшее положение, на экране **«Сеть»** нажмите «Отметить
-   текущие» → «Применить Band Lock», если нужно закрепиться на бэнде.
-   Если что-то пошло не так — «Вернуть как было».
-4. «Переподключить связь» помогает модему заново выбрать соту после
-   поворота антенны.
-
-Горячие клавиши Windows: **F11** — крышный режим, **Ctrl+R** — сбросить
-пики, **Ctrl+M** — звук (работают и в русской раскладке). Параметры
-командной строки: `--ip`, `--password` (автоподключение), `--demo`,
-`--self-test`. У .exe нет консоли, поэтому `--verbose` (подробный лог) и
-`--version` выводят текст только при запуске из исходников
-(`python main.py`).
-
-## Поддерживаемые устройства
+## 📶 Поддерживаемые устройства
 
 Hua4GMon работает поверх библиотеки
 [huawei-lte-api](https://github.com/Salamek/huawei-lte-api) 2.x и
@@ -169,7 +263,7 @@ E8372h-608, E3372, E3531, E5530As-2, 5G CPE Pro 2 (H122-373),
 [HARDWARE_VALIDATION.md](HARDWARE_VALIDATION.md) — результаты проверки на
 вашей модели очень помогут проекту.
 
-## Для разработчиков
+## 🛠️ Для разработчиков
 
 ```bash
 git clone https://github.com/Sp0Xik/Hua4GMon
@@ -183,6 +277,19 @@ mypy                           # типы core/ и tools/ (настройки �
 
 UI-тесты в Linux запускаются под Xvfb: `xvfb-run -a pytest`. Тесты
 Android-интерфейса требуют `pip install kivy==2.3.0`.
+
+```mermaid
+flowchart LR
+    W["main.py<br/>Windows · Tkinter"] --> C
+    A["android_main.py<br/>Android · Kivy"] --> C
+    C["core/<br/>опрос · анализ · Band Lock · переводы"] --> L["huawei-lte-api"]
+    L -->|HiLink API| R(("Роутер<br/>Huawei"))
+```
+
+| Платформа | Технологии | Точка входа |
+| :-------- | :--------- | :---------- |
+| Windows 10/11 | Tkinter + PyInstaller (один .exe) | `main.py` |
+| Android 7–16 | Kivy + Buildozer | `android_main.py` |
 
 Структура `core/`:
 
@@ -198,7 +305,12 @@ Android-интерфейса требуют `pip install kivy==2.3.0`.
 | `demo.py` | симулятор модема для тестового режима |
 | `discovery.py`, `whitelist.py`, `export.py`, `i18n.py` | автопоиск, белые списки, CSV/диагностика, переводы |
 
-**Сборка.** CI (`.github/workflows/`) проверяет код на Python 3.11–3.14,
+<details>
+<summary><b>Сборка</b></summary>
+
+<br>
+
+CI (`.github/workflows/`) проверяет код на Python 3.11–3.14,
 гоняет тесты и на Windows, и собирает обе платформы; на теге `vX.Y.Z`
 выпускает релиз. Windows: `pip install -r requirements-build.txt`, затем
 `pyinstaller --noconfirm packaging/windows.spec` — получится один
@@ -213,6 +325,7 @@ Android-интерфейса требуют `pip install kivy==2.3.0`.
 Foundation); о ложном срабатывании можно сообщить
 [Google](https://safebrowsing.google.com/safebrowsing/report_error/) и
 [Microsoft](https://www.microsoft.com/en-us/wdsi/filesubmission).
+
 Android: стек Buildozer 1.5.0 + python-for-android
 v2024.01.21 + NDK 25b закреплён намеренно (новый p4a тянет Python 3.14,
 где ломается pyjnius); еженедельная задача «canary» проверяет Buildozer
@@ -223,20 +336,36 @@ v2024.01.21 + NDK 25b закреплён намеренно (новый p4a тя
 собирает библиотеки для страниц памяти 4 КБ, поэтому на устройствах со
 страницами 16 КБ (часть Android 15+) APK может не запуститься.
 
-**Релиз.** Тег `vX.Y.Z` (равный `__version__`) создаёт **черновик** релиза:
+</details>
+
+<details>
+<summary><b>Релиз</b></summary>
+
+<br>
+
+Тег `vX.Y.Z` (равный `__version__`) создаёт **черновик** релиза:
 к нему прикрепляют .exe и APK два разных workflow. Опубликуйте черновик
 вручную (Releases → Edit → Publish), когда в нём есть оба файла, их SHA256
 и лицензии, и поставьте в CHANGELOG дату релиза. Уведомления о лицензиях
 (`THIRD-PARTY-NOTICES.txt`) CI собирает сам при каждой сборке из
 установленных версий — после обновления зависимостей ничего делать не нужно.
 
-**Подпись APK.** Релизный APK подписывается ключом из секретов
+</details>
+
+<details>
+<summary><b>Подпись APK</b></summary>
+
+<br>
+
+Релизный APK подписывается ключом из секретов
 репозитория (Settings → Secrets and variables → Actions):
 `ANDROID_KEYSTORE_BASE64` (keystore в base64), `ANDROID_KEYSTORE_PASSWORD`,
 `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Без них в обычных сборках
 получается debug-APK, а сборка по тегу останавливается.
 
-## Благодарности
+</details>
+
+## 🙏 Благодарности
 
 Отдельный **респект [Adam Schubert (Salamek)][salamek]** и контрибьюторам
 библиотеки [huawei-lte-api][hla-repo] — без их работы по разбору веб-API
@@ -245,14 +374,14 @@ v2024.01.21 + NDK 25b закреплён намеренно (новый p4a тя
 [salamek]: https://github.com/Salamek
 [hla-repo]: https://github.com/Salamek/huawei-lte-api
 
-## Лицензия
+## 📄 Лицензия
 
 Код Hua4GMon — MIT, см. [LICENSE](LICENSE). Сборки включают сторонние
 компоненты под их собственными лицензиями (huawei-lte-api — LGPL-3.0,
 шрифт DejaVu и др.); список и тексты — в [LICENSE](LICENSE) и папке
 [LICENSES](LICENSES/).
 
-## Вклад
+## 🤝 Вклад
 
 Issue и pull request приветствуются — порядок работы описан в
 [CONTRIBUTING.md](CONTRIBUTING.md). Особенно ценны результаты проверки на
