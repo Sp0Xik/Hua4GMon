@@ -404,6 +404,22 @@ def test_diagnostics_file_error_is_not_router_error(app, tmp_path, monkeypatch):
     assert "Не удалось записать файл" in text and "Команда не выполнена" not in text
 
 
+def test_labels_share_theme_background(app):
+    """За надписями нет светлых прямоугольников: фон tk.Label = фон темы ttk."""
+    assert main.ttk.Style(app.root).lookup('TFrame', 'background') == core.WINDOWS_BG
+    labels, stack = [], [app.root]
+    while stack:
+        w = stack.pop()
+        if w is app.roof_win:
+            continue                    # крышный режим — свой чёрный фон
+        stack.extend(w.winfo_children())
+        if w.winfo_class() == 'Label':
+            labels.append(w)
+    assert len(labels) >= 15
+    for w in labels:
+        assert w.cget('background') == core.WINDOWS_BG, w.cget('text')
+
+
 def test_status_colors_readable_on_window_background(app):
     """Цифры и подписи статусов читаются на светлом фоне окна (≥ 4,5:1)."""
     online(app)

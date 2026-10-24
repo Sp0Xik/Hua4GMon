@@ -10,8 +10,9 @@ Android — жёлтый и зелёный почти не видны (конт�
 """
 from __future__ import annotations
 
-# Фон окна Windows (SystemButtonFace) и карточки темы «Солнце» на Android.
-WINDOWS_BG = '#f0f0f0'
+# Фон окна Windows — фон темы ttk «clam» (на нём все вкладки; классические
+# tk.Label окно красит в этот же цвет) и карточки темы «Солнце» на Android.
+WINDOWS_BG = '#dcdad5'
 SUN_CARD_BG = '#ebedf0'
 MIN_CONTRAST = 4.5          # WCAG 2.x, уровень AA для обычного текста
 
@@ -20,8 +21,10 @@ NAMED: dict[str, str] = {
     'green': '#008000', 'orange': '#ffa500', 'red': '#ff0000',
 }
 # Подобрано вручную: равномерное затемнение жёлтого даёт оливковый, а
-# «Средний» должен читаться как предупреждение (тёмный янтарный).
-_DARK_VARIANTS: dict[str, str] = {'#fdcb6e': '#8a6100'}
+# «Средний» должен читаться как предупреждение (тёмный янтарный). Берётся
+# первый вариант с достаточным контрастом: светлее — на карточке «Солнце»,
+# темнее — на более тёмном фоне окна Windows.
+_DARK_VARIANTS: dict[str, tuple[str, ...]] = {'#fdcb6e': ('#8a6100', '#7d5800')}
 
 RGB = tuple[int, int, int]
 
@@ -64,9 +67,9 @@ def readable_on(color: str, background: str, min_ratio: float = MIN_CONTRAST) ->
     """
     if relative_luminance(background) < 0.5 or contrast_ratio(color, background) >= min_ratio:
         return color
-    variant = _DARK_VARIANTS.get(to_hex(to_rgb(color)))
-    if variant is not None and contrast_ratio(variant, background) >= min_ratio:
-        return variant
+    for variant in _DARK_VARIANTS.get(to_hex(to_rgb(color)), ()):
+        if contrast_ratio(variant, background) >= min_ratio:
+            return variant
     r, g, b = to_rgb(color)
     for step in range(99, -1, -1):
         candidate = to_hex((round(r * step / 100), round(g * step / 100), round(b * step / 100)))
