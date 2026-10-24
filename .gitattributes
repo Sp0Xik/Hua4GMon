@@ -4,6 +4,7 @@
 
 # Двоичные файлы — без преобразований и текстовых diff.
 *.png  binary
+*.gif  binary
 *.ico  binary
 *.ttf  binary
 *.apk  binary
