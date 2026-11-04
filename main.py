@@ -42,15 +42,10 @@ from core import (
     CONTROL_HOSTS_NEUTRAL,
     DISCOVERY_CANDIDATES,
     GRAPH_HISTORY,
-    GRAPH_MIN_SPAN,
     LANGUAGES,
     MIMO_LABELS,
-    PARAM_RANGES,
     RAT_LABELS,
     REGION_BANDS,
-    TREND_DOWN,
-    TREND_FLAT,
-    TREND_UP,
     UPLINK_LABELS,
     WHITELIST_HOSTS_RU,
     WINDOWS_BG,
@@ -91,6 +86,7 @@ from core import (
     uplink_status,
     write_session_csv,
 )
+from core.graph import GraphViewport
 
 try:
     import winsound
@@ -104,9 +100,6 @@ LTE_PARAMS = ('sinr', 'rsrp', 'rsrq', 'rssi')
 NR_PARAMS = ('nr_sinr', 'nr_rsrp')
 PARAM_TITLES = {'rsrp': 'RSRP', 'rssi': 'RSSI', 'sinr': 'SINR', 'rsrq': 'RSRQ',
                 'nr_rsrp': 'NR RSRP', 'nr_sinr': 'NR SINR', 'nr_rsrq': 'NR RSRQ'}
-TREND_GLYPHS = {TREND_UP: ("↑", "#00b894"), TREND_DOWN: ("↓", "#d63031"),
-                TREND_FLAT: ("→", "#fdcb6e")}
-
 
 def ink(color: str) -> str:
     """Цвет текста, читаемый на светлом фоне окна (контраст ≥ 4,5:1).
@@ -242,6 +235,7 @@ class CanvasGraph(tk.Canvas):
                          highlightbackground='#cccccc', **kw)
         self.s = scale
         self.history = history
+        self.viewport = GraphViewport()
         self.param = 'sinr'
         self.values: list[float] = []
         self.peak: float | None = None
@@ -249,30 +243,30 @@ class CanvasGraph(tk.Canvas):
         self.bind("<Configure>", lambda e: self._redraw())
 
     def set_param(self, param: str) -> None:
+        self.viewport.reset()
         self.param = param
         self.values = []
         self.peak = None
         self._redraw()
 
-    def update_series(self, values: list[float], peak: float | None, stale: bool) -> None:
+    def update_series(self, values: list[float], peak: float | None, stale: bool,
+                      times: list[float] | None = None) -> None:
         self.values = values[-self.history:]
         self.peak = peak
         self.stale = stale
+        self.viewport.update(self.values, times or [], self.param, peak)
+        self._redraw()
+
+    def zoom(self, axis: str, factor: float) -> None:
+        self.viewport.zoom(axis, factor)
+        self._redraw()
+
+    def auto(self) -> None:
+        self.viewport.reset()
         self._redraw()
 
     def _y_range(self) -> tuple[float, float]:
-        lo_lim, hi_lim = PARAM_RANGES.get(self.param.replace('nr_', ''), (-140, 40))
-        pts = list(self.values) + ([self.peak] if self.peak is not None else [])
-        if not pts:
-            return float(lo_lim), float(hi_lim)
-        lo, hi = min(pts), max(pts)
-        span = GRAPH_MIN_SPAN.get(self.param.replace('nr_', ''), 10.0)
-        if hi - lo < span:
-            mid = (hi + lo) / 2
-            lo, hi = mid - span / 2, mid + span / 2
-        lo = max(lo_lim, 5 * ((lo - 1) // 5))
-        hi = min(hi_lim, 5 * -((-(hi + 1)) // 5))
-        return float(lo), float(max(hi, lo + 1))
+        return self.viewport.y_range()
 
     def _redraw(self) -> None:
         self.delete("all")
@@ -295,29 +289,28 @@ class CanvasGraph(tk.Canvas):
                              font=("Segoe UI", 8), fill='#666')
         self.create_line(pl, h - pb, w - pr, h - pb, fill='#888')
         self.create_text((pl + w - pr) / 2, h - 2, anchor='s',
-                         text=t("последние {n} точек").format(n=self.history),
+                         text=t("Последние {s:.0f} с").format(
+                             s=self.viewport.x_range()[1] - self.viewport.x_range()[0]),
                          font=("Segoe UI", 8), fill='#888')
 
         def y_of(v: float) -> float:
             return (h - pb) - plot_h * (max(y_min, min(y_max, v)) - y_min) / rng
 
-        if self.peak is not None:
+        if self.peak is not None and y_min <= self.peak <= y_max:
             py = y_of(self.peak)
             self.create_line(pl, py, w - pr, py, fill=OK_FG, dash=(4, 3))
             self.create_text(pl + 4, py - 2, anchor='sw', font=("Segoe UI", 8),
                              fill=OK_FG, text=t("пик {v}").format(v=fmt_num(self.peak)))
         if not self.values:
             return
-        span = max(self.history - 1, 1)
-        pts: list[float] = []
-        for i, v in enumerate(self.values):
-            pts.extend([pl + plot_w * i / span, y_of(v)])
         color = '#aaaaaa' if self.stale else INFO_FG
-        if len(pts) >= 4:
-            self.create_line(*pts, fill=color, width=max(2, int(2 * s)))
-        lx, ly = pts[-2], pts[-1]
-        r = 3 * s
-        self.create_oval(lx - r, ly - r, lx + r, ly + r, fill=color, outline='')
+        for x1, y1, x2, y2 in self.viewport.segments():
+            self.create_line(pl + plot_w * x1, h - pb - plot_h * y1,
+                             pl + plot_w * x2, h - pb - plot_h * y2,
+                             fill=color, width=max(2, int(2 * s)))
+        if y_min <= self.values[-1] <= y_max:
+            lx, ly, r = w - pr, y_of(self.values[-1]), 3 * s
+            self.create_oval(lx - r, ly - r, lx + r, ly + r, fill=color, outline='')
         self.create_text(w - pr - 4, pt, anchor='ne', fill=color,
                          font=("Segoe UI", 9, "bold"),
                          text=f"{fmt_num(self.values[-1])} {unit_of(self.param)}")
@@ -347,6 +340,8 @@ class Hua4GMon:
         self.link = 'offline'           # offline | connecting | online | reconnecting
         self._interval_seconds = 1.0
         self._busy = False
+        self.graph_win: tk.Toplevel | None = None
+        self.full_graph: CanvasGraph | None = None
         self.roof_win: tk.Toplevel | None = None
         self.band_vars: dict[int, tk.BooleanVar] = {}
         self._band_list: list[int] = list(REGION_BANDS)
@@ -470,6 +465,7 @@ class Hua4GMon:
             'bands': {b: v.get() for b, v in self.band_vars.items()},
             'tab': self.notebook.index(self.notebook.select()),
         }
+        self._close_graph()
         self._saved.update(ontop=self.ontop_var.get(), sound=self.sound_var.get(),
                            graph=self.graph_param.get())
         self.notebook.destroy()
@@ -598,15 +594,7 @@ class Hua4GMon:
             peak.pack(side=tk.BOTTOM)
             self.lbl_vars[param] = {'val': val, 'status': status, 'peak': peak}
 
-        self.dir_frame = ttk.LabelFrame(self.tab_monitor, text="", padding=6)
-        self.dir_frame.pack(fill=tk.X, padx=10, pady=4)
-        self.dir_label = tk.Label(self.dir_frame, text="—", font=("Segoe UI", 30, "bold"),
-                                  fg=MUTED_FG)
-        self.dir_label.pack()
-        self.dir_text = tk.Label(self.dir_frame, text=t("Накапливаю данные..."),
-                                 font=("Segoe UI", 10), fg=MUTED_FG)
-        self.dir_text.pack()
-        self.advice_lbl = self._wrap(tk.Label(self.dir_frame, text="", fg=WARN_FG,
+        self.advice_lbl = self._wrap(tk.Label(self.tab_monitor, text="", fg=WARN_FG,
                                               font=("Segoe UI", 9), justify='left'), 80)
         self.advice_lbl.pack(fill=tk.X)
 
@@ -626,7 +614,7 @@ class Hua4GMon:
 
         self.ctrl_frame = ttk.Frame(self.tab_monitor)
         self.ctrl_frame.pack(fill=tk.X, padx=10, pady=3)
-        ttk.Label(self.ctrl_frame, text=t("График и стрелка:")).pack(side=tk.LEFT)
+        ttk.Label(self.ctrl_frame, text=t("График:")).pack(side=tk.LEFT)
         self.graph_param = tk.StringVar(value=self._saved['graph'])
         self.graph_cb = ttk.Combobox(self.ctrl_frame, textvariable=self.graph_param,
                                      values=self._graph_params, state='readonly', width=9)
@@ -637,12 +625,13 @@ class Hua4GMon:
         ttk.Button(self.ctrl_frame, text=t("💾 Экспорт CSV"),
                    command=self.export_csv).pack(side=tk.RIGHT, padx=5)
 
+        ttk.Button(self.ctrl_frame, text=t("Во весь экран"),
+                   command=self.open_fullscreen_graph).pack(side=tk.LEFT, padx=5)
         self.signal_graph = CanvasGraph(self.tab_monitor, self.s, GRAPH_HISTORY,
                                         height=self.px(170))
         self.signal_graph.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
         self.signal_graph.set_param(self.graph_param.get())
         self.state.set_trend_param(self.graph_param.get())
-        self._render_trend_title()
 
     # ---------- вкладка «Сеть» ----------
 
@@ -678,7 +667,7 @@ class Hua4GMon:
         ant_frame = ttk.LabelFrame(self.tab_network, text=t("Переключение антенн"), padding=10)
         ant_frame.pack(fill=tk.X, padx=10, pady=5)
         ttk.Label(ant_frame, text=t("Режим:")).pack(side=tk.LEFT, padx=5)
-        self.antenna_var = tk.StringVar(value=t("Авто"))
+        self.antenna_var = tk.StringVar(value=t("Не прочитано"))
         ttk.Combobox(ant_frame, textvariable=self.antenna_var,
                      values=[t(k) for k in ANTENNA_MODES], state='readonly',
                      width=15).pack(side=tk.LEFT, padx=5)
@@ -689,9 +678,7 @@ class Hua4GMon:
         mgmt = ttk.LabelFrame(self.tab_network, text=t("Управление роутером"), padding=10)
         mgmt.pack(fill=tk.X, padx=10, pady=5)
         self._wrap(ttk.Label(mgmt, justify='left', text=t(
-            "«Переподключить связь» выключает и включает мобильные данные: "
-            "модем заново выбирает лучшую соту — быстрее перезагрузки. "
-            "После перезагрузки программа переподключится сама.")), 80).pack(
+            "«Переподключить связь» выключает и включает мобильные данные. Интернет временно пропадёт. Смена соты и улучшение сигнала не гарантируются. После перезагрузки программа переподключится сама.")), 80).pack(
             anchor='w', pady=(0, 6))
         for text, cmd in ((t("📶 Переподключить связь"), self.reattach),
                           (t("🔄 Перезагрузить роутер"), self.reboot_router),
@@ -729,7 +716,7 @@ class Hua4GMon:
             ('band', 'Рабочий Band (LTE)'), ('freq', 'Частота DL'),
             ('earfcn', 'EARFCN (канал DL)'), ('aggregation', 'Агрегация (CA)'),
             ('dlbandwidth', 'Ширина канала'), ('pci', 'Сектор антенны (PCI)'),
-            ('enodeb', 'eNodeB (Вышка)'), ('sector', 'Cell (Локальный сектор)'),
+            ('cell_id', 'Cell ID (ECI)'), ('enodeb', 'eNodeB (Вышка)'), ('sector', 'Cell (Локальный сектор)'),
             ('tac', 'TAC (зона)'), ('nr', '5G NR'),
         ]
         for i, (key, name) in enumerate(fields):
@@ -743,8 +730,8 @@ class Hua4GMon:
 
         cells = ttk.LabelFrame(self.tab_tower, text=t("Лучшие соты за сессию"), padding=6)
         cells.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
-        cols = ('plmn', 'band', 'pci', 'enb', 'sinr', 'rsrp')
-        heads = (t("Оператор (PLMN)"), t("Бэнд"), "PCI", "eNB / Cell", t("Лучший SINR"),
+        cols = ('plmn', 'band', 'pci', 'cell_id', 'sinr', 'rsrp')
+        heads = (t("Оператор (PLMN)"), t("Бэнд"), "PCI", "Cell ID", t("Лучший SINR"),
                  t("Лучший RSRP"))
         self.cells_tree = ttk.Treeview(cells, columns=cols, show='headings', height=5)
         for c, h in zip(cols, heads, strict=True):
@@ -975,6 +962,31 @@ class Hua4GMon:
         self._sync_interval()
         self.state.reset()
         self.session = session
+        self._close_graph()
+        self._close_roof()
+        self._graph_params = list(LTE_PARAMS)
+        self.graph_cb.config(values=self._graph_params)
+        if self.graph_param.get() not in LTE_PARAMS:
+            self.graph_param.set('sinr')
+        self.state.set_trend_param(self.graph_param.get())
+        self.signal_graph.set_param(self.graph_param.get())
+        for var in self.band_vars.values():
+            var.set(False)
+        self._band_list = list(REGION_BANDS)
+        self._rebuild_band_grid(self._band_list)
+        self.antenna_var.set(t("Не прочитано"))
+        self.net_msg.config(text="")
+        self.jitter_label.config(text=t("Джиттер: -"))
+        self.wl_progress.stop()
+        self.wl_button.config(state='normal')
+        self.wl_title.config(text=t("Не проверялось"), fg=MUTED_FG)
+        self.wl_detail.config(text="—")
+        for host, lbl in self.wl_labels.items():
+            lbl.config(text=host + " —", fg=MUTED_FG)
+        self._show_lock_state(lambda: t("Сейчас на модеме: не прочитано"))
+        self._render(Snapshot())
+        for lbl in self.sim_labels.values():
+            lbl.config(text="-")
         self.conn_msg.config(text="")
         self.event_line.config(text="")
         for item in self.cells_tree.get_children():
@@ -1069,6 +1081,9 @@ class Hua4GMon:
         session = self.session
         if session is None:
             return
+        self.antenna_var.set(t("Не прочитано"))
+        for var in self.band_vars.values():
+            var.set(False)
         # Пока не прочитано — не показываем состояние прошлой сессии.
         self._show_lock_state(lambda: t("Сейчас на модеме: не прочитано"))
 
@@ -1131,18 +1146,13 @@ class Hua4GMon:
             self._tick_id = self.root.after(500, self._tick)
 
     def _render_staleness(self, stale: bool) -> None:
-        param = self.graph_param.get()
-        self.signal_graph.update_series(list(self.state.history.get(param, [])),
-                                        self.state.peaks.get(param), stale)
+        self._refresh_graph(stale)
         if stale:
             age = self.state.age(time.monotonic()) or 0
             self.health_text_lbl.config(text=t("⚠ Данные устарели — нет ответа {s:.0f} с").format(
                 s=age), fg=ERR_FG)
             for widgets in self.lbl_vars.values():
                 widgets['val'].config(fg='#aaaaaa')
-            # Без свежих данных стрелка не должна подсказывать направление.
-            self.dir_label.config(text="⚠", fg='#aaaaaa')
-            self.dir_text.config(text=t("Нет свежих данных"), fg='#aaaaaa')
         self._render_roof(stale)
 
     def _render(self, snap: Snapshot) -> None:
@@ -1165,7 +1175,6 @@ class Hua4GMon:
                     text=t("Пик: {v} (Δ {d})").format(v=fmt_num(peak), d=f"{delta:+g}"),
                     fg=OK_FG if delta > -1 else '#555')
 
-        self._render_trend()
         jitter = st.jitter()
         if jitter is not None:
             jcol = 'green' if jitter < 3 else 'orange' if jitter < 7 else 'red'
@@ -1179,9 +1188,7 @@ class Hua4GMon:
             tips.insert(0, "Мобильные данные на роутере выключены.")
         self.advice_lbl.config(text="\n".join("💡 " + t(tip) for tip in tips[:2]))
 
-        param = self.graph_param.get()
-        self.signal_graph.update_series(list(st.history.get(param, [])),
-                                        st.peaks.get(param), False)
+        self._refresh_graph(False)
         self._render_tower(snap)
         self._render_status(snap, mimo, up)
         self._render_roof(False)
@@ -1193,6 +1200,8 @@ class Hua4GMon:
         if snap.bands:
             freq = f" · {snap.freq_mhz:g} {t('МГц')}" if snap.freq_mhz else ""
             parts.append(f"{snap.band_label.replace('МГц', t('МГц'))}{freq}")
+        if snap.cell_id is not None:
+            parts.append(f"Cell ID {snap.cell_id}")
         if snap.pci is not None:
             parts.append(f"PCI {snap.pci}")
         if snap.enodeb is not None:
@@ -1200,21 +1209,6 @@ class Hua4GMon:
         if snap.rat:
             parts.append(t(RAT_LABELS.get(snap.rat, snap.rat)))
         return " · ".join(parts) if parts else "—"
-
-    def _render_trend_title(self) -> None:
-        title = PARAM_TITLES.get(self.state.trend_param, self.state.trend_param.upper())
-        self.dir_frame.config(text=t("Тенденция {param} (поворачивайте антенну)").format(
-            param=title))
-
-    def _render_trend(self) -> None:
-        arrow, color = TREND_GLYPHS.get(self.state.trend, ("—", "gray"))
-        text = {
-            "↑": t("Сигнал улучшается — продолжайте в том же направлении"),
-            "↓": t("Сигнал ухудшается — поверните обратно"),
-            "→": t("Сигнал стабилен — зафиксируйте антенну"),
-        }.get(arrow, t("Накапливаю данные..."))
-        self.dir_label.config(text=arrow, fg=ink(color))
-        self.dir_text.config(text=text, fg=ink(color))
 
     def _render_tower(self, snap: Snapshot) -> None:
         mhz = t('МГц')
@@ -1231,6 +1225,7 @@ class Hua4GMon:
             'aggregation': ca_text,
             'dlbandwidth': f"DL {dl} / UL {ul}" if ul else dl,
             'pci': fmt_num(snap.pci),
+            'cell_id': str(snap.cell_id) if snap.cell_id is not None else '-',
             'enodeb': fmt_num(snap.enodeb) if snap.enodeb is not None else
             (f"NCI {snap.nci}" if snap.nci else '-'),
             'sector': fmt_num(snap.sector),
@@ -1250,7 +1245,7 @@ class Hua4GMon:
             mark = "▶ " if c.is_current(self.state.last) else ""
             tree.insert('', tk.END, values=(
                 mark + c.operator_label, c.band_label.replace('МГц', t('МГц')),
-                fmt_num(c.key.pci), f"{fmt_num(c.enodeb)}/{fmt_num(c.sector)}",
+                fmt_num(c.key.pci), str(c.cell_id) if c.cell_id is not None else "-",
                 fmt_num(c.best_sinr), fmt_num(c.best_rsrp)))
 
     def _render_status(self, snap: Snapshot, mimo: str | None, up: str | None) -> None:
@@ -1304,10 +1299,49 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.state.set_trend_param(param)
         self.signal_graph.set_param(param)
-        self._render_trend_title()
-        self._render_trend()
-        self.signal_graph.update_series(list(self.state.history.get(param, [])),
-                                        self.state.peaks.get(param), False)
+        self._refresh_graph(self.state.is_stale(time.monotonic(), self._interval_seconds))
+
+    def _refresh_graph(self, stale: bool) -> None:
+        param = self.graph_param.get()
+        for graph in (self.signal_graph, self.full_graph):
+            if graph is not None:
+                if graph.param != param:
+                    graph.set_param(param)
+                graph.update_series(list(self.state.history.get(param, [])),
+                                    self.state.peaks.get(param), stale,
+                                    list(self.state.history_times.get(param, [])))
+
+    def open_fullscreen_graph(self) -> None:
+        if self.graph_win is not None:
+            self.graph_win.lift()
+            return
+        win = tk.Toplevel(self.root)
+        self.graph_win = win
+        win.geometry(f"+{self.root.winfo_rootx()}+{self.root.winfo_rooty()}")
+        win.update_idletasks()
+        win.attributes('-fullscreen', True)
+        win.bind('<Escape>', lambda e: self._close_graph())
+        win.protocol('WM_DELETE_WINDOW', self._close_graph)
+        controls = ttk.Frame(win, padding=8)
+        controls.pack(side=tk.BOTTOM, fill=tk.X)
+        graph = CanvasGraph(win, self.s, GRAPH_HISTORY)
+        self.full_graph = graph
+        graph.pack(fill=tk.BOTH, expand=True)
+        for title, axis, factor in ((t("Время −"), 'time', 2.0),
+                                    (t("Время +"), 'time', 0.5),
+                                    (t("Уровень −"), 'level', 2.0),
+                                    (t("Уровень +"), 'level', 0.5)):
+            ttk.Button(controls, text=title, command=lambda a=axis, f=factor:
+                       graph.zoom(a, f)).pack(side=tk.LEFT, padx=4)
+        ttk.Button(controls, text=t("Авто"), command=graph.auto).pack(side=tk.LEFT, padx=4)
+        ttk.Button(controls, text=t("← Назад"), command=self._close_graph).pack(side=tk.RIGHT)
+        self._refresh_graph(self.state.is_stale(time.monotonic(), self._interval_seconds))
+
+    def _close_graph(self) -> None:
+        if self.graph_win is not None:
+            self.graph_win.destroy()
+        self.graph_win = None
+        self.full_graph = None
 
     def reset_peaks(self) -> None:
         self.state.reset_peaks()
@@ -1421,8 +1455,7 @@ class Hua4GMon:
             self.net_msg.config(text=t("Сначала подключитесь к роутеру."), fg=ERR_FG)
             return
         if not messagebox.askyesno(t("Подтверждение"), t(
-                "Переподключить мобильную связь?\n\nИнтернет пропадёт примерно "
-                "на 5–10 секунд.")):
+                "Переподключить мобильную связь?\n\nМобильные данные будут выключены и включены. Интернет временно пропадёт (обычно на 5–10 секунд). Смена соты и улучшение сигнала не гарантируются.")):
             return
         self._net_action(session.reattach, lambda ok: self.net_msg.config(
             text=t("Связь переподключена.") if ok else
@@ -1525,7 +1558,16 @@ class Hua4GMon:
         self.wl_detail.config(text=t("Проверка занимает несколько секунд."), fg=MUTED_FG)
         for lbl in self.wl_labels.values():
             lbl.config(text=lbl.cget('text').split(' — ')[0] + " — ⏳", fg=MUTED_FG)
-        self._run_bg(run_whitelist_check, self._render_whitelist, self._whitelist_failed)
+        session = self.session
+
+        def done(report: Any) -> None:
+            if session is self.session:
+                self._render_whitelist(report)
+
+        def failed(exc: BaseException) -> None:
+            if session is self.session:
+                self._whitelist_failed(exc)
+        self._run_bg(run_whitelist_check, done, failed)
 
     def _render_whitelist(self, report: Any) -> None:
         self.wl_progress.stop()
@@ -1564,7 +1606,7 @@ class Hua4GMon:
         self.roof_win = win
         self.toggle_on_top()        # при «Поверх окон» — поверх главного окна
         h = max(400, win.winfo_screenheight())
-        big, arrow, small = -int(h * 0.13), -int(h * 0.2), -int(h * 0.035)
+        big, small = -int(h * 0.16), -int(h * 0.035)
         tk.Label(win, text=t("[ESC] или F11 — выход"), font=("Segoe UI", small // 2),
                  fg='gray', bg='black').pack(pady=6)
         self.r_tower = tk.Label(win, text="—", justify='right', anchor='ne',
@@ -1573,9 +1615,9 @@ class Hua4GMon:
         self.r_primary = tk.Label(win, text="-", font=("Consolas", big, "bold"),
                                   bg='black', fg='white')
         self.r_primary.pack(expand=True)
-        self.r_dir = tk.Label(win, text="—", font=("Consolas", arrow, "bold"),
-                              bg='black', fg='gray')
-        self.r_dir.pack(expand=True)
+        self.r_status = tk.Label(win, text="", font=("Segoe UI", small),
+                                 bg="black", fg="#d63031")
+        self.r_status.pack()
         self.r_secondary = tk.Label(win, text="-", font=("Consolas", big, "bold"),
                                     bg='black', fg='white')
         self.r_secondary.pack(expand=True)
@@ -1596,10 +1638,7 @@ class Hua4GMon:
         for lbl, param in ((self.r_primary, primary), (self.r_secondary, secondary)):
             text, col = self._roof_line(param)
             lbl.config(text=text, fg='#555555' if stale else col)
-        arrow, color = TREND_GLYPHS.get(self.state.trend, ("—", "gray"))
-        if stale:
-            arrow, color = "⚠", '#d63031'
-        self.r_dir.config(text=arrow, fg=color)
+        self.r_status.config(text=t("Нет свежих данных") if stale else "")
         snap = self.state.last
         self.r_tower.config(text=self._tower_summary(snap).replace(" · ", "\n")
                             if snap else "—")
@@ -1618,6 +1657,7 @@ class Hua4GMon:
         worker = self.worker
         self.disconnect()
         self._close_roof()
+        self._close_graph()
         self.dispatch.close()
         with contextlib.suppress(tk.TclError):
             self.root.after_cancel(self._tick_id)

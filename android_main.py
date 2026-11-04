@@ -8,7 +8,7 @@ Hua4GMon — Android-версия (Kivy).
 
 Экраны:
     * Подключение — автопоиск роутера, пароль, язык, подсказка, тестовый режим;
-    * Монитор — крупная выбранная метрика со стрелкой и «Δ до пика»,
+    * Монитор — крупная выбранная метрика и «Δ до пика»,
       RSRP/SINR/RSRQ/RSSI, строка вышки, события смены соты, советы,
       график; нижняя панель: звук-парктроник, сброс пиков, меню;
     * Информация — вышка, лучшие соты сессии, SIM/устройство, состояние
@@ -82,16 +82,11 @@ from core import (
     ANTENNA_MODES,
     DISCOVERY_CANDIDATES,
     GRAPH_HISTORY,
-    GRAPH_MIN_SPAN,
     LANGUAGES,
     MIMO_LABELS,
-    PARAM_RANGES,
     RAT_LABELS,
     REGION_BANDS,
     SUN_CARD_BG,
-    TREND_DOWN,
-    TREND_FLAT,
-    TREND_UP,
     UPLINK_LABELS,
     DemoModem,
     RouterSession,
@@ -127,6 +122,7 @@ from core import (
     t,
     uplink_status,
 )
+from core.graph import GraphViewport
 
 APP_NAME = "Hua4GMon"
 
@@ -139,9 +135,8 @@ LTE_PARAMS = ['sinr', 'rsrp', 'rsrq', 'rssi']
 NR_PARAMS = ['nr_sinr', 'nr_rsrp']
 PARAM_TITLES = {'rsrp': 'RSRP', 'rssi': 'RSSI', 'sinr': 'SINR', 'rsrq': 'RSRQ',
                 'nr_rsrp': 'NR RSRP', 'nr_sinr': 'NR SINR', 'nr_rsrq': 'NR RSRQ'}
-TREND_GLYPHS = {TREND_UP: "↑", TREND_DOWN: "↓", TREND_FLAT: "→"}
 
-# Шрифт со стрелками (↑→↓), ⚠, Δ: встроенный Roboto в Kivy их не содержит.
+# Шрифт с символами навигации, ⚠, Δ: встроенный Roboto в Kivy их не содержит.
 # Kivy не подменяет недостающие символы другим шрифтом, а цветных эмодзи
 # (🔊 🧪 ✅ …) в DejaVu Sans нет — они рисуются квадратом. Все подписи
 # Android используют только символы этого шрифта; это проверяет
@@ -284,6 +279,7 @@ class SignalGraph(Widget):
 
     def __init__(self, **kw: Any) -> None:
         super().__init__(**kw)
+        self.viewport = GraphViewport()
         self._values: list[float] = []
         self._peak: float | None = None
         self._param = 'sinr'
@@ -292,11 +288,12 @@ class SignalGraph(Widget):
         self.bind(pos=lambda *a: self._redraw(), size=lambda *a: self._redraw())
 
     def set_data(self, values: list[float], param: str, peak: float | None,
-                 stale: bool) -> None:
+                 stale: bool, times: list[float] | None = None) -> None:
         self._values = list(values)
         self._param = param
         self._peak = peak
         self._stale = stale
+        self.viewport.update(self._values, times or [], param, peak)
         self._redraw()
 
     def _texture(self, text: str, size: float, color: tuple, bold: bool = False) -> Any:
@@ -312,20 +309,16 @@ class SignalGraph(Widget):
             self._tex[key] = tex
         return tex
 
+    def zoom(self, axis: str, factor: float) -> None:
+        self.viewport.zoom(axis, factor)
+        self._redraw()
+
+    def auto(self) -> None:
+        self.viewport.reset()
+        self._redraw()
+
     def _y_range(self) -> tuple[float, float]:
-        base = self._param.replace('nr_', '')
-        lo_lim, hi_lim = PARAM_RANGES.get(base, (-140, 40))
-        pts = self._values + ([self._peak] if self._peak is not None else [])
-        if not pts:
-            return float(lo_lim), float(hi_lim)
-        lo, hi = min(pts), max(pts)
-        span = GRAPH_MIN_SPAN.get(base, 10.0)
-        if hi - lo < span:
-            mid = (hi + lo) / 2
-            lo, hi = mid - span / 2, mid + span / 2
-        lo = max(lo_lim, 5 * ((lo - 1) // 5))
-        hi = min(hi_lim, 5 * -((-(hi + 1)) // 5))
-        return float(lo), float(max(hi, lo + 1))
+        return self.viewport.y_range()
 
     def _redraw(self) -> None:
         from kivy.graphics import Color, Ellipse, Line, Rectangle
@@ -361,28 +354,27 @@ class SignalGraph(Widget):
                                 tuple(theme['c_text']), True)
             Color(1, 1, 1, 1)
             Rectangle(texture=tex, pos=(x0, self.y + h - pt + dp(3)), size=tex.size)
-            tex = self._texture(t("последние {n} точек").format(n=GRAPH_HISTORY),
+            tex = self._texture(t("Последние {s:.0f} с").format(
+                s=self.viewport.x_range()[1] - self.viewport.x_range()[0]),
                                 sp(10), text_col)
             Rectangle(texture=tex, pos=(x0 + (plot_w - tex.width) / 2, self.y + dp(3)),
                       size=tex.size)
 
-            if self._peak is not None:
+            if self._peak is not None and y_min <= self._peak <= y_max:
                 py = y_of(self._peak)
                 Color(0.0, 0.72, 0.58, 1)
                 Line(points=[x0, py, x0 + plot_w, py], width=1, dash_length=dp(4),
                      dash_offset=dp(3))
-            if len(self._values) < 2:
+            if not self._values:
                 return
-            span = max(GRAPH_HISTORY - 1, 1)
-            pts: list[float] = []
-            for i, v in enumerate(self._values[-GRAPH_HISTORY:]):
-                pts.extend([x0 + plot_w * i / span, y_of(v)])
             line_col = (0.6, 0.6, 0.6, 1) if self._stale else (0.0, 0.62, 0.9, 1)
             Color(*line_col)
-            Line(points=pts, width=dp(1.5))
-            lx, ly = pts[-2], pts[-1]
-            r = dp(4)
-            Ellipse(pos=(lx - r, ly - r), size=(2 * r, 2 * r))
+            for x1, y1, x2, y2 in self.viewport.segments():
+                Line(points=[x0 + plot_w * x1, y0 + plot_h * y1,
+                             x0 + plot_w * x2, y0 + plot_h * y2], width=dp(1.5))
+            if y_min <= self._values[-1] <= y_max:
+                lx, ly, r = x0 + plot_w, y_of(self._values[-1]), dp(4)
+                Ellipse(pos=(lx - r, ly - r), size=(2 * r, 2 * r))
             label = t("нет свежих данных") if self._stale else \
                 f"{fmt_num(self._values[-1])} {unit_of(self._param)}"
             tex = self._texture(label, sp(13), line_col, True)
@@ -678,39 +670,10 @@ ScreenManager:
             height: self.texture_size[1] if self.text else 0
             text_size: self.width, None
             halign: 'center'
-        BoxLayout:
+        MetricCard:
+            id: primary_box
             size_hint_y: 0.30
-            spacing: dp(6)
-            MetricCard:
-                id: primary_box
-                size_hint_x: 0.66
-                value_size: sp(54)
-            BoxLayout:
-                orientation: 'vertical'
-                size_hint_x: 0.34
-                canvas.before:
-                    Color:
-                        rgba: app.c_card
-                    RoundedRectangle:
-                        pos: self.pos
-                        size: self.size
-                        radius: [dp(10)]
-                Label:
-                    id: dir_lbl
-                    text: '—'
-                    font_size: sp(72)
-                    bold: True
-                    color: 0.5, 0.5, 0.5, 1
-                Label:
-                    id: dir_text_lbl
-                    text: ''
-                    font_size: sp(12)
-                    color: app.c_sub
-                    size_hint_y: None
-                    height: dp(44)
-                    text_size: self.width - dp(8), None
-                    halign: 'center'
-                    valign: 'middle'
+            value_size: sp(54)
         GridLayout:
             cols: 3
             spacing: dp(6)
@@ -781,6 +744,7 @@ ScreenManager:
         Header:
             title: root.lbl_title
         ScrollView:
+            id: content_scroll
             bar_width: dp(8)
             scroll_type: ['bars', 'content']
             BoxLayout:
@@ -827,6 +791,7 @@ ScreenManager:
         Header:
             title: root.lbl_title
         ScrollView:
+            id: content_scroll
             bar_width: dp(8)
             scroll_type: ['bars', 'content']
             BoxLayout:
@@ -1023,7 +988,18 @@ class MonitorScreen(Screen):
         self.lbl_menu = t("☰ Меню")
 
 
-class InfoScreen(Screen):
+class TopScrollScreen(Screen):
+    """Reset once on entry, after dynamic text/layout has settled."""
+
+    def on_enter(self, *args: Any) -> None:
+        Clock.schedule_once(self._scroll_top, 0)
+
+    def _scroll_top(self, _dt: float) -> None:
+        if self.manager is not None and self.manager.current == self.name:
+            self.ids.content_scroll.scroll_y = 1
+
+
+class InfoScreen(TopScrollScreen):
     lbl_title = StringProperty("")
     lbl_tower_title = StringProperty("")
     lbl_cells_title = StringProperty("")
@@ -1042,7 +1018,7 @@ class InfoScreen(Screen):
         self.lbl_status_title = t("Состояние")
 
 
-class ToolsScreen(Screen):
+class ToolsScreen(TopScrollScreen):
     lbl_title = StringProperty("")
     lbl_bandlock = StringProperty("")
     hint_bandlock = StringProperty("")
@@ -1090,12 +1066,10 @@ class ToolsScreen(Screen):
         self.lbl_apply_antenna = t("Применить")
         self.antenna_values = [t(k) for k in ANTENNA_MODES]
         if not self.antenna_text:
-            self.antenna_text = t("Авто")
+            self.antenna_text = t("Не прочитано")
         self.lbl_router = t("Управление роутером")
         self.hint_router = t(
-            "«Переподключить связь» заставляет модем заново выбрать лучшую "
-            "соту — быстрее перезагрузки. После перезагрузки программа "
-            "переподключится сама.")
+            "«Переподключить связь» выключает и включает мобильные данные. Интернет временно пропадёт. Смена соты и улучшение сигнала не гарантируются. После перезагрузки программа переподключится сама.")
         self.lbl_reattach = t("Переподключить связь")
         self.lbl_reboot = t("Перезагрузить роутер")
         self.lbl_diag = t("Скопировать диагностику")
@@ -1269,6 +1243,25 @@ class Hua4GMonApp(App):
     def _start_session(self, session: RouterSession) -> None:
         self.state.reset()
         self.session = session
+        for cb in self.band_vars.values():
+            cb.active = False
+        self._band_list = list(REGION_BANDS)
+        self._bands_shown = []
+        self.build_band_checkboxes()
+        tools = self._tools()
+        tools.antenna_text = t("Не прочитано")
+        tools.lock_state = t("Сейчас на модеме: не прочитано")
+        tools.net_msg = tools.wl_verdict = tools.wl_detail = ""
+        self._wl_running = False
+        monitor = self.sm.get_screen('monitor')
+        monitor.graph_values = list(LTE_PARAMS)
+        if self.state.trend_param not in LTE_PARAMS:
+            monitor.ids.graph_param.text = 'sinr'
+            self.state.set_trend_param('sinr')
+        monitor.ids.signal_graph.auto()
+        self._render(Snapshot())
+        self._show_last_event()
+        self.refresh_info_screen()
         worker: SessionWorker | None = None
 
         def mine(fn: Callable[..., None]) -> Callable[..., None]:
@@ -1419,15 +1412,6 @@ class Hua4GMonApp(App):
         for card, param in zip(cards, self._layout_params(), strict=True):
             self._metric_card(card, param)
 
-        glyph = TREND_GLYPHS.get(self.state.trend, "—")
-        ids.dir_lbl.text = glyph
-        ids.dir_lbl.color = hex_to_rgba(
-            {"↑": '#00b894', "↓": '#d63031', "→": '#fdcb6e'}.get(glyph, 'gray'), sun)
-        ids.dir_text_lbl.text = {
-            "↑": t("Лучше — продолжайте"), "↓": t("Хуже — поверните обратно"),
-            "→": t("Стабильно — фиксируйте"),
-        }.get(glyph, t("Накапливаю данные..."))
-
         mimo = mimo_status(snap.cqi0, snap.cqi1)
         up = uplink_status(snap.pusch_dbm)
         tips = advice(rsrp=snap.rsrp, sinr=snap.sinr, rsrq=snap.rsrq,
@@ -1447,6 +1431,8 @@ class Hua4GMonApp(App):
             parts.append(f"B{snap.bands[0]}{freq}")
             if len(snap.bands) > 1:
                 parts.append("CA " + "+".join(f"B{b}" for b in snap.bands[1:]))
+        if snap.cell_id is not None:
+            parts.append(f"Cell ID {snap.cell_id}")
         if snap.pci is not None:
             parts.append(f"PCI {snap.pci}")
         if snap.rat:
@@ -1466,9 +1452,11 @@ class Hua4GMonApp(App):
         peak = self.state.peaks.get(param)
         graph = self.sm.get_screen('monitor').ids.get('signal_graph')
         if graph is not None:
-            graph.set_data(values, param, peak, stale)
+            graph.set_data(values, param, peak, stale,
+                           list(self.state.history_times.get(param, [])))
         if self._fs_graph is not None:
-            self._fs_graph.set_data(values, param, peak, stale)
+            self._fs_graph.set_data(values, param, peak, stale,
+                           list(self.state.history_times.get(param, [])))
 
     def reset_peaks(self) -> None:
         self.state.reset_peaks()
@@ -1585,6 +1573,18 @@ class Hua4GMonApp(App):
         graph = SignalGraph()
         close = Button(text=t("← Назад"), size_hint_y=None, height=dp(48))
         inner.add_widget(graph)
+        controls = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(4))
+        for title, axis, factor in ((t("Время −"), 'time', 2.0),
+                                    (t("Время +"), 'time', 0.5),
+                                    (t("Уровень −"), 'level', 2.0),
+                                    (t("Уровень +"), 'level', 0.5)):
+            button = Button(text=title, font_size=sp(14))
+            button.bind(on_release=lambda _b, a=axis, f=factor: graph.zoom(a, f))
+            controls.add_widget(button)
+        auto = Button(text=t("Авто"), font_size=sp(14))
+        auto.bind(on_release=lambda *a: graph.auto())
+        controls.add_widget(auto)
+        inner.add_widget(controls)
         inner.add_widget(close)
         self._fs_graph = graph
         popup = Popup(title='', separator_height=0, content=RotatedBox(inner),
@@ -1622,6 +1622,7 @@ class Hua4GMonApp(App):
             row('Агрегация (CA)', ca),
             row('Ширина канала', f"DL {dl} / UL {ul}" if ul else dl),
             row('Сектор антенны (PCI)', fmt_num(snap.pci)),
+            row('Cell ID (ECI)', snap.cell_id),
             row('eNodeB (Вышка)', fmt_num(snap.enodeb) if snap.enodeb is not None else
                 (f"NCI {snap.nci}" if snap.nci else None)),
             row('Cell (Локальный сектор)', fmt_num(snap.sector)),
@@ -1631,6 +1632,7 @@ class Hua4GMonApp(App):
         cells = [
             escape_markup(f"{'▶ ' if c.is_current(self.state.last) else ''}{c.operator_label}"
                           f" · {c.band_label.replace('МГц', mhz)}"
+                          f" · Cell ID {c.cell_id if c.cell_id is not None else '-'}"
                           f" · PCI {fmt_num(c.key.pci)} · SINR {fmt_num(c.best_sinr)}"
                           f" · RSRP {fmt_num(c.best_rsrp)}")
             for c in self.state.top_cells()]
@@ -1755,6 +1757,9 @@ class Hua4GMonApp(App):
         session = self.session
         if session is None:
             return
+        self._tools().antenna_text = t("Не прочитано")
+        for cb in self.band_vars.values():
+            cb.active = False
         unread = t("Сейчас на модеме: не прочитано")
         # Пока не прочитано — не показываем состояние прошлой сессии.
         self._tools().lock_state = unread
@@ -1895,8 +1900,7 @@ class Hua4GMonApp(App):
                 self._net_msg(t("Не удалось включить мобильные данные — включите их в "
                                 "веб-интерфейсе роутера."), '#d63031')
         self.confirm(t("Подтверждение"), t(
-            "Переподключить мобильную связь?\n\nИнтернет пропадёт примерно "
-            "на 5–10 секунд."), t("Переподключить"),
+            "Переподключить мобильную связь?\n\nМобильные данные будут выключены и включены. Интернет временно пропадёт (обычно на 5–10 секунд). Смена соты и улучшение сигнала не гарантируются."), t("Переподключить"),
             lambda: self._net_action(session.reattach, done, t("Переподключаю связь…")))
 
     def confirm_reboot(self) -> None:
@@ -1943,12 +1947,15 @@ class Hua4GMonApp(App):
         if self._wl_running:
             return                      # проверка уже идёт
         self._wl_running = True
+        session = self.session
         tools = self._tools()
         tools.wl_verdict = t("Проверка…")
         tools.wl_color = hex_to_rgba('#e68033', self.theme_name == 'sun')
         tools.wl_detail = t("Проверка занимает несколько секунд.")
 
         def done(report: Any) -> None:
+            if session is not self.session:
+                return
             self._wl_running = False
             tools.wl_verdict = report.title
             tools.wl_color = hex_to_rgba(report.color, self.theme_name == 'sun')
@@ -1960,6 +1967,8 @@ class Hua4GMonApp(App):
             tools.wl_detail = "\n".join(lines)
 
         def failed(exc: BaseException) -> None:
+            if session is not self.session:
+                return
             self._wl_running = False
             tools.wl_verdict = t("Ошибка")
             tools.wl_detail = humanize_error(exc)
