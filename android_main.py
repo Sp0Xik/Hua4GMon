@@ -122,7 +122,7 @@ from core import (
     t,
     uplink_status,
 )
-from core.graph import GraphViewport
+from core.graph import GestureViewport, GraphViewport
 
 APP_NAME = "Hua4GMon"
 
@@ -354,9 +354,14 @@ class SignalGraph(Widget):
                                 tuple(theme['c_text']), True)
             Color(1, 1, 1, 1)
             Rectangle(texture=tex, pos=(x0, self.y + h - pt + dp(3)), size=tex.size)
-            tex = self._texture(t("Последние {s:.0f} с").format(
-                s=self.viewport.x_range()[1] - self.viewport.x_range()[0]),
-                                sp(10), text_col)
+            start, end = self.viewport.x_range()
+            if self.viewport.times and end < self.viewport.times[-1]:
+                latest = self.viewport.times[-1]
+                time_label = t("От {a:.0f} до {b:.0f} с назад").format(
+                    a=latest - start, b=latest - end)
+            else:
+                time_label = t("Последние {s:.0f} с").format(s=end - start)
+            tex = self._texture(time_label, sp(10), text_col)
             Rectangle(texture=tex, pos=(x0 + (plot_w - tex.width) / 2, self.y + dp(3)),
                       size=tex.size)
 
@@ -372,7 +377,8 @@ class SignalGraph(Widget):
             for x1, y1, x2, y2 in self.viewport.segments():
                 Line(points=[x0 + plot_w * x1, y0 + plot_h * y1,
                              x0 + plot_w * x2, y0 + plot_h * y2], width=dp(1.5))
-            if y_min <= self._values[-1] <= y_max:
+            if (y_min <= self._values[-1] <= y_max
+                    and self.viewport.times[-1] <= self.viewport.x_range()[1]):
                 lx, ly, r = x0 + plot_w, y_of(self._values[-1]), dp(4)
                 Ellipse(pos=(lx - r, ly - r), size=(2 * r, 2 * r))
             label = t("нет свежих данных") if self._stale else \
@@ -381,6 +387,70 @@ class SignalGraph(Widget):
             Color(1, 1, 1, 1)
             Rectangle(texture=tex, pos=(self.x + w - pr - tex.width, self.y + h - pt + dp(3)),
                       size=tex.size)
+
+
+class PinchGraph(SignalGraph):
+    """Fullscreen touch graph inside the rotated layout.
+
+    Hardware validation required: two-finger gestures on an Android touchscreen.
+    Kivy transforms grabbed events through Scatter into the graph's parent space.
+    """
+
+    def __init__(self, **kw: Any) -> None:
+        super().__init__(**kw)
+        self.viewport = GestureViewport()
+        self._fingers: dict[Any, tuple[Any, tuple[float, float]]] = {}
+
+    def release_touches(self) -> None:
+        for touch, _pos in self._fingers.values():
+            touch.ungrab(self)
+        self._fingers.clear()
+
+    def on_touch_down(self, touch: Any) -> bool:
+        if not self.collide_point(*touch.pos) or getattr(touch, 'is_mouse_scrolling', False):
+            return super().on_touch_down(touch)
+        if len(self._fingers) < 2:
+            self._fingers[touch.uid] = (touch, touch.pos)
+            touch.grab(self)
+        return True
+
+    def on_touch_move(self, touch: Any) -> bool:
+        if touch.uid not in self._fingers:
+            return super().on_touch_move(touch)
+        if touch.grab_current is not self:
+            return True
+        old = [pos for _finger, pos in self._fingers.values()]
+        self._fingers[touch.uid] = (touch, touch.pos)
+        new = [pos for _finger, pos in self._fingers.values()]
+        width, height = self.width - dp(54), self.height - dp(42)
+        if width <= 0 or height <= 0:
+            return True
+        def center(points: list[tuple[float, float]]) -> tuple[float, float]:
+            return (sum(p[0] for p in points) / len(points),
+                    sum(p[1] for p in points) / len(points))
+        before, after = center(old), center(new)
+        factor = 1.0
+        if len(old) == 2:
+            from math import hypot
+            def distance(points: list[tuple[float, float]]) -> float:
+                return hypot(points[1][0] - points[0][0], points[1][1] - points[0][1])
+            previous, current = distance(old), distance(new)
+            if min(previous, current) < dp(8):
+                return True
+            factor = previous / current
+        anchor = ((before[0] - self.x - dp(44)) / width,
+                  (before[1] - self.y - dp(20)) / height)
+        shift = ((after[0] - before[0]) / width, (after[1] - before[1]) / height)
+        self.viewport.transform(factor, anchor, shift)
+        self._redraw()
+        return True
+
+    def on_touch_up(self, touch: Any) -> bool:
+        if touch.uid not in self._fingers:
+            return super().on_touch_up(touch)
+        touch.ungrab(self)
+        del self._fingers[touch.uid]
+        return True
 
 
 class RotatedBox(Widget):
@@ -418,6 +488,11 @@ KV = """
 #:import sp kivy.metrics.sp
 
 <ActionButton@Button>:
+    size_hint_x: 0.9
+    pos_hint: {'center_x': 0.5}
+    text_size: self.size
+    halign: 'center'
+    valign: 'middle'
     background_normal: ''
     background_color: app.c_accent
     color: 1, 1, 1, 1
@@ -670,23 +745,20 @@ ScreenManager:
             height: self.texture_size[1] if self.text else 0
             text_size: self.width, None
             halign: 'center'
-        MetricCard:
-            id: primary_box
-            size_hint_y: 0.30
-            value_size: sp(54)
         GridLayout:
-            cols: 3
+            id: metrics_grid
+            cols: 2
+            rows: 2
             spacing: dp(6)
-            size_hint_y: 0.17
+            size_hint_y: 0.47
+            MetricCard:
+                id: primary_box
             MetricCard:
                 id: secondary_box
-                value_size: sp(30)
             MetricCard:
                 id: small1_box
-                value_size: sp(24)
             MetricCard:
                 id: small2_box
-                value_size: sp(24)
         Label:
             id: advice_lbl
             text: ''
@@ -1069,7 +1141,8 @@ class ToolsScreen(TopScrollScreen):
             self.antenna_text = t("Не прочитано")
         self.lbl_router = t("Управление роутером")
         self.hint_router = t(
-            "«Переподключить связь» выключает и включает мобильные данные. Интернет временно пропадёт. Смена соты и улучшение сигнала не гарантируются. После перезагрузки программа переподключится сама.")
+            "«Переподключить связь» выключает и включает мобильные данные. "
+            "Интернет временно пропадёт. После перезагрузки программа переподключится сама.")
         self.lbl_reattach = t("Переподключить связь")
         self.lbl_reboot = t("Перезагрузить роутер")
         self.lbl_diag = t("Скопировать диагностику")
@@ -1570,26 +1643,22 @@ class Hua4GMonApp(App):
         from kivy.uix.boxlayout import BoxLayout
         from kivy.uix.button import Button
         inner = BoxLayout(orientation='vertical', spacing=dp(6), padding=dp(8))
-        graph = SignalGraph()
+        graph = PinchGraph()
         close = Button(text=t("← Назад"), size_hint_y=None, height=dp(48))
         inner.add_widget(graph)
         controls = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(4))
-        for title, axis, factor in ((t("Время −"), 'time', 2.0),
-                                    (t("Время +"), 'time', 0.5),
-                                    (t("Уровень −"), 'level', 2.0),
-                                    (t("Уровень +"), 'level', 0.5)):
-            button = Button(text=title, font_size=sp(14))
-            button.bind(on_release=lambda _b, a=axis, f=factor: graph.zoom(a, f))
-            controls.add_widget(button)
         auto = Button(text=t("Авто"), font_size=sp(14))
         auto.bind(on_release=lambda *a: graph.auto())
         controls.add_widget(auto)
+        controls.add_widget(close)
         inner.add_widget(controls)
-        inner.add_widget(close)
         self._fs_graph = graph
         popup = Popup(title='', separator_height=0, content=RotatedBox(inner),
                       size_hint=(0.98, 0.96))
-        popup.bind(on_dismiss=lambda *a: setattr(self, '_fs_graph', None))
+        def dismissed(*_args: Any) -> None:
+            graph.release_touches()
+            self._fs_graph = None
+        popup.bind(on_dismiss=dismissed)
         close.bind(on_release=lambda *a: popup.dismiss())
         popup.open()
         self.refresh_graph()

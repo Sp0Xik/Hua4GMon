@@ -341,3 +341,73 @@ def test_new_session_has_no_demo_settings(app, monkeypatch):
     assert app.state.last is None
     assert app.sm.get_screen('monitor').ids.primary_box.m_value == '-'
     app.disconnect()
+
+
+def test_equal_metric_grid_and_centered_actions(app):
+    ensure_online(app)
+    ids = app.sm.get_screen('monitor').ids
+    pump(lambda: False, 0.2)
+    cards = [ids.primary_box, ids.secondary_box, ids.small1_box, ids.small2_box]
+    assert ids.metrics_grid.cols == 2 and ids.metrics_grid.rows == 2
+    assert all(card.size == cards[0].size for card in cards)
+    assert all(card.value_size == cards[0].value_size for card in cards)
+    app.go('tools')
+    assert pump(lambda: not app.sm.transition.is_active)
+    from kivy.factory import Factory
+    for name in ('connection', 'tools'):
+        actions = [w for w in app.sm.get_screen(name).walk()
+                   if isinstance(w, Factory.ActionButton)]
+        assert actions
+        for button in actions:
+            assert button.center_x == pytest.approx(button.parent.center_x)
+            assert button.halign == 'center' and button.valign == 'middle'
+    assert 'не гарантируются' not in app._tools().hint_router
+    app.go('monitor')
+
+
+def test_pinch_through_rotated_popup_and_auto(app):
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+    from kivy.uix.button import Button
+    from kivy.uix.popup import Popup
+    ensure_online(app)
+    app.worker.pause()
+    app.open_fullscreen_graph()
+    pump(lambda: False, 0.3)
+    graph = app._fs_graph
+    popup = next(w for w in Window.children if isinstance(w, Popup))
+    graph.set_data([0, 5, 10], 'sinr', 10, False, [0, 50, 100])
+
+    def point(x, y):
+        return graph.to_window(graph.x + graph.width * x, graph.y + graph.height * y)
+
+    first = UnitTestTouch(*point(0.4, 0.4))
+    second = UnitTestTouch(*point(0.6, 0.6))
+    first.touch_down()
+    second.touch_down()
+    assert len(graph._fingers) == 2
+    original = graph.viewport.y_range()
+    second.touch_move(*point(0.8, 0.8))
+    assert graph.viewport.seconds < 100
+    lo, hi = graph.viewport.y_range()
+    assert hi - lo < original[1] - original[0]
+    zoomed = graph.viewport.seconds
+    second.touch_move(*point(0.6, 0.6))
+    assert graph.viewport.seconds > zoomed
+    first.touch_up()
+    second.touch_up()
+    assert not graph._fingers
+    buttons = [w for w in popup.walk() if isinstance(w, Button)]
+    assert {b.text for b in buttons} == {core.t('Авто'), core.t('← Назад')}
+    auto = next(b for b in buttons if b.text == core.t('Авто'))
+    tap = UnitTestTouch(*auto.to_window(*auto.center))
+    tap.touch_down()
+    tap.touch_up()
+    assert graph.viewport.seconds is None and graph.viewport.levels is None
+    first = UnitTestTouch(*point(0.5, 0.5))
+    first.touch_down()
+    popup.dismiss()
+    assert pump(lambda: app._fs_graph is None)
+    assert not graph._fingers and not first.grab_list
+    first.touch_up()
+    app.worker.resume()

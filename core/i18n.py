@@ -35,6 +35,10 @@ _current_lang = _DEFAULT_LANG
 # RU → EN. Ключ — исходная русская строка (ровно как в коде).
 # Если строки здесь нет, t() вернёт ключ (т.е. русский вариант).
 EN: dict[str, str] = {
+    "От {a:.0f} до {b:.0f} с назад":
+        "{a:.0f} to {b:.0f} s ago",
+    "«Переподключить связь» выключает и включает мобильные данные. Интернет временно пропадёт. После перезагрузки программа переподключится сама.":
+        "“Reconnect” turns mobile data off and back on. Internet access will be interrupted. After a reboot, the app reconnects automatically.",
     "Время +":
         "Time +",
     "Время −":
