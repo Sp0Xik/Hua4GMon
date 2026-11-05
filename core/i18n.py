@@ -35,6 +35,24 @@ _current_lang = _DEFAULT_LANG
 # RU → EN. Ключ — исходная русская строка (ровно как в коде).
 # Если строки здесь нет, t() вернёт ключ (т.е. русский вариант).
 EN: dict[str, str] = {
+    "Время +":
+        "Time +",
+    "Время −":
+        "Time −",
+    "Уровень +":
+        "Level +",
+    "Уровень −":
+        "Level −",
+    "График:":
+        "Graph:",
+    "Не прочитано":
+        "Not read",
+    "Последние {s:.0f} с":
+        "Last {s:.0f} s",
+    "«Переподключить связь» выключает и включает мобильные данные. Интернет временно пропадёт. Смена соты и улучшение сигнала не гарантируются. После перезагрузки программа переподключится сама.":
+        "“Reconnect” turns mobile data off and back on. Internet access will be interrupted. A different cell or better signal is not guaranteed. After a reboot, the app reconnects automatically.",
+    "Переподключить мобильную связь?\n\nМобильные данные будут выключены и включены. Интернет временно пропадёт (обычно на 5–10 секунд). Смена соты и улучшение сигнала не гарантируются.":
+        "Reconnect mobile data?\n\nMobile data will be turned off and back on. Internet access will be interrupted (usually for 5–10 seconds). A different cell or better signal is not guaranteed.",
     # --- Ядро (core): статусы сигнала, ошибки, RF-подсказки, Band Lock, белые списки ---
     "1 поток":
         "1 stream",
@@ -274,8 +292,6 @@ EN: dict[str, str] = {
         "TX power",
     "Найден роутер {model} на {ip}":
         "Found router {model} at {ip}",
-    "Накапливаю данные...":
-        "Collecting data...",
     ("Не удалось включить мобильные данные — включите их в веб-интерфейсе "
      "роутера."):
         ("Could not turn mobile data back on — enable it in the router's web "
@@ -322,12 +338,6 @@ EN: dict[str, str] = {
         "Antenna switching",
     "Переподключаю связь…":
         "Reconnecting the link…",
-    ("Переподключить мобильную связь?\n"
-     "\n"
-     "Интернет пропадёт примерно на 5–10 секунд."):
-        ("Reconnect the mobile link?\n"
-         "\n"
-         "The internet will drop for about 5–10 seconds."),
     "Пик: {v} (Δ {d})":
         "Peak: {v} (Δ {d})",
     "Подключение и частые ошибки":
@@ -410,8 +420,6 @@ EN: dict[str, str] = {
         "on",
     "нет свежих данных":
         "no fresh data",
-    "последние {n} точек":
-        "last {n} points",
     "⚠ Данные устарели — нет ответа {s:.0f} с":
         "⚠ Data is stale — no response for {s:.0f} s",
     "⚪ Нейтральные":
@@ -466,12 +474,6 @@ EN: dict[str, str] = {
          "Test mode shows how the app works without a router."),
     "[ESC] или F11 — выход":
         "[ESC] or F11 — exit",
-    ("«Переподключить связь» выключает и включает мобильные данные: модем "
-     "заново выбирает лучшую соту — быстрее перезагрузки. После "
-     "перезагрузки программа переподключится сама."):
-        ("“Reconnect link” turns mobile data off and on: the modem picks the "
-         "best cell again — faster than a reboot. After a reboot the app "
-         "reconnects by itself."),
     "Авто-переподключение при обрыве":
         "Auto-reconnect on drop",
     "Бэнд":
@@ -482,8 +484,6 @@ EN: dict[str, str] = {
         "Warning",
     "Все бэнды (AUTO)":
         "All bands (AUTO)",
-    "График и стрелка:":
-        "Graph and arrow:",
     "Джиттер: -":
         "Jitter: -",
     "Джиттер: {j:.1f} dB":
@@ -536,18 +536,10 @@ EN: dict[str, str] = {
         "Connection to the router lost",
     "Сейчас на модеме: -":
         "Now on the modem: -",
-    "Сигнал стабилен — зафиксируйте антенну":
-        "Signal stable — fix the antenna",
-    "Сигнал улучшается — продолжайте в том же направлении":
-        "Signal improving — keep turning that way",
-    "Сигнал ухудшается — поверните обратно":
-        "Signal getting worse — turn back",
     ("Сохранено {n} записей в:\n"
      "{path}"):
         ("Saved {n} records to:\n"
          "{path}"),
-    "Тенденция {param} (поворачивайте антенну)":
-        "{param} trend (turn the antenna)",
     ("Фиксация бэндов привязывает модем к выбранным частотам. Список взят "
      "из модема; замеченные в эфире бэнды — первыми. Перед записью "
      "программа читает текущие настройки и меняет только LTE-бэнды; "
@@ -658,11 +650,6 @@ EN: dict[str, str] = {
          "Wi-Fi and the IP is correct.\n"
          "\n"
          "Test mode shows how the app works without a router."),
-    ("«Переподключить связь» заставляет модем заново выбрать лучшую соту — "
-     "быстрее перезагрузки. После перезагрузки программа переподключится "
-     "сама."):
-        ("“Reconnect link” makes the modem pick the best cell again — faster "
-         "than a reboot. After a reboot the app reconnects by itself."),
     "Белые списки (РФ)":
         "Whitelist (RU)",
     "Во весь экран":
@@ -675,8 +662,6 @@ EN: dict[str, str] = {
         "Sound is not available on this device",
     "Информация":
         "Information",
-    "Лучше — продолжайте":
-        "Better — keep going",
     "Меню":
         "Menu",
     "Нажмите «Назад» ещё раз, чтобы отключиться":
@@ -709,12 +694,8 @@ EN: dict[str, str] = {
         ("The list comes from the modem; bands seen on air come first. Only LTE "
          "bands are changed; “As before” restores the settings read at "
          "connection time."),
-    "Стабильно — фиксируйте":
-        "Stable — fix it here",
     "Тестовый режим (без модема)":
         "Test mode (no modem)",
-    "Хуже — поверните обратно":
-        "Worse — turn back",
     "ℹ Информация":
         "ℹ Information",
     "← Назад":

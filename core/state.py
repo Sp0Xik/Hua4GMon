@@ -125,9 +125,12 @@ class CellStats:
     best_sinr: float | None = None
     best_rsrp: float | None = None
     samples: int = 0
+    cell_id: int | None = None
 
     def update(self, snap: Snapshot) -> None:
         self.samples += 1
+        if snap.cell_id is not None:
+            self.cell_id = snap.cell_id
         if snap.sinr is not None and (self.best_sinr is None or snap.sinr > self.best_sinr):
             self.best_sinr = snap.sinr
         if snap.rsrp is not None and (self.best_rsrp is None or snap.rsrp > self.best_rsrp):
@@ -173,6 +176,8 @@ class SignalState:
         """Пустое состояние сессии (размеры буферов и метрика тренда — прежние)."""
         self.history: dict[str, deque[float]] = {
             p: deque(maxlen=self._history_len) for p in TRACKED}
+        self.history_times: dict[str, deque[float]] = {
+            p: deque(maxlen=self._history_len) for p in TRACKED}
         self.peaks: dict[str, float | None] = dict.fromkeys(TRACKED)
         self.session_min: dict[str, float | None] = dict.fromkeys(TRACKED)
         self.session_max: dict[str, float | None] = dict.fromkeys(TRACKED)
@@ -215,6 +220,7 @@ class SignalState:
             if v is None:
                 continue
             self.history[p].append(v)
+            self.history_times[p].append(now)
             peak, lo, hi = self.peaks[p], self.session_min[p], self.session_max[p]
             if peak is None or v > peak:
                 self.peaks[p] = v
@@ -271,6 +277,7 @@ class SignalState:
             'sinr': snap.sinr, 'rsrq': snap.rsrq,
             'nr_rsrp': snap.nr_rsrp, 'nr_sinr': snap.nr_sinr,
             'plmn': snap.plmn,
+            'cell_id': snap.cell_id,
             'enodeb': snap.enodeb, 'sector': snap.sector,
             'pci': snap.pci, 'earfcn': snap.earfcn,
             'bands': snap.bands_compact, 'rat': snap.rat,

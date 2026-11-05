@@ -1,0 +1,82 @@
+"""Graph scaling uses sample times, keeps manual bounds and clips lines."""
+import pytest
+
+from core import SignalState, build_snapshot
+from core.graph import GraphViewport
+
+
+def test_cell_identity_decimal_hex_and_exports():
+    for raw in ('161490247', hex(161490247), '9a02547'):
+        snap = build_snapshot({'cell_id': raw, 'earfcn': '1300', 'pci': '114'})
+        assert snap.cell_id == 161490247
+        assert snap.enodeb * 256 + snap.sector == snap.cell_id
+        state = SignalState()
+        state.ingest(snap, 0)
+        assert state.log[-1]['cell_id'] == snap.cell_id
+        assert state.top_cells()[0].cell_id == snap.cell_id
+    for raw in (None, '', 'bad value', '-1', '0', str(1 << 28)):
+        assert build_snapshot({'cell_id': raw}).cell_id is None
+    assert build_snapshot({'enodeb_id': '630821'}).cell_id is None
+
+
+def test_times_follow_valid_samples_and_reset():
+    state = SignalState(history=2)
+    for now, raw in ((1, '3'), (3, None), (5, '4'), (9, '6')):
+        state.ingest(build_snapshot({'sinr': raw}), now)
+    assert list(state.history_times['sinr']) == [5, 9]
+    assert list(state.history['sinr']) == [4, 6]
+    state.reset()
+    assert not state.history_times['sinr']
+
+
+def test_independent_axes_live_update_and_auto():
+    graph = GraphViewport()
+    graph.update([0, 5, 10], [100, 110, 120], 'sinr', 10)
+    graph.zoom('time', 0.5)
+    assert graph.x_range() == (110, 120)
+    original_y = graph.y_range()
+    graph.zoom('level', 0.5)
+    manual_y = graph.y_range()
+    assert manual_y[1] - manual_y[0] == (original_y[1] - original_y[0]) / 2
+    graph.update([0, 5, 10, 25], [100, 110, 120, 130], 'sinr', 25)
+    assert graph.x_range() == (120, 130)
+    assert graph.y_range() == manual_y
+    graph.zoom('time', 2)
+    assert graph.x_range() == (110, 130)
+    graph.reset()
+    assert graph.x_range() == (100, 130)
+    assert graph.y_range()[1] >= 25
+    graph.zoom('level', 0.5)
+    graph.update([-100], [140], 'rsrp', -100)
+    assert graph.levels is None and graph.seconds is None
+
+
+def test_empty_single_and_zoom_limits():
+    graph = GraphViewport()
+    assert graph.x_range() == (-1, 0)
+    assert graph.y_range()[1] > graph.y_range()[0]
+    assert graph.segments() == []
+    graph.zoom('time', 0.001)
+    graph.zoom('level', 1000)
+    assert graph.y_range() == (-20, 40)
+    graph.update([5], [], 'sinr', None)
+    assert graph.x_range() == (-1, 0)
+    assert graph.segments() == []
+    with pytest.raises(ValueError):
+        graph.zoom('time', 0)
+    with pytest.raises(ValueError):
+        graph.zoom('bad', 2)
+
+
+def test_clip_crossing_and_invisible_segments():
+    graph = GraphViewport()
+    graph.update([-20, 20, 20, -20, -20], [0, 1, 2, 3, 4], 'sinr', None)
+    graph.levels = (-5, 5)
+    segments = graph.segments()
+    assert len(segments) == 2
+    assert all(0 <= v <= 1 for line in segments for v in line)
+    assert segments[0][1] == 0 and segments[0][3] == 1
+    graph.seconds = 1
+    assert graph.segments() == []
+    graph.update([0, 2], [4, 4], 'sinr', None)
+    assert len(graph.segments()) == 1

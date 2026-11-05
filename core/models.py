@@ -76,6 +76,7 @@ class Snapshot:
     earfcn: int | None = None
     freq_mhz: float | None = None
     pci: int | None = None
+    cell_id: int | None = None
     enodeb: int | None = None
     sector: int | None = None
     tac: str = ''
@@ -213,6 +214,7 @@ def build_snapshot(raw: Mapping[str, Any],
         earfcn=earfcn,
         freq_mhz=earfcn_to_freq_mhz(earfcn),
         pci=to_int(data.get('pci')),
+        cell_id=enodeb * 256 + sector if enodeb is not None and sector is not None else None,
         enodeb=enodeb,
         sector=sector,
         tac=_str(data, ('tac', 'TAC')),

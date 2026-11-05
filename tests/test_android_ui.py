@@ -280,3 +280,64 @@ def test_repeated_tap_does_not_start_second_probe(app, monkeypatch, start):
     start(app)
     assert len(calls) == 2
     calls[1][1](OSError("network down"))
+
+
+def test_fullscreen_zoom_and_removed_arrow(app):
+    from kivy.core.window import Window
+    from kivy.uix.popup import Popup
+    ensure_online(app)
+    assert 'dir_lbl' not in app.sm.get_screen('monitor').ids
+    app.open_fullscreen_graph()
+    graph = app._fs_graph
+    graph.zoom('time', 0.5)
+    graph.zoom('level', 0.5)
+    seconds, levels = graph.viewport.seconds, graph.viewport.levels
+    n = len(app.state.log)
+    assert pump(lambda: len(app.state.log) > n)
+    assert graph.viewport.seconds == seconds and graph.viewport.levels == levels
+    graph.auto()
+    assert graph.viewport.seconds is None and graph.viewport.levels is None
+    for child in list(Window.children):
+        if isinstance(child, Popup):
+            child.dismiss()
+    assert pump(lambda: app._fs_graph is None)
+
+
+@pytest.mark.parametrize('name', ['info', 'tools'])
+def test_pages_open_at_top_without_poll_reset(app, name):
+    ensure_online(app)
+    app.go(name)
+    screen = app.sm.get_screen(name)
+    assert pump(lambda: not app.sm.transition.is_active)
+    pump(lambda: False, 0.2)
+    scroll = screen.ids.content_scroll
+    assert scroll.scroll_y == 1
+    scroll.scroll_y = 0.4
+    n = len(app.state.log)
+    assert pump(lambda: len(app.state.log) > n)
+    assert abs(scroll.scroll_y - 0.4) < 0.01
+    app.go('monitor')
+    assert pump(lambda: not app.sm.transition.is_active)
+    app.go(name)
+    assert pump(lambda: not app.sm.transition.is_active and scroll.scroll_y == 1)
+    app.go('monitor')
+
+
+def test_new_session_has_no_demo_settings(app, monkeypatch):
+    import android_main
+    ensure_online(app)
+    app.build_band_checkboxes()
+    for cb in app.band_vars.values():
+        cb.active = True
+    app._tools().antenna_text = 'Внешняя'
+    app._tools().net_msg = 'demo'
+    app.disconnect()
+    monkeypatch.setattr(android_main.SessionWorker, 'start', lambda self: None)
+    session = core.RouterSession('192.168.8.1', '')
+    app._start_session(session)
+    assert not any(cb.active for cb in app.band_vars.values())
+    assert app._tools().antenna_text == core.t('Не прочитано')
+    assert app._tools().net_msg == ''
+    assert app.state.last is None
+    assert app.sm.get_screen('monitor').ids.primary_box.m_value == '-'
+    app.disconnect()

@@ -103,10 +103,12 @@ def test_demo_monitoring(app):
     assert "PCI" in app.tower_line.cget('text')
     assert app.health_progress.cget('value') > 0
     assert app.lbl_vars['rsrp']['val'].cget('text') != "-"
-    assert "SINR" in app.dir_frame.cget('text')
+    assert app.signal_graph.param == "sinr"
+    assert not hasattr(app, "dir_frame")
+    assert "Cell ID" in app.tower_line.cget("text")
     app.graph_param.set('rsrp')
     app._on_graph_param()
-    assert "RSRP" in app.dir_frame.cget('text')
+    assert app.signal_graph.param == "rsrp"
     assert app.state.trend_param == 'rsrp'
     app.reset_peaks()
     assert app.state.peaks['rsrp'] is None
@@ -168,7 +170,7 @@ def test_staleness_is_shown(app):
     online(app)
     app.worker.pause()
     assert pump(app, lambda: "⚠" in app.health_text_lbl.cget('text'), timeout=8)
-    assert app.dir_label.cget('text') == "⚠"          # без данных — без указаний
+    assert app.signal_graph.stale
     app.worker.resume()
 
 
@@ -179,7 +181,7 @@ def test_language_switch_keeps_state(app):
     try:
         assert app.status_label.cget('text') == "🧪 Test mode"
         assert app.tower_line.cget('text') != "—"
-        assert "trend" in app.dir_frame.cget("text").lower()
+        assert app.signal_graph.param == app.state.trend_param
         assert pump(app, lambda: len(app.state.log) >= 3)
     finally:
         core.set_language("ru")
@@ -424,7 +426,7 @@ def test_status_colors_readable_on_window_background(app):
     """Цифры и подписи статусов читаются на светлом фоне окна (≥ 4,5:1)."""
     online(app)
     assert pump(app, lambda: app.state.jitter() is not None)
-    widgets = [app.health_text_lbl, app.dir_label, app.dir_text]
+    widgets = [app.health_text_lbl]
     for w in app.lbl_vars.values():
         widgets += [w['val'], w['status'], w['peak']]
     for w in widgets:
@@ -433,3 +435,43 @@ def test_status_colors_readable_on_window_background(app):
     jitter_fg = str(app.jitter_label.cget('foreground'))
     r, g, b = (v // 257 for v in app.root.winfo_rgb(jitter_fg))
     assert core.contrast_ratio(f"#{r:02x}{g:02x}{b:02x}", core.WINDOWS_BG) >= 4.5
+
+
+def test_fullscreen_graph_live_scaling(app):
+    online(app)
+    app.open_fullscreen_graph()
+    graph = app.full_graph
+    assert graph is not None
+    graph.zoom('level', 0.5)
+    graph.zoom('time', 0.5)
+    bounds, seconds = graph.viewport.levels, graph.viewport.seconds
+    n = len(app.state.log)
+    assert pump(app, lambda: len(app.state.log) > n)
+    assert graph.viewport.levels == bounds and graph.viewport.seconds == seconds
+    graph.auto()
+    assert graph.viewport.levels is None and graph.viewport.seconds is None
+    app._close_graph()
+    assert app.graph_win is None and app.full_graph is None
+
+
+def test_new_session_clears_demo_settings(app, monkeypatch):
+    online(app)
+    for v in app.band_vars.values():
+        v.set(True)
+    app.antenna_var.set('Внешняя')
+    app.net_msg.config(text='demo')
+    app.disconnect()
+    monkeypatch.setattr(main.SessionWorker, 'start', lambda self: None)
+    session = core.RouterSession('192.168.8.1', '')
+    app._start_session(session)
+    assert not any(v.get() for v in app.band_vars.values())
+    assert app.antenna_var.get() == core.t('Не прочитано')
+    assert app.net_msg.cget('text') == ''
+    assert app.state.last is None
+    assert app.lbl_vars['rsrp']['val'].cget('text') == '-'
+    callbacks = []
+    monkeypatch.setattr(app, '_run_bg', lambda work, done, failed: callbacks.append(done))
+    app.load_router_config()
+    callbacks[0](types.SimpleNamespace(locked=None, antenna=None))
+    assert not any(v.get() for v in app.band_vars.values())
+    assert app.antenna_var.get() == core.t('Не прочитано')
