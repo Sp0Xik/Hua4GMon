@@ -80,3 +80,42 @@ def test_clip_crossing_and_invisible_segments():
     assert graph.segments() == []
     graph.update([0, 2], [4, 4], 'sinr', None)
     assert len(graph.segments()) == 1
+
+
+def test_gesture_zoom_anchor_pan_and_reset():
+    from core.graph import GestureViewport
+    graph = GestureViewport()
+    graph.update([0, 5, 10], [0, 50, 100], 'sinr', 10)
+    ylo, yhi = graph.y_range()
+    graph.transform(0.5, (0.25, 0.75))
+    assert graph.x_range() == (12.5, 62.5)
+    lo, hi = graph.y_range()
+    assert lo + (hi - lo) * 0.75 == ylo + (yhi - ylo) * 0.75
+    graph.transform(1, (0.5, 0.5), (0.1, 0.1))
+    assert graph.x_range() == (7.5, 57.5)
+    graph.update([0, 5, 10], [10, 60, 110], 'sinr', 10)
+    assert graph.x_range() == (17.5, 67.5)
+    graph.transform(100, (0.5, 0.5))
+    assert graph.x_range() == (10, 110)
+    assert graph.y_range() == (-20, 40)
+    graph.transform(0.001, (0.5, 0.5), (1000, -1000))
+    assert graph.x_range() == (10, 11)
+    assert graph.y_range() == (39, 40)
+    graph.reset()
+    assert graph.offset == 0 and graph.seconds is None and graph.levels is None
+    assert graph.x_range() == (10, 110)
+
+
+def test_gesture_empty_data_and_evicted_history():
+    from core.graph import GestureViewport
+    graph = GestureViewport()
+    graph.transform(0.5, (0.5, 0.5))
+    assert graph.seconds is None
+    with pytest.raises(ValueError):
+        graph.transform(0, (0.5, 0.5))
+    graph.update([1, 2], [0, 100], 'sinr', None)
+    graph.transform(0.5, (0, 0))
+    graph.update([1, 2], [100, 120], 'sinr', None)
+    assert graph.x_range() == (100, 120)
+    graph.update([-100], [130], 'rsrp', None)
+    assert graph.offset == 0

@@ -92,3 +92,44 @@ class GraphViewport:
                 result.append((x + enter * dx, y + enter * dy,
                                x + leave * dx, y + leave * dy))
         return result
+
+
+class GestureViewport(GraphViewport):
+    """Touch-only viewport; the desktop viewport keeps its existing behavior."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.offset = 0.0
+
+    def reset(self) -> None:
+        super().reset()
+        self.offset = 0.0
+
+    def x_range(self) -> tuple[float, float]:
+        lo, hi = super().x_range()
+        first = self.times[0] if len(self.times) > 1 else lo
+        offset = min(self.offset, max(0.0, lo - first))
+        return lo - offset, hi - offset
+
+    def transform(self, factor: float, anchor: tuple[float, float],
+                  translation: tuple[float, float] = (0.0, 0.0)) -> None:
+        """Scale around the fingers, then translate by fractions of plot size."""
+        if factor <= 0:
+            raise ValueError('Zoom factor must be positive')
+        if len(self.times) < 2:
+            return
+        xlo, xhi = self.x_range()
+        ylo, yhi = self.y_range()
+        first, last = self.times[0], self.times[-1]
+        available = max(last - first, 1.0)
+        width = min(available, max(1.0, (xhi - xlo) * factor))
+        end = xlo + anchor[0] * (xhi - xlo) + (1 - anchor[0]) * width
+        end -= translation[0] * width
+        end = min(last, max(last - available + width, end))
+        self.seconds, self.offset = width, last - end
+        low, high = PARAM_RANGES.get(self.param.replace('nr_', ''), (-140, 40))
+        height = min(high - low, max(1.0, (yhi - ylo) * factor))
+        bottom = ylo + anchor[1] * (yhi - ylo) - anchor[1] * height
+        bottom -= translation[1] * height
+        bottom = min(high - height, max(low, bottom))
+        self.levels = bottom, bottom + height
