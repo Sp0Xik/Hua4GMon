@@ -96,9 +96,9 @@ def test_fetch_schedule(session):
     for _ in range(30):
         session.fetch()
     assert calls['signal'] == 30
-    assert calls['status'] == 15 and calls['traffic_statistics'] == 15
-    assert calls['current_plmn'] == 2          # тики 0 и 15 (сота не менялась)
-    assert calls['mobile_dataswitch'] == 1
+    assert calls['status'] == 60 and calls['traffic_statistics'] == 15
+    assert calls['current_plmn'] == 30         # свежий оператор для каждого снимка
+    assert calls['mobile_dataswitch'] == 30
     assert calls['month_statistics'] == 1
 
 
@@ -131,8 +131,7 @@ def test_optional_endpoint_network_error_propagates(session):
     def broken():
         raise ConnectionError("link down")
     session._client.monitoring.status = broken
-    with pytest.raises(ConnectionError):
-        session.fetch()
+    assert core.build_snapshot(session.fetch()).registration == 'unknown'
 
 
 def test_optional_endpoint_other_error_is_skipped(session):

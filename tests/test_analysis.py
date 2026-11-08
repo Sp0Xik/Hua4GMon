@@ -173,7 +173,7 @@ WALL = datetime.datetime(2026, 9, 24, 12, 0, 0)
 
 
 def snap(rsrp=-90.0, sinr=10.0, pci=287, earfcn=1300, plmn="25002", bands=(3,), **kw):
-    return core.Snapshot(rsrp=rsrp, sinr=sinr, rsrq=-9.0, rssi=-60.0,
+    return core.Snapshot(registration="registered", rsrp=rsrp, sinr=sinr, rsrq=-9.0, rssi=-60.0,
                          pci=pci, earfcn=earfcn, bands=bands,
                          band_label="+".join(f"B{b}" for b in bands),
                          plmn=plmn, enodeb=100, sector=1, **kw)

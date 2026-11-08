@@ -322,3 +322,32 @@ MAC-, IP- и DNS-адреса в диагностике уже замаскир�
 перемещение, отпускание одного пальца, закрытие во время касания и «Авто».
 Ожидается плавный масштаб без поворота интерфейса и без залипших касаний.
 Модель: любой поддерживаемый Android-телефон; физическая проверка ожидается.
+
+
+## Registration and network survey (Beta)
+
+- **core (both):** models.build_snapshot, router.RouterSession.fetch, state.SignalState.
+  Validate on B636-336 and other HiLink firmware: home network, roaming/MVNO,
+  loss of service, foreign PLMN/limited service, SIM removal, data disabled, APN failure,
+  reconnect and band changes. Capture diagnostics for each state.
+  Expected: only confirmed normal service (ServiceStatus=2, or ConnectionStatus=901
+  when ServiceStatus is absent) admits serving metrics. Explicit no/limited service
+  and invalid SIM override connection status. Unknown codes, unavailable status,
+  changing status and conflicting PLMNs remain unconfirmed. A connected mobile
+  bearer is not proof of public internet reachability. No operator-name/SIM whitelist.
+- **core (both):** scanner.Survey, RouterSession.discover_networks.
+  Hardware validation required: neighbouring cell schemas and PLMN search support
+  on each model/firmware. During capture, cell-info is read at most once per five
+  seconds (unsupported responses disable subsequent periodic attempts in that session).
+  Active operator discovery is explicit, uses bounded timeouts, does not change bands
+  or operator selection, and may interrupt data. Test slow responses, busy/unsupported
+  endpoints, stop during search and disconnect while a request is pending.
+  Unknown cell-info formats are not guessed. Existing diagnostics include raw cell-info.
+  Results are observations, not an exhaustive census of towers; no inferred neighbour
+  PLMN, Cell ID, registration or throughput. Partial identities are clearly labelled.
+- **UI: Windows + Android:** reproduce video gChUEm20RzY, 17:25: strong Motive
+  signal while Huawei shows no service. Expected: main/roof metrics are blank,
+  warning is visible, sound is silent, working peaks/top cells are unaffected;
+  survey may retain that signal separately. On recovery, working metrics resume.
+  Verify Android portrait/landscape, sunlight theme, long operator names and copy;
+  Windows roof display, CSV export and long lists. Survey is labelled Beta.

@@ -27,6 +27,7 @@ import importlib
 import importlib.abc
 import importlib.util
 import logging
+import math
 import os
 import platform as py_platform
 import sys
@@ -123,6 +124,7 @@ from core import (
     uplink_status,
 )
 from core.graph import GestureViewport, GraphViewport
+from core.scanner import SURVEY_HELP, Survey
 
 APP_NAME = "Hua4GMon"
 
@@ -169,7 +171,7 @@ def unit_of(param: str) -> str:
 
 def fmt_num(value: float | None) -> str:
     """Число для подписи: целые — как есть (eNB 1048575, а не 1.04858e+06)."""
-    if value is None:
+    if value is None or not math.isfinite(value):
         return "-"
     return str(value) if isinstance(value, int) else f"{value:g}"
 
@@ -1180,6 +1182,7 @@ class Hua4GMonApp(App):
             LabelBase.register(name='Roboto', fn_regular=_FONT_PATH, fn_bold=bold)
         self.title = f"{APP_NAME} v{__version__}"
         # Журнал сессии нужен только для экспорта CSV, которого на Android нет.
+        self.survey = Survey()
         self.state = SignalState(trend_param='sinr', log_max=GRAPH_HISTORY)
         self.session: RouterSession | None = None
         self.worker: SessionWorker | None = None
@@ -1314,6 +1317,8 @@ class Hua4GMonApp(App):
         self._start_session(RouterSession("demo", "", factory=demo_factory(self.demo_modem)))
 
     def _start_session(self, session: RouterSession) -> None:
+        self.survey = Survey()
+        self._survey_searching = False
         self.state.reset()
         self.session = session
         for cb in self.band_vars.values():
@@ -1356,6 +1361,7 @@ class Hua4GMonApp(App):
 
     def disconnect(self) -> None:
         """Мгновенно для UI: выход из роутера выполняет фоновый поток."""
+        self.survey.stop()
         if self.worker is not None:
             self.worker.stop()
         self.worker = None
@@ -1422,6 +1428,16 @@ class Hua4GMonApp(App):
     # ---------- данные ----------
 
     def _on_snapshot(self, snap: Snapshot) -> None:
+        if getattr(self, '_survey_searching', False):
+            return
+        self.survey.observe(snap)
+        if self.survey.running and '_survey_cells' in snap.raw:
+            self.survey.accept_cells(snap.raw['_survey_cells'])
+        if self.survey.running and snap.raw.get('_survey_error'):
+            message = str(snap.raw['_survey_error'])
+            if message not in self.survey.messages:
+                self.survey.messages.append(message)
+        self._refresh_survey()
         change = self.state.ingest(snap, time.monotonic())
         scr = self.sm.get_screen('monitor')
         if change is not None:
@@ -1468,12 +1484,15 @@ class Hua4GMonApp(App):
         return [primary, secondary, *rest]
 
     def _render(self, snap: Snapshot) -> None:
+        snap = snap.display()
         scr = self.sm.get_screen('monitor')
         ids = scr.ids
         if not ids:
             return
         sun = self.theme_name == 'sun'
         score, summary, color = calculate_overall_health(snap.rsrp, snap.sinr)
+        if not snap.registered:
+            score, summary, color = 0, snap.network_message, 'gray'
         health = t(summary).format(pct=score)
         if self.demo_modem is not None:
             health = t("ДЕМО · азимут {a}").format(
@@ -1489,8 +1508,10 @@ class Hua4GMonApp(App):
         up = uplink_status(snap.pusch_dbm)
         tips = advice(rsrp=snap.rsrp, sinr=snap.sinr, rsrq=snap.rsrq,
                       jitter=self.state.jitter(), mimo=mimo, uplink=up)
-        if snap.data_enabled is False:
-            tips.insert(0, "Мобильные данные на роутере выключены.")
+        if not snap.registered:
+            tips = []
+        elif snap.connection != 901 or snap.data_enabled is False:
+            tips.insert(0, snap.network_message)
         ids.advice_lbl.text = "\n".join("• " + t(tip) for tip in tips[:2])
         scr.advice_color = hex_to_rgba('#e68033', sun)
         self.refresh_graph()
@@ -1498,7 +1519,8 @@ class Hua4GMonApp(App):
             self.refresh_info_screen()
 
     def _tower_summary(self, snap: Snapshot) -> str:
-        parts = []
+        snap = snap.display()
+        parts = [t(snap.network_message)]
         if snap.bands:
             freq = f" · {snap.freq_mhz:g} {t('МГц')}" if snap.freq_mhz else ""
             parts.append(f"B{snap.bands[0]}{freq}")
@@ -1560,7 +1582,9 @@ class Hua4GMonApp(App):
             return
         # Во время переподключения молчим, но цикл не прерываем — иначе звук
         # не вернулся бы после перезагрузки роутера или обрыва Wi-Fi.
-        if self.link == 'online' and not self.state.is_stale(time.monotonic(), self.interval):
+        if (self.link == 'online' and self.state.last is not None
+                and self.state.last.registered
+                and not self.state.is_stale(time.monotonic(), self.interval)):
             self.beeper.beep(50)
         self._schedule_beep()
 
@@ -1571,14 +1595,100 @@ class Hua4GMonApp(App):
 
     # ---------- меню и диалоги ----------
 
+    def open_survey(self) -> None:
+        from kivy.uix.boxlayout import BoxLayout
+        from kivy.uix.button import Button
+        from kivy.uix.textinput import TextInput
+        box = BoxLayout(orientation='vertical', spacing=dp(6), padding=dp(6))
+        for items in (((t('Старт'), self._start_survey), (t('Стоп'), self._stop_survey)),
+                      ((t('Поиск операторов'), self._search_survey),
+                       (t('Копировать результат'), self._copy_survey))):
+            bar = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(6))
+            for title, action in items:
+                button = Button(text=title, font_size=sp(14))
+                button.bind(on_release=lambda _b, fn=action: fn())
+                bar.add_widget(button)
+            box.add_widget(bar)
+        self._survey_text = TextInput(readonly=True, font_size=sp(14), multiline=True)
+        box.add_widget(self._survey_text)
+        popup = Popup(title=t('Сканер наблюдений · Beta'), content=box, size_hint=(0.97, 0.95))
+        close = Button(text=t('← Назад'), size_hint_y=None, height=dp(46))
+        close.bind(on_release=lambda _b: popup.dismiss())
+        box.add_widget(close)
+        popup.bind(on_dismiss=lambda _p: setattr(self, '_survey_text', None))
+        self._refresh_survey()
+        popup.open()
+
+    def _refresh_survey(self) -> None:
+        widget = getattr(self, '_survey_text', None)
+        if widget is not None:
+            scroll = widget.scroll_y
+            widget.text = self.survey.report()
+            widget.scroll_y = scroll
+
+    def _start_survey(self) -> None:
+        if self.session is None or self.link != 'online' or self._busy:
+            self.toast(t('Сначала подключитесь к роутеру.'))
+            return
+        def start() -> None:
+            self.survey.start()
+            session = self.session
+            if session is not None:
+                session.survey_enabled = True
+            self._refresh_survey()
+        if self.survey.rows:
+            self.confirm(t('Сканер наблюдений · Beta'),
+                         t('Начать новый сбор? Предыдущий результат будет очищен.'), t('Старт'), start)
+        else:
+            start()
+
+    def _stop_survey(self) -> None:
+        if self.session is not None:
+            self.session.survey_enabled = False
+        self.survey.stop()
+        self.survey.messages = [m for m in self.survey.messages if m != t('Поиск операторов…')]
+        self._refresh_survey()
+
+    def _search_survey(self) -> None:
+        session = self.session
+        if session is None or self._busy:
+            return
+        if not self.survey.running:
+            self.toast(t('Сначала нажмите Старт.'))
+            return
+        survey = self.survey
+        generation = survey.generation
+        def done(result: Any) -> None:
+            self._survey_searching = False
+            if survey is self.survey and survey.running and survey.generation == generation:
+                survey.accept_discovery(*result)
+                self._refresh_survey()
+        def search() -> None:
+            if session is not self.session or self._busy or self.link != 'online':
+                return
+            self._survey_searching = True
+            pending = Snapshot()
+            self.state.ingest(pending, time.monotonic())
+            self._render(pending)
+            survey.messages = [t('Поиск операторов…')]
+            self._refresh_survey()
+            self._net_action(session.discover_networks, done, t('Поиск операторов…'))
+        self.confirm(t('Поиск операторов'), t(SURVEY_HELP), t('Продолжить'), search)
+
+    def _copy_survey(self) -> None:
+        from kivy.core.clipboard import Clipboard
+        Clipboard.copy(self.survey.report())
+        self.toast(t('Результат скопирован'))
+
     def open_menu(self) -> None:
         from kivy.uix.boxlayout import BoxLayout
         from kivy.uix.button import Button
         box = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(8))
-        popup = Popup(title=t("Меню"), content=box, size_hint=(0.85, None), height=dp(380))
+        popup = Popup(title=t("Меню"), content=box, size_hint=(0.85, None), height=dp(450))
         sun = self.theme_name == 'sun'
         items = [
             (t("ℹ Информация"), lambda: self.go('info')),
+            (t('Сканер наблюдений · Beta'), self.open_survey),
             (t("⚙ Сеть"), lambda: self.go('tools')),
             (t("☀ Солнце: выкл") if sun else t("☀ Солнце: вкл"),
              lambda: self.apply_theme('dark' if sun else 'sun')),
@@ -1669,7 +1779,7 @@ class Hua4GMonApp(App):
         ids = self.sm.get_screen('info').ids
         if not ids:
             return
-        snap = self.state.last or Snapshot()
+        snap = (self.state.last or Snapshot()).display()
         nd = t("Нет данных")
         mhz = t('МГц')
 
@@ -1816,6 +1926,7 @@ class Hua4GMonApp(App):
         def failed(exc: BaseException) -> None:
             if session is not self.session:
                 return
+            self._survey_searching = False
             self._busy = False
             self._net_msg(t("Команда не выполнена: {err}").format(
                 err=humanize_error(exc)), '#d63031')

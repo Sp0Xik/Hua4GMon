@@ -7,7 +7,7 @@ from core.graph import GraphViewport
 
 def test_cell_identity_decimal_hex_and_exports():
     for raw in ('161490247', hex(161490247), '9a02547'):
-        snap = build_snapshot({'cell_id': raw, 'earfcn': '1300', 'pci': '114'})
+        snap = build_snapshot({'ServiceStatus': '2', 'cell_id': raw, 'earfcn': '1300', 'pci': '114'})
         assert snap.cell_id == 161490247
         assert snap.enodeb * 256 + snap.sector == snap.cell_id
         state = SignalState()
@@ -22,7 +22,7 @@ def test_cell_identity_decimal_hex_and_exports():
 def test_times_follow_valid_samples_and_reset():
     state = SignalState(history=2)
     for now, raw in ((1, '3'), (3, None), (5, '4'), (9, '6')):
-        state.ingest(build_snapshot({'sinr': raw}), now)
+        state.ingest(build_snapshot({'ServiceStatus': '2', 'sinr': raw}), now)
     assert list(state.history_times['sinr']) == [5, 9]
     assert list(state.history['sinr']) == [4, 6]
     state.reset()

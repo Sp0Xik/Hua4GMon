@@ -85,7 +85,14 @@ def core_indirect() -> set[str]:
     """Русские строки из данных core, которые UI передаёт в t()."""
     import core
     from core import errors, rf
-    keys: set[str] = set()
+    from core.models import Snapshot
+    from core.scanner import SURVEY_HELP
+    keys: set[str] = {SURVEY_HELP}
+    for registration in ('registered', 'unknown', 'unregistered'):
+        for connection in (None, 900, 901, 902, 903):
+            for enabled in (None, False, True):
+                keys.add(Snapshot(registration=registration, connection=connection,
+                                  data_enabled=enabled).network_message)
     for rules in core.SIGNAL_THRESHOLDS.values():
         keys.update(label for _thr, label, _col, _pct in rules)
     keys.update({"Нет данных", "Н/Д"})

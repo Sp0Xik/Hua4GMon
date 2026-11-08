@@ -151,7 +151,7 @@ class CellStats:
 
     def is_current(self, snap: Snapshot | None) -> bool:
         """Модем сейчас на этой соте этого оператора."""
-        return snap is not None and snap.cell == self.key and snap.plmn == self.plmn
+        return snap is not None and snap.registered and snap.cell == self.key and snap.plmn == self.plmn
 
 
 def cell_label(snap: Snapshot) -> str:
@@ -215,6 +215,17 @@ class SignalState:
         self.last = snap
         self.last_ok = now
 
+        if not snap.registered:
+            # A gap is not a zero or a line joining two different networks.
+            for p in TRACKED:
+                self.history[p].append(float('nan'))
+                self.history_times[p].append(now)
+            self.tracker.reset()
+            self._cell = None
+            self._rsrp_in_cell = 0
+            self._append_log(snap.display(), wall)
+            return None
+
         for p in TRACKED:
             v = snap.metric(p)
             if v is None:
@@ -273,6 +284,7 @@ class SignalState:
     def _append_log(self, snap: Snapshot, wall: datetime.datetime) -> None:
         self.log.append({
             'ts': wall.isoformat(timespec='seconds'),
+            'registration': snap.registration, 'connection': snap.connection,
             'rsrp': snap.rsrp, 'rssi': snap.rssi,
             'sinr': snap.sinr, 'rsrq': snap.rsrq,
             'nr_rsrp': snap.nr_rsrp, 'nr_sinr': snap.nr_sinr,
@@ -286,7 +298,7 @@ class SignalState:
     # ---- вычисляемые величины ----
 
     def current(self, param: str) -> float | None:
-        return self.last.metric(param) if self.last is not None else None
+        return self.last.metric(param) if self.last is not None and self.last.registered else None
 
     def delta_to_peak(self, param: str) -> float | None:
         """Сколько дБ не хватает до лучшего значения сессии (≤ 0)."""

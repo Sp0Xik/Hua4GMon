@@ -181,6 +181,7 @@ class DemoModem:
             'CurrentNetworkType': '19' if cell else '0',
             'ConnectionStatus': '901' if self.data_on and cell else '902',
             'SimStatus': '1',
+            'ServiceStatus': '2' if cell else '0',
             'SignalIcon': '4',
         }
 

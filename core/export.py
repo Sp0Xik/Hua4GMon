@@ -22,7 +22,7 @@ from typing import Any
 
 CSV_FIELDS: tuple[str, ...] = (
     'ts', 'rsrp', 'rssi', 'sinr', 'rsrq', 'nr_rsrp', 'nr_sinr', 'plmn',
-    'cell_id', 'enodeb', 'sector', 'pci', 'earfcn', 'bands', 'rat',
+    'cell_id', 'enodeb', 'sector', 'pci', 'earfcn', 'bands', 'rat', 'registration', 'connection',
 )
 
 # Части имён ключей (без учёта регистра), значения которых маскируются.

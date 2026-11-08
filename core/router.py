@@ -34,7 +34,7 @@ from core.constants import (
     RECONNECT_DELAY_MAX,
     RECONNECT_REOPEN_AFTER,
 )
-from core.errors import ErrorKind, NetModeUnavailable, classify_error
+from core.errors import ErrorKind, NetModeUnavailable, classify_error, humanize_error
 from core.models import Snapshot, build_snapshot
 from core.parsers import (
     parse_access_modes,
@@ -160,6 +160,8 @@ class RouterSession:
         self._lock = threading.RLock()
         self._connection: Any = None
         self._client: Any = None
+        self.survey_enabled = False
+        self._next_survey_read = 0.0
         self._tick = 0
         self._cache: dict[str, dict[str, Any]] = {}
         self._unsupported: set[str] = set()
@@ -264,27 +266,29 @@ class RouterSession:
         }
 
     def fetch(self) -> dict[str, Any]:
-        """Один тик опроса. Каждый эндпоинт — со своей частотой (POLL_EVERY)."""
+        """Свежие сигнал, PLMN и состояние сети; статистика — по POLL_EVERY."""
         with self._lock:
             client = self._require()
             tick = self._tick
             self._tick += 1
+            before = self._read_network_status(client)
             signal = dict(client.device.signal() or {})
             cell = (signal.get('earfcn'), signal.get('pci'))
             cell_changed = self._last_cell is not None and cell != self._last_cell
             self._last_cell = cell
 
             for name, getter in self._optional_getters(client).items():
-                if name in self._unsupported:
+                if name == 'status' or name in self._unsupported:
                     continue
                 every = POLL_EVERY.get(name, 1)
-                due = (tick % every == 0 or name not in self._cache
+                due = (name in ('plmn', 'dataswitch') or tick % every == 0 or name not in self._cache
                        or (name == 'plmn' and cell_changed))
                 if not due:
                     continue
                 try:
                     self._cache[name] = dict(getter() or {})
                 except Exception as exc:
+                    self._cache.pop(name, None)
                     kind = classify_error(exc)
                     if kind in (ErrorKind.NETWORK, ErrorKind.SESSION):
                         raise
@@ -293,10 +297,62 @@ class RouterSession:
                         self._cache.pop(name, None)
                     logger.debug("Optional endpoint %s failed", name, exc_info=True)
 
+            survey_data: dict[str, Any] = {}
+            if self.survey_enabled and time.monotonic() >= self._next_survey_read:
+                self._next_survey_read = time.monotonic() + 5.0
+                try:
+                    survey_data['_survey_cells'] = client.net.cell_info()
+                except Exception as exc:
+                    if classify_error(exc) is ErrorKind.SESSION:
+                        raise
+                    survey_data['_survey_error'] = humanize_error(exc)
+                    if classify_error(exc) is ErrorKind.NOT_SUPPORTED:
+                        self._next_survey_read = float('inf')
+            after = self._read_network_status(client)
+            self._cache['status'] = after
+            fields = ('ServiceStatus', 'ConnectionStatus', 'SimStatus', 'CurrentNetworkTypeEx')
+            uncertain = (not before or not after or
+                         any(before.get(k) != after.get(k) for k in fields))
+            radio_plmn = str(signal.get('plmn') or '').strip()
+            network_plmn = str(self._cache.get('plmn', {}).get('Numeric') or '').strip()
+            if radio_plmn and network_plmn and radio_plmn != network_plmn:
+                uncertain = True
             merged: dict[str, Any] = dict(signal)
+            merged['_network_uncertain'] = uncertain
+            if uncertain:
+                merged['_observed_plmn'] = radio_plmn
             for name in ('plmn', 'status', 'traffic', 'month', 'dataswitch'):
                 merged.update(self._cache.get(name, {}))
+            merged.update(survey_data)
             return merged
+
+    def _read_network_status(self, client: Any) -> dict[str, Any]:
+        try:
+            return dict(client.monitoring.status() or {})
+        except Exception as exc:
+            if classify_error(exc) is ErrorKind.SESSION:
+                raise
+            logger.debug('Network status unavailable', exc_info=True)
+            return {}
+
+    def discover_networks(self) -> tuple[dict[str, Any], dict[str, str]]:
+        """Explicit search only: some firmware interrupts data during PLMN search."""
+        dumps: dict[str, Any] = {}
+        errors: dict[str, str] = {}
+        with self._lock:
+            client = self._require()
+            old_timeout = getattr(self._connection, 'timeout', self.timeout)
+            self._connection.timeout = (4.0, 60.0)
+            try:
+                for name in ('plmn_list', 'cell_info'):
+                    try:
+                        dumps[name] = getattr(client.net, name)()
+                    except Exception as exc:
+                        errors[name] = humanize_error(exc)
+            finally:
+                self._connection.timeout = old_timeout
+                self._cache.clear()
+        return dumps, errors
 
     # ---- настройки сети ----
 

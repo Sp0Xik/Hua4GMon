@@ -1,6 +1,8 @@
 """Shared graph bounds and clipping for Tk and Kivy."""
 from __future__ import annotations
 
+import math
+
 from core.constants import GRAPH_MIN_SPAN, PARAM_RANGES
 
 
@@ -38,7 +40,8 @@ class GraphViewport:
         base = self.param.replace('nr_', '')
         low, high = PARAM_RANGES.get(base, (-140, 40))
         start, _ = self.x_range()
-        points = [v for x, v in zip(self.times, self.values, strict=True) if x >= start]
+        points = [v for x, v in zip(self.times, self.values, strict=True)
+                  if x >= start and math.isfinite(v)]
         if self.peak is not None:
             points.append(self.peak)
         if not points:
@@ -76,6 +79,8 @@ class GraphViewport:
                   for x, y in zip(self.times, self.values, strict=True)]
         result = []
         for (x, y), (xx, yy) in zip(points, points[1:], strict=False):
+            if not all(math.isfinite(v) for v in (x, y, xx, yy)):
+                continue
             dx, dy = xx - x, yy - y
             enter, leave = 0.0, 1.0
             for p, q in ((-dx, x), (dx, 1 - x), (-dy, y), (dy, 1 - y)):

@@ -199,7 +199,7 @@ def test_csv_ru_excel(tmp_path):
     lines = data.decode('utf-8-sig').splitlines()
     assert lines[0].startswith("ts;rsrp;rssi;sinr;rsrq")
     assert ";-95;" in lines[1] and ";12,5;" in lines[1]
-    assert lines[1].endswith(";B3+B1;lte_ca")
+    assert lines[1].endswith(";B3+B1;lte_ca;;")
     assert lines[2].startswith("2026-09-24T12:00:01;;")
 
 
