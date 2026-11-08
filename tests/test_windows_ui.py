@@ -499,3 +499,15 @@ def test_foreign_network_is_hidden_and_survey_keeps_observation(app):
     app._on_snapshot(core.Snapshot(earfcn=1400, pci=20))
     assert len(app.survey.rows) == count
     app._survey_win.destroy()
+
+
+def test_network_summary_only_warns_on_problem(shared_app):
+    from dataclasses import replace
+
+    from core.models import Snapshot
+    snap = Snapshot(registration='registered', connection=901, data_enabled=True,
+                    bands=(3,), band_label='B3', pci=114)
+    assert 'В сети' not in shared_app._tower_summary(snap)
+    assert 'B3' in shared_app._tower_summary(snap)
+    assert 'нет мобильного' in shared_app._tower_summary(replace(snap, connection=902))
+    assert 'Нет регистрации' in shared_app._tower_summary(replace(snap, registration='unregistered'))

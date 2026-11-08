@@ -443,3 +443,37 @@ def test_foreign_network_hidden_and_survey_copy(app, monkeypatch):
             widget.dismiss()
     pump(lambda: False, 0.1)
     app.worker.resume()
+
+
+@pytest.mark.parametrize('size', [(140, 100), (165, 140), (280, 120)])
+@pytest.mark.parametrize('language', ['ru', 'en'])
+def test_metric_captions_fit_small_cards(app, size, language):
+    from kivy.factory import Factory
+    core.set_language(language)
+    card = Factory.MetricCard(size_hint=(None, None), size=size)
+    card.m_name = 'RSRP'
+    card.m_value = '-119.5'
+    card.m_status = core.t('Нет данных')
+    card.m_peak = core.t('Пик: {v} (Δ {d})').format(v='-109.5', d='-10.25')
+    try:
+        assert pump(lambda: all(label.text and label.texture_size[0] <= label.width + 1
+                               and label.texture_size[1] <= label.height + 1
+                               for label in card.children))
+        assert card.ids.peak_label.text.replace('\n', ' ') == card.m_peak
+        for label in card.children:
+            assert label.x >= card.x and label.right <= card.right
+            assert label.y >= card.y and label.top <= card.top
+    finally:
+        core.set_language('ru')
+
+
+def test_network_summary_only_warns_on_problem(app):
+    from dataclasses import replace
+
+    from core.models import Snapshot
+    snap = Snapshot(registration='registered', connection=901, data_enabled=True,
+                    bands=(3,), band_label='B3', pci=114)
+    assert 'В сети' not in app._tower_summary(snap)
+    assert 'B3' in app._tower_summary(snap)
+    assert 'нет мобильного' in app._tower_summary(replace(snap, connection=902))
+    assert 'Нет регистрации' in app._tower_summary(replace(snap, registration='unregistered'))
