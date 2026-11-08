@@ -411,3 +411,35 @@ def test_pinch_through_rotated_popup_and_auto(app):
     assert not graph._fingers and not first.grab_list
     first.touch_up()
     app.worker.resume()
+
+
+def test_foreign_network_hidden_and_survey_copy(app, monkeypatch):
+    from kivy.core.clipboard import Clipboard
+    from kivy.core.window import Window
+    from kivy.uix.popup import Popup
+    ensure_online(app)
+    app.worker.pause()
+    pump(lambda: False, 0.15)
+    app.open_survey()
+    app._start_survey()
+    bad = core.build_snapshot({'ServiceStatus': '1', 'ConnectionStatus': '902',
+                               'rsrp': '-89dBm', 'sinr': '20dB', 'Numeric': '25035',
+                               'earfcn': '1276', 'pci': '15'})
+    peak = app.state.peaks['rsrp']
+    app._on_snapshot(bad)
+    monitor = app.sm.get_screen('monitor')
+    assert 'Нет регистрации' in monitor.ids.status_lbl.text
+    assert all(card.m_value == '-' for card in (monitor.ids.primary_box,
+               monitor.ids.secondary_box, monitor.ids.small1_box, monitor.ids.small2_box))
+    assert app.state.peaks['rsrp'] == peak
+    assert 'Мотив' in app._survey_text.text
+    copied = []
+    monkeypatch.setattr(Clipboard, 'copy', copied.append)
+    app._stop_survey()
+    app._copy_survey()
+    assert '25035' in copied[0]
+    for widget in list(Window.children):
+        if isinstance(widget, Popup):
+            widget.dismiss()
+    pump(lambda: False, 0.1)
+    app.worker.resume()

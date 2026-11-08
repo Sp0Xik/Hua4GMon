@@ -60,6 +60,8 @@ class CellKey:
 
 @dataclass(frozen=True, slots=True)
 class Snapshot:
+    registration: str = 'unknown'
+    connection: int | None = None
     rsrp: float | None = None
     rssi: float | None = None
     sinr: float | None = None
@@ -109,6 +111,34 @@ class Snapshot:
     month_ul: int | None = None
     data_enabled: bool | None = None
     raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+
+    @property
+    def registered(self) -> bool:
+        return self.registration == 'registered'
+
+    def display(self) -> Snapshot:
+        """Never present unconfirmed radio observations as a serving network."""
+        if self.registered:
+            return self
+        return Snapshot(registration=self.registration, connection=self.connection,
+                        data_enabled=self.data_enabled, temperature=self.temperature,
+                        raw=self.raw)
+
+    @property
+    def network_message(self) -> str:
+        if self.registration == 'unregistered':
+            return 'Нет регистрации в мобильной сети'
+        if not self.registered:
+            return 'Регистрация в сети не подтверждена'
+        if self.data_enabled is False:
+            return 'В сети · мобильные данные выключены'
+        if self.connection == 901:
+            return 'В сети · мобильное соединение установлено'
+        if self.connection == 900:
+            return 'В сети · подключение мобильных данных…'
+        if self.connection in (902, 903):
+            return 'В сети · нет мобильного интернет-соединения'
+        return 'В сети · состояние мобильных данных неизвестно'
 
     @property
     def cell(self) -> CellKey:
@@ -201,7 +231,24 @@ def build_snapshot(raw: Mapping[str, Any],
     plmn = _str(data, ('Numeric', 'plmn'))
     full_name = _str(data, ('FullName', 'ShortName'))
 
+    # HiLink service state: 0=no service, 1=limited, 2=normal,
+    # 3=limited regional. Unknown codes must never mean registered.
+    service = to_int(data.get('ServiceStatus'))
+    connection = to_int(data.get('ConnectionStatus'))
+    sim = to_int(data.get('SimStatus'))
+    registration = 'unknown'
+    if service in (0, 1, 3) or sim in (0, 3, 4, 255):
+        registration = 'unregistered'
+    elif service == 2 or (service is None and connection == 901):
+        registration = 'registered'
+    if data.get('_network_uncertain'):
+        registration = 'unknown'
+        if '_observed_plmn' in data:
+            plmn = str(data['_observed_plmn'])
+            full_name = ''
+
     return Snapshot(
+        registration=registration, connection=connection,
         rsrp=metrics['rsrp'], rssi=metrics['rssi'],
         sinr=metrics['sinr'], rsrq=metrics['rsrq'],
         nr_rsrp=nr['nr_rsrp'], nr_sinr=nr['nr_sinr'], nr_rsrq=nr['nr_rsrq'],

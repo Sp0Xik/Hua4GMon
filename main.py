@@ -26,6 +26,7 @@ import argparse
 import contextlib
 import datetime
 import logging
+import math
 import platform
 import queue
 import sys
@@ -87,6 +88,7 @@ from core import (
     write_session_csv,
 )
 from core.graph import GraphViewport
+from core.scanner import SURVEY_HELP, Survey
 
 try:
     import winsound
@@ -131,7 +133,7 @@ def unit_of(param: str) -> str:
 
 def fmt_num(value: float | None) -> str:
     """Число для подписи: целые — как есть (eNB 1048575, а не 1.04858e+06)."""
-    if value is None:
+    if value is None or not math.isfinite(value):
         return "-"
     return str(value) if isinstance(value, int) else f"{value:g}"
 
@@ -333,6 +335,7 @@ class Hua4GMon:
         self.dispatch = UiDispatcher(root)
         self.beeper = Beeper() if HAS_WINSOUND else None
 
+        self.survey = Survey()
         self.state = SignalState(trend_param='sinr')
         self.session: RouterSession | None = None
         self.worker: SessionWorker | None = None
@@ -708,6 +711,8 @@ class Hua4GMon:
     # ---------- вкладка «Вышка» ----------
 
     def build_tower_tab(self) -> None:
+        ttk.Button(self.tab_tower, text=t('Сканер наблюдений · Beta'),
+                   command=self.open_survey).pack(pady=6)
         info = ttk.LabelFrame(self.tab_tower, text=t("Информация о станции"), padding=8)
         info.pack(fill=tk.X, padx=10, pady=(8, 4))
         self.tower_labels: dict[str, ttk.Label] = {}
@@ -904,6 +909,7 @@ class Hua4GMon:
         def failed(exc: BaseException) -> None:
             if session is not self.session:
                 return
+            self._survey_searching = False
             self._busy = False
             self._set_net_buttons('normal')
             self.net_msg.config(text=t("Команда не выполнена: {err}").format(
@@ -960,6 +966,8 @@ class Hua4GMon:
 
     def _start_session(self, session: RouterSession) -> None:
         self._sync_interval()
+        self.survey = Survey()
+        self._survey_searching = False
         self.state.reset()
         self.session = session
         self._close_graph()
@@ -1014,6 +1022,7 @@ class Hua4GMon:
 
     def disconnect(self) -> None:
         """Мгновенно для UI: выход из роутера выполняет фоновый поток."""
+        self.survey.stop()
         if self.worker is not None:
             self.worker.stop()
         self.worker = None
@@ -1117,7 +1126,103 @@ class Hua4GMon:
     # ДАННЫЕ И ОТРИСОВКА
     # =====================================================
 
+    def open_survey(self) -> None:
+        if getattr(self, '_survey_win', None) is not None and self._survey_win.winfo_exists():
+            self._survey_win.lift()
+            return
+        win = tk.Toplevel(self.root)
+        self._survey_win = win
+        win.title(t('Сканер наблюдений · Beta'))
+        win.geometry('850x650')
+        controls = ttk.Frame(win, padding=8)
+        controls.pack(fill=tk.X)
+        for title, action in ((t('Старт'), self._start_survey), (t('Стоп'), self._stop_survey),
+                              (t('Поиск операторов'), self._search_survey),
+                              (t('Сохранить CSV'), self._save_survey)):
+            ttk.Button(controls, text=title, command=action).pack(side=tk.LEFT, padx=4)
+        frame = ttk.Frame(win)
+        frame.pack(fill=tk.BOTH, expand=True)
+        self._survey_text = tk.Text(frame, wrap='word', font=('Segoe UI', 11))
+        scroll = ttk.Scrollbar(frame, command=self._survey_text.yview)
+        self._survey_text.configure(yscrollcommand=scroll.set)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._survey_text.pack(fill=tk.BOTH, expand=True)
+        self._refresh_survey()
+
+    def _refresh_survey(self) -> None:
+        win = getattr(self, '_survey_win', None)
+        if win is None or not win.winfo_exists():
+            return
+        text = self._survey_text
+        pos = text.yview()[0]
+        text.configure(state='normal')
+        text.delete('1.0', tk.END)
+        text.insert('1.0', self.survey.report())
+        text.configure(state='disabled')
+        text.yview_moveto(pos)
+
+    def _start_survey(self) -> None:
+        if not self._net_ready():
+            return
+        if self.survey.rows and not messagebox.askyesno(t('Сканер наблюдений · Beta'),
+                                                       t('Начать новый сбор? Предыдущий результат будет очищен.')):
+            return
+        self.survey.start()
+        self.session.survey_enabled = True
+        self._refresh_survey()
+
+    def _stop_survey(self) -> None:
+        if self.session is not None:
+            self.session.survey_enabled = False
+        self.survey.stop()
+        self.survey.messages = [m for m in self.survey.messages if m != t('Поиск операторов…')]
+        self._refresh_survey()
+
+    def _search_survey(self) -> None:
+        session = self.session
+        if session is None or self._busy or self.link != 'online':
+            return
+        if not self.survey.running:
+            messagebox.showinfo(t('Сканер наблюдений · Beta'), t('Сначала нажмите Старт.'))
+            return
+        if not messagebox.askyesno(t('Поиск операторов'), t(SURVEY_HELP)):
+            return
+        survey = self.survey
+        generation = survey.generation
+        def done(result: Any) -> None:
+            self._survey_searching = False
+            if survey is self.survey and survey.running and survey.generation == generation:
+                survey.accept_discovery(*result)
+                self._refresh_survey()
+        self._survey_searching = True
+        pending = Snapshot()
+        self.state.ingest(pending, time.monotonic())
+        self._render(pending)
+        self.survey.messages = [t('Поиск операторов…')]
+        self._refresh_survey()
+        self._net_action(session.discover_networks, done, t('Поиск операторов…'))
+
+    def _save_survey(self) -> None:
+        path = filedialog.asksaveasfilename(defaultextension='.csv',
+                                           initialfile='hua4gmon-survey.csv')
+        if path:
+            try:
+                with open(path, 'w', encoding='utf-8-sig', newline='') as output:
+                    output.write(self.survey.csv_text())
+            except OSError as exc:
+                messagebox.showerror(t('Ошибка'), str(exc))
+
     def _on_snapshot(self, snap: Snapshot) -> None:
+        if getattr(self, '_survey_searching', False):
+            return
+        self.survey.observe(snap)
+        if self.survey.running and '_survey_cells' in snap.raw:
+            self.survey.accept_cells(snap.raw['_survey_cells'])
+        if self.survey.running and snap.raw.get('_survey_error'):
+            message = str(snap.raw['_survey_error'])
+            if message not in self.survey.messages:
+                self.survey.messages.append(message)
+        self._refresh_survey()
         change = self.state.ingest(snap, time.monotonic())
         if change is not None:
             self.event_line.config(text=t("{at} смена соты: {old} → {new}").format(
@@ -1156,8 +1261,11 @@ class Hua4GMon:
         self._render_roof(stale)
 
     def _render(self, snap: Snapshot) -> None:
+        snap = snap.display()
         st = self.state
         score, summary, color = calculate_overall_health(snap.rsrp, snap.sinr)
+        if not snap.registered:
+            score, summary, color = 0, snap.network_message, 'gray'
         self.health_progress.config(value=score)
         self.health_text_lbl.config(text=t(summary).format(pct=score), fg=ink(color))
         self.tower_line.config(text=self._tower_summary(snap))
@@ -1176,6 +1284,7 @@ class Hua4GMon:
                     fg=OK_FG if delta > -1 else '#555')
 
         jitter = st.jitter()
+        self.jitter_label.config(text="")
         if jitter is not None:
             jcol = 'green' if jitter < 3 else 'orange' if jitter < 7 else 'red'
             self.jitter_label.config(text=t("Джиттер: {j:.1f} dB").format(j=jitter),
@@ -1184,8 +1293,10 @@ class Hua4GMon:
         up = uplink_status(snap.pusch_dbm)
         tips = advice(rsrp=snap.rsrp, sinr=snap.sinr, rsrq=snap.rsrq, jitter=jitter,
                       mimo=mimo, uplink=up)
-        if snap.data_enabled is False:
-            tips.insert(0, "Мобильные данные на роутере выключены.")
+        if not snap.registered:
+            tips = []
+        elif snap.connection != 901 or snap.data_enabled is False:
+            tips.insert(0, snap.network_message)
         self.advice_lbl.config(text="\n".join("💡 " + t(tip) for tip in tips[:2]))
 
         self._refresh_graph(False)
@@ -1194,7 +1305,8 @@ class Hua4GMon:
         self._render_roof(False)
 
     def _tower_summary(self, snap: Snapshot) -> str:
-        parts = []
+        snap = snap.display()
+        parts = [t(snap.network_message)]
         if self.demo_modem is not None:
             parts.append(t("🧪 ДЕМО · азимут {a}").format(a=demo_angle_hint(self.demo_modem)))
         if snap.bands:
@@ -1211,6 +1323,7 @@ class Hua4GMon:
         return " · ".join(parts) if parts else "—"
 
     def _render_tower(self, snap: Snapshot) -> None:
+        snap = snap.display()
         mhz = t('МГц')
         ca_text = {True: t("Активна"), False: t("Нет"), None: "-"}[snap.ca]
         nr = snap.nr_summary() if snap.has_nr else "-"
@@ -1638,7 +1751,8 @@ class Hua4GMon:
         for lbl, param in ((self.r_primary, primary), (self.r_secondary, secondary)):
             text, col = self._roof_line(param)
             lbl.config(text=text, fg='#555555' if stale else col)
-        self.r_status.config(text=t("Нет свежих данных") if stale else "")
+        self.r_status.config(text=t("Нет свежих данных") if stale else
+                             t(self.state.last.network_message) if self.state.last else "")
         snap = self.state.last
         self.r_tower.config(text=self._tower_summary(snap).replace(" · ", "\n")
                             if snap else "—")

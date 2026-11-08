@@ -475,3 +475,27 @@ def test_new_session_clears_demo_settings(app, monkeypatch):
     callbacks[0](types.SimpleNamespace(locked=None, antenna=None))
     assert not any(v.get() for v in app.band_vars.values())
     assert app.antenna_var.get() == core.t('Не прочитано')
+
+
+def test_foreign_network_is_hidden_and_survey_keeps_observation(app):
+    online(app)
+    app.worker.pause()
+    pump(app, lambda: False, 0.1)
+    app.open_survey()
+    app._start_survey()
+    bad = core.build_snapshot({'ServiceStatus': '1', 'ConnectionStatus': '902',
+                               'rsrp': '-89dBm', 'sinr': '20dB', 'Numeric': '25035',
+                               'earfcn': '1276', 'pci': '15'})
+    peak = app.state.peaks['rsrp']
+    app._on_snapshot(bad)
+    assert app.lbl_vars['rsrp']['val'].cget('text') == '-'
+    assert 'Нет регистрации' in app.health_text_lbl.cget('text')
+    assert app.state.peaks['rsrp'] == peak
+    assert 'Мотив' in app._survey_text.get('1.0', 'end')
+    app.toggle_roof_mode()
+    assert 'Нет регистрации' in app.r_status.cget('text')
+    app._stop_survey()
+    count = len(app.survey.rows)
+    app._on_snapshot(core.Snapshot(earfcn=1400, pci=20))
+    assert len(app.survey.rows) == count
+    app._survey_win.destroy()

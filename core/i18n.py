@@ -284,8 +284,6 @@ EN: dict[str, str] = {
         "MHz",
     "Мобильные данные":
         "Mobile data",
-    "Мобильные данные на роутере выключены.":
-        "Mobile data is turned off on the router.",
     "Модель":
         "Model",
     "Модем перерегистрируется в сети (до ~30 с).":
@@ -722,6 +720,39 @@ EN: dict[str, str] = {
         "⟲ Peaks",
 }
 
+
+EN.update({
+    "Cell ID неизвестен: наблюдение не идентифицирует отдельную БС.": "Unknown Cell ID: this observation does not identify a unique base station.",
+    "В сети · мобильное соединение установлено": "Registered · mobile connection established",
+    "В сети · мобильные данные выключены": "Registered · mobile data switched off",
+    "В сети · нет мобильного интернет-соединения": "Registered · no mobile internet connection",
+    "В сети · подключение мобильных данных…": "Registered · connecting mobile data…",
+    "В сети · состояние мобильных данных неизвестно": "Registered · mobile data status unknown",
+    "Дополнительные соты с распознаваемыми параметрами не получены.": "No additional cells with recognized parameters received.",
+    "Достигнут предел 1000 наблюдений. Остановите сбор и сохраните результат.": "Limit of 1000 observations reached. Stop and save the results.",
+    "Источник: {source}; измерений: {n}; {first} — {last}": "Source: {source}; samples: {n}; {first} — {last}",
+    "Копировать результат": "Copy results",
+    "Начать новый сбор? Предыдущий результат будет очищен.": "Start a new survey? Previous results will be cleared.",
+    "Не удалось прочитать: {name} ({error})": "Could not read: {name} ({error})",
+    "Нет регистрации в мобильной сети": "Not registered on a mobile network",
+    "Обнаруженные операторы (без радиометрик):": "Detected operators (without radio metrics):",
+    "Оператор неизвестен": "Unknown operator",
+    "Поиск операторов": "Search operators",
+    "Поиск операторов…": "Searching operators…",
+    "Продолжить": "Continue",
+    "Регистрация в сети не подтверждена": "Network registration not confirmed",
+    "Результат скопирован": "Results copied",
+    "Сбор идёт": "Survey running",
+    "Сбор остановлен": "Survey stopped",
+    "Сканер наблюдений · Beta": "Network survey · Beta",
+    "Сначала зарегистрированные сети; далее по медиане SINR, RSRQ, RSRP. Скорость не измеряется.": "Registered networks first; then median SINR, RSRQ, RSRP. Throughput is not measured.",
+    "Сначала нажмите Старт.": "Press Start first.",
+    "Сохранить CSV": "Save CSV",
+    "Список операторов не получен. Накопление сигнала доступно.": "No operator list received. Signal collection is available.",
+    "Старт": "Start",
+    "Стоп": "Stop",
+    "Старт → медленно вращайте антенну с остановками → Стоп. Сохраняются только наблюдения, которые отдаёт модем, не все БС вокруг. Поиск операторов может временно прервать интернет. Список операторов не содержит уровней сигнала отдельных БС.": "Start → slowly rotate the antenna, pausing between positions → Stop. Only observations reported by the modem are saved, not all nearby base stations. Operator search may interrupt internet access. The operator list has no per-cell signal measurements."
+})
 
 def set_language(lang: str) -> None:
     """Устанавливает текущий язык ('ru' или 'en'). Неизвестный — игнор."""
