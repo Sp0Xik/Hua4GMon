@@ -72,7 +72,8 @@ from kivy.clock import Clock
 from kivy.core.text import LabelBase
 from kivy.lang import Builder
 from kivy.metrics import dp, sp
-from kivy.properties import BooleanProperty, ListProperty, StringProperty
+from kivy.properties import BooleanProperty, ListProperty, NumericProperty, StringProperty
+from kivy.uix.label import Label
 from kivy.uix.modalview import ModalView
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen, ScreenManager
@@ -269,6 +270,37 @@ class ToneBeeper:
 # =========================================================
 # График на Kivy canvas
 # =========================================================
+
+class CardLabel(Label):
+    """Fit the complete caption inside its share of a metric card."""
+    caption = StringProperty('')
+    base_size = NumericProperty(sp(14))
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._fit_trigger = Clock.create_trigger(self._fit, 0)
+        self.bind(size=self._fit_trigger, caption=self._fit_trigger,
+                  base_size=self._fit_trigger, font_name=self._fit_trigger,
+                  bold=self._fit_trigger)
+        self._fit_trigger()
+
+    def _fit(self, *_args):
+        from kivy.core.text import Label as CoreLabel
+        text = self.caption
+        probe = CoreLabel(text=text, font_size=self.base_size,
+                          font_name=self.font_name, bold=self.bold)
+        probe.refresh()
+        width, height = probe.texture.size
+        available = max(1, self.width - dp(2))
+        if width > available and ' (Δ ' in text:
+            text = text.replace(' (Δ ', '\n(Δ ', 1)
+            probe.text = text
+            probe.refresh()
+            width, height = probe.texture.size
+        self.text = text
+        self.font_size = self.base_size * min(
+            1, available / max(1, width), max(1, self.height - dp(2)) / max(1, height))
+
 
 class SignalGraph(Widget):
     """Линейный график: автомасштаб, линия пика, признак устаревания.
@@ -567,29 +599,29 @@ KV = """
             pos: self.pos
             size: self.size
             radius: [dp(10)]
-    Label:
-        text: root.m_name
-        font_size: sp(14)
+    CardLabel:
+        caption: root.m_name
+        base_size: sp(14)
         color: app.c_sub
-        size_hint_y: None
-        height: dp(18)
-    Label:
-        text: root.m_value
-        font_size: root.value_size
+        size_hint_y: 0.15
+    CardLabel:
+        caption: root.m_value
+        base_size: root.value_size
         bold: True
         color: root.m_color
-    Label:
-        text: root.m_status
-        font_size: sp(13)
+        size_hint_y: 0.45
+    CardLabel:
+        caption: root.m_status
+        base_size: sp(13)
         color: root.m_color
-        size_hint_y: None
-        height: dp(18)
-    Label:
-        text: root.m_peak
-        font_size: sp(14)
+        size_hint_y: 0.15
+    CardLabel:
+        id: peak_label
+        caption: root.m_peak
+        base_size: sp(14)
         color: app.c_sub
-        size_hint_y: None
-        height: dp(20) if self.text else 0
+        halign: 'center'
+        size_hint_y: 0.25
 
 <Header@BoxLayout>:
     title: ''
@@ -1520,7 +1552,7 @@ class Hua4GMonApp(App):
 
     def _tower_summary(self, snap: Snapshot) -> str:
         snap = snap.display()
-        parts = [t(snap.network_message)]
+        parts = [] if snap.registered and snap.connection == 901 and snap.data_enabled is not False else [t(snap.network_message)]
         if snap.bands:
             freq = f" · {snap.freq_mhz:g} {t('МГц')}" if snap.freq_mhz else ""
             parts.append(f"B{snap.bands[0]}{freq}")

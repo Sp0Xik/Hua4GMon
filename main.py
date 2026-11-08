@@ -1306,7 +1306,7 @@ class Hua4GMon:
 
     def _tower_summary(self, snap: Snapshot) -> str:
         snap = snap.display()
-        parts = [t(snap.network_message)]
+        parts = [] if snap.registered and snap.connection == 901 and snap.data_enabled is not False else [t(snap.network_message)]
         if self.demo_modem is not None:
             parts.append(t("🧪 ДЕМО · азимут {a}").format(a=demo_angle_hint(self.demo_modem)))
         if snap.bands:
@@ -1752,7 +1752,9 @@ class Hua4GMon:
             text, col = self._roof_line(param)
             lbl.config(text=text, fg='#555555' if stale else col)
         self.r_status.config(text=t("Нет свежих данных") if stale else
-                             t(self.state.last.network_message) if self.state.last else "")
+                             t(self.state.last.network_message) if self.state.last and
+                             (not self.state.last.registered or self.state.last.connection != 901 or
+                              self.state.last.data_enabled is False) else "")
         snap = self.state.last
         self.r_tower.config(text=self._tower_summary(snap).replace(" · ", "\n")
                             if snap else "—")
