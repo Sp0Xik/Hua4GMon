@@ -511,3 +511,31 @@ def test_network_summary_only_warns_on_problem(shared_app):
     assert 'B3' in shared_app._tower_summary(snap)
     assert 'нет мобильного' in shared_app._tower_summary(replace(snap, connection=902))
     assert 'Нет регистрации' in shared_app._tower_summary(replace(snap, registration='unregistered'))
+
+
+def test_lte_nr_graphs_main_and_fullscreen(app):
+    from core import Snapshot
+    app.state.reset()
+    for now in range(3):
+        app.state.ingest(Snapshot(registration='registered', sinr=5 + now,
+                                  nr_sinr=20 + now, nr_rsrq=-9), float(now))
+    app.graph_param.set('sinr')
+    app._on_graph_param()
+    app.open_fullscreen_graph()
+    try:
+        app.root.update()
+        for graph in (app.signal_graph, app.full_graph):
+            assert graph.viewport.has_comparison
+            assert len(graph.viewport.segments(True)) == 2
+            labels = [graph.itemcget(i, 'text') for i in graph.find_all()
+                      if graph.type(i) == 'text']
+            assert any(label.startswith('LTE: 7') for label in labels)
+            assert any(label.startswith('NR: 22') for label in labels)
+        app.state.ingest(Snapshot(registration='registered', sinr=8), 3.0)
+        app._refresh_graph(False)
+        assert app.signal_graph.viewport.latest_value(True) is None
+        app.graph_param.set('nr_rsrq')
+        app._on_graph_param()
+        assert app.signal_graph.viewport.param == 'nr_rsrq'
+    finally:
+        app._close_graph()

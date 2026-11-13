@@ -119,3 +119,58 @@ def test_gesture_empty_data_and_evicted_history():
     assert graph.x_range() == (100, 120)
     graph.update([-100], [130], 'rsrp', None)
     assert graph.offset == 0
+
+
+@pytest.mark.parametrize('param', ['rsrp', 'rsrq', 'sinr'])
+def test_lte_nr_pair_shares_axes_and_survives_nr_gap(param):
+    from core.graph import comparison_param
+    state = SignalState()
+    for now, nr in enumerate((True, True, False, True, True)):
+        raw = {'ServiceStatus': '2', 'rsrp': '-100', 'rsrq': '-15', 'sinr': '5'}
+        if nr:
+            raw.update(nrrsrp='-80', nrrsrq='-8', nrsinr='25')
+        state.ingest(build_snapshot(raw), now)
+    pair = comparison_param(param)
+    graph = GraphViewport()
+    graph.update(list(state.history[param]), list(state.history_times[param]), param, None,
+                 list(state.history[pair]), list(state.history_times[pair]))
+    assert graph.has_comparison
+    assert graph.times == graph.comparison_times == [0, 1, 2, 3, 4]
+    assert len(graph.segments()) == 4
+    assert len(graph.segments(True)) == 2  # never join through missing NR
+    low, high = graph.y_range()
+    assert low <= min(graph.latest_value(), graph.latest_value(True))
+    assert high >= max(graph.latest_value(), graph.latest_value(True))
+    assert comparison_param(pair) == param
+
+
+def test_comparison_uses_actual_timestamps_and_no_stale_endpoint():
+    graph = GraphViewport()
+    graph.update([0, 5, 10], [0, 5, 10], 'sinr', None, [20, 25], [2, 7])
+    assert graph.latest_value(True) is None
+    assert graph.last_point(True) is None
+    segment = graph.segments(True)[0]
+    assert segment[0] == pytest.approx(0.2)
+    assert segment[2] == pytest.approx(0.7)
+    graph.zoom('level', 0.5)
+    manual = graph.y_range()
+    graph.update([10, 12], [10, 11], 'sinr', None, [25, float('nan')], [10, 11])
+    assert graph.y_range() == manual
+    assert graph.latest_value(True) is None
+    assert graph.segments(True) == []
+    graph.update([-80], [12], 'rssi', None, [-90], [12])
+    assert not graph.has_comparison
+    assert graph.levels is None
+
+
+def test_nr_only_and_loss_of_registration_do_not_create_zero_samples():
+    state = SignalState()
+    for now, service in enumerate(('2', '2', '1')):
+        state.ingest(build_snapshot({'ServiceStatus': service, 'nrsinr': '22'}), now)
+    graph = GraphViewport()
+    graph.update(list(state.history['sinr']), list(state.history_times['sinr']), 'sinr', None,
+                 list(state.history['nr_sinr']), list(state.history_times['nr_sinr']))
+    assert graph.segments() == []
+    assert len(graph.segments(True)) == 1
+    assert graph.latest_value() is None and graph.latest_value(True) is None
+    assert graph.last_point(True) is None

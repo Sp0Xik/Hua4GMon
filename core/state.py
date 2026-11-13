@@ -11,6 +11,7 @@ SignalState получает снимки (Snapshot) и считает всё, �
 from __future__ import annotations
 
 import datetime
+import math
 import statistics
 from collections import deque
 from dataclasses import dataclass
@@ -228,7 +229,10 @@ class SignalState:
 
         for p in TRACKED:
             v = snap.metric(p)
+            # Keep missing LTE/NR samples as gaps on the shared time axis.
             if v is None:
+                self.history[p].append(float('nan'))
+                self.history_times[p].append(now)
                 continue
             self.history[p].append(v)
             self.history_times[p].append(now)
@@ -316,6 +320,8 @@ class SignalState:
         if min(len(hist), self._rsrp_in_cell) < JITTER_WINDOW:
             return None
         recent = list(hist)[-JITTER_WINDOW:]
+        if not all(math.isfinite(v) for v in recent):
+            return None
         return max(recent) - min(recent)
 
     @property

@@ -124,7 +124,7 @@ from core import (
     t,
     uplink_status,
 )
-from core.graph import GestureViewport, GraphViewport
+from core.graph import GestureViewport, GraphViewport, comparison_param, radio_label
 from core.scanner import SURVEY_HELP, Survey
 
 APP_NAME = "Hua4GMon"
@@ -135,7 +135,7 @@ configure_library_logging()
 logger = logging.getLogger(APP_NAME)
 
 LTE_PARAMS = ['sinr', 'rsrp', 'rsrq', 'rssi']
-NR_PARAMS = ['nr_sinr', 'nr_rsrp']
+NR_PARAMS = ['nr_sinr', 'nr_rsrp', 'nr_rsrq']
 PARAM_TITLES = {'rsrp': 'RSRP', 'rssi': 'RSSI', 'sinr': 'SINR', 'rsrq': 'RSRQ',
                 'nr_rsrp': 'NR RSRP', 'nr_sinr': 'NR SINR', 'nr_rsrq': 'NR RSRQ'}
 
@@ -322,12 +322,15 @@ class SignalGraph(Widget):
         self.bind(pos=lambda *a: self._redraw(), size=lambda *a: self._redraw())
 
     def set_data(self, values: list[float], param: str, peak: float | None,
-                 stale: bool, times: list[float] | None = None) -> None:
+                 stale: bool, times: list[float] | None = None,
+                 comparison_values: list[float] | None = None,
+                 comparison_times: list[float] | None = None) -> None:
         self._values = list(values)
         self._param = param
         self._peak = peak
         self._stale = stale
-        self.viewport.update(self._values, times or [], param, peak)
+        self.viewport.update(self._values, times or [], param, peak,
+                             comparison_values, comparison_times)
         self._redraw()
 
     def _texture(self, text: str, size: float, color: tuple, bold: bool = False) -> Any:
@@ -361,7 +364,7 @@ class SignalGraph(Widget):
         text_col = tuple(theme['c_sub'])
         self.canvas.clear()
         w, h = self.width, self.height
-        pl, pr, pt, pb = dp(44), dp(10), dp(22), dp(20)
+        pl, pr, pt, pb = dp(44), dp(10), dp(44), dp(20)
         plot_w, plot_h = w - pl - pr, h - pt - pb
         if plot_w <= dp(20) or plot_h <= dp(20):
             return
@@ -387,7 +390,7 @@ class SignalGraph(Widget):
             tex = self._texture(f"{title} ({unit_of(self._param)})", sp(13),
                                 tuple(theme['c_text']), True)
             Color(1, 1, 1, 1)
-            Rectangle(texture=tex, pos=(x0, self.y + h - pt + dp(3)), size=tex.size)
+            Rectangle(texture=tex, pos=(x0, self.y + h - dp(19)), size=tex.size)
             start, end = self.viewport.x_range()
             if self.viewport.times and end < self.viewport.times[-1]:
                 latest = self.viewport.times[-1]
@@ -404,23 +407,40 @@ class SignalGraph(Widget):
                 Color(0.0, 0.72, 0.58, 1)
                 Line(points=[x0, py, x0 + plot_w, py], width=1, dash_length=dp(4),
                      dash_offset=dp(3))
-            if not self._values:
-                return
-            line_col = (0.6, 0.6, 0.6, 1) if self._stale else (0.0, 0.62, 0.9, 1)
-            Color(*line_col)
-            for x1, y1, x2, y2 in self.viewport.segments():
-                Line(points=[x0 + plot_w * x1, y0 + plot_h * y1,
-                             x0 + plot_w * x2, y0 + plot_h * y2], width=dp(1.5))
-            if (y_min <= self._values[-1] <= y_max
-                    and self.viewport.times[-1] <= self.viewport.x_range()[1]):
-                lx, ly, r = x0 + plot_w, y_of(self._values[-1]), dp(4)
-                Ellipse(pos=(lx - r, ly - r), size=(2 * r, 2 * r))
-            label = t("нет свежих данных") if self._stale else \
-                f"{fmt_num(self._values[-1])} {unit_of(self._param)}"
-            tex = self._texture(label, sp(13), line_col, True)
-            Color(1, 1, 1, 1)
-            Rectangle(texture=tex, pos=(self.x + w - pr - tex.width, self.y + h - pt + dp(3)),
-                      size=tex.size)
+            paired = self.viewport.has_comparison
+            for comparison in ((False, True) if paired else (False,)):
+                param = comparison_param(self._param) if comparison else self._param
+                is_nr = param.startswith('nr_')
+                sun = app is not None and app.theme_name == 'sun'
+                if self._stale:
+                    line_col = (0.6, 0.6, 0.6, 1)
+                elif is_nr:
+                    line_col = (0.65, 0.30, 0.0, 1) if sun else (1.0, 0.65, 0.2, 1)
+                else:
+                    line_col = (0.0, 0.40, 0.65, 1) if sun else (0.0, 0.70, 1.0, 1)
+                Color(*line_col)
+                for x1, y1, x2, y2 in self.viewport.segments(comparison):
+                    Line(points=[x0 + plot_w * x1, y0 + plot_h * y1,
+                                 x0 + plot_w * x2, y0 + plot_h * y2], width=dp(1.5),
+                         dash_length=dp(6) if is_nr else 0,
+                         dash_offset=dp(3) if is_nr else 0)
+                point = self.viewport.last_point(comparison)
+                if point is not None:
+                    lx, ly, r = x0 + plot_w * point[0], y0 + plot_h * point[1], dp(3)
+                    Ellipse(pos=(lx - r, ly - r), size=(2 * r, 2 * r))
+                name = radio_label(param) if comparison_param(param) else PARAM_TITLES.get(param, param)
+                label = f"{name}: {fmt_num(self.viewport.latest_value(comparison))} {unit_of(param)}"
+                tex = self._texture(label, sp(11), line_col, True)
+                Color(1, 1, 1, 1)
+                Rectangle(texture=tex,
+                          pos=(x0 + (plot_w / 2 if comparison else 0), self.y + h - dp(38)),
+                          size=tex.size)
+            if self._stale:
+                tex = self._texture(t("нет свежих данных"), sp(13), text_col, True)
+                Color(1, 1, 1, 1)
+                Rectangle(texture=tex, pos=(x0 + (plot_w - tex.width) / 2,
+                                           y0 + plot_h / 2), size=tex.size)
+
 
 
 class PinchGraph(SignalGraph):
@@ -456,7 +476,7 @@ class PinchGraph(SignalGraph):
         old = [pos for _finger, pos in self._fingers.values()]
         self._fingers[touch.uid] = (touch, touch.pos)
         new = [pos for _finger, pos in self._fingers.values()]
-        width, height = self.width - dp(54), self.height - dp(42)
+        width, height = self.width - dp(54), self.height - dp(64)
         if width <= 0 or height <= 0:
             return True
         def center(points: list[tuple[float, float]]) -> tuple[float, float]:
@@ -1578,12 +1598,12 @@ class Hua4GMonApp(App):
         values = list(self.state.history.get(param, []))
         peak = self.state.peaks.get(param)
         graph = self.sm.get_screen('monitor').ids.get('signal_graph')
-        if graph is not None:
-            graph.set_data(values, param, peak, stale,
-                           list(self.state.history_times.get(param, [])))
-        if self._fs_graph is not None:
-            self._fs_graph.set_data(values, param, peak, stale,
-                           list(self.state.history_times.get(param, [])))
+        for target in (graph, self._fs_graph):
+            if target is not None:
+                target.set_data(values, param, peak, stale,
+                                list(self.state.history_times.get(param, [])),
+                                list(self.state.history.get(comparison_param(param), [])),
+                                list(self.state.history_times.get(comparison_param(param), [])))
 
     def reset_peaks(self) -> None:
         self.state.reset_peaks()
