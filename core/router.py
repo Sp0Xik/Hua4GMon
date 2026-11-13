@@ -104,11 +104,45 @@ def library_self_test() -> list[str]:
 
 def huawei_client_factory(url: str, username: str, password: str,
                           timeout: float) -> tuple[Any, Any]:
+    import requests
     from huawei_lte_api.Client import Client
     from huawei_lte_api.Connection import Connection
-    connection = Connection(url, username=username, password=password,
-                            timeout=timeout)
-    return connection, Client(connection)
+
+    # Local router traffic must not inherit a desktop HTTP proxy or netrc auth.
+    transport = requests.Session()
+    transport.trust_env = False
+    transport.hooks['response'].append(_check_http_status)
+
+    class RouterConnection(Connection):
+        def close(self) -> None:
+            # The library leaves a supplied requests_session to its owner.
+            try:
+                super().close()
+            finally:
+                transport.close()
+
+    try:
+        connection = RouterConnection(url, username=username, password=password,
+                                      timeout=timeout, requests_session=transport)
+    except Exception:
+        transport.close()
+        raise
+    try:
+        return connection, Client(connection)
+    except Exception:
+        _safe_close(connection)
+        raise
+
+
+def _check_http_status(response: Any, **kwargs: Any) -> None:
+    # huawei-lte-api checks HTTP status on POST, but not on GET.
+    # HTTP 200 Huawei XML errors are still handled by the library as before.
+    try:
+        response.raise_for_status()
+    except Exception:
+        # Hooks run before requests consumes the body; release failed responses.
+        response.close()
+        raise
 
 
 def _network_mode_arg(mode: str) -> Any:

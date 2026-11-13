@@ -164,3 +164,94 @@ def test_library_self_test_detects_broken_xml(monkeypatch):
     monkeypatch.setattr(xmltodict, "parse", lambda text: {})
     with pytest.raises(RuntimeError, match="xmltodict"):
         core.library_self_test()
+
+
+@pytest.mark.parametrize('status', [401, 403, 500, 503])
+def test_get_http_failure_is_not_an_empty_measurement(router, status):
+    import requests
+    s = core.RouterSession(router.address, PASSWORD, timeout=3)
+    s.open()
+    try:
+        router.state.http_errors['GET', '/api/device/signal'] = status
+        with pytest.raises(requests.HTTPError) as error:
+            s.fetch()
+        assert error.value.response.status_code == status
+        assert core.classify_error(error.value) is core.ErrorKind.NETWORK
+        del router.state.http_errors['GET', '/api/device/signal']
+        assert s.fetch()['rsrp'] == '-88dBm'
+        assert router.state.logins == 1
+    finally:
+        s.close()
+
+
+def test_commands_are_not_automatically_repeated_on_http_failure(router):
+    import requests
+    s = core.RouterSession(router.address, PASSWORD, timeout=3)
+    s.open()
+    try:
+        router.state.http_errors['POST', '/api/device/control'] = 503
+        with pytest.raises(requests.HTTPError):
+            s.reboot()
+        assert sum(path == '/api/device/control' for path, _ in router.state.posts) == 1
+    finally:
+        s.close()
+
+
+def test_router_ignores_environment_proxy(router, monkeypatch):
+    for key in ('HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'):
+        monkeypatch.setenv(key, 'http://127.0.0.1:1')
+    for key in ('NO_PROXY', 'no_proxy'):
+        monkeypatch.setenv(key, '')
+    s = core.RouterSession(router.address, PASSWORD, timeout=1)
+    try:
+        assert s.open()['DeviceName'] == 'B636-336'
+        assert s.fetch()['rsrp'] == '-88dBm'
+    finally:
+        s.close()
+    assert router.state.logouts == 1
+
+
+@pytest.mark.parametrize('failure', ['initial_http', 'password', 'logout', 'none'])
+def test_owned_http_session_is_closed_on_success_and_failure(router, monkeypatch, failure):
+    import requests
+    from huawei_lte_api.exceptions import LoginErrorUsernamePasswordWrongException
+    closed = []
+    original_close = requests.Session.close
+
+    def record_close(transport):
+        closed.append(transport)
+        original_close(transport)
+
+    monkeypatch.setattr(requests.Session, 'close', record_close)
+    if failure == 'initial_http':
+        router.state.http_errors['GET', '/'] = 503
+    password = 'wrong' if failure == 'password' else PASSWORD
+    s = core.RouterSession(router.address, password, timeout=3)
+    if failure in ('initial_http', 'password'):
+        expected = requests.HTTPError if failure == 'initial_http' else LoginErrorUsernamePasswordWrongException
+        with pytest.raises(expected):
+            s.open()
+        assert not s.is_open
+    else:
+        s.open()
+        if failure == 'logout':
+            router.state.http_errors['POST', '/api/user/logout'] = 503
+        s.close()
+        assert not s.is_open
+    assert len(closed) == 1
+
+
+def test_http_error_response_is_released(router, monkeypatch):
+    import requests
+    closed = []
+    original_close = requests.Response.close
+
+    def record_close(response):
+        closed.append(response.status_code)
+        original_close(response)
+
+    monkeypatch.setattr(requests.Response, 'close', record_close)
+    router.state.http_errors['GET', '/'] = 503
+    with pytest.raises(requests.HTTPError):
+        core.RouterSession(router.address, PASSWORD, timeout=3).open()
+    assert 503 in closed
