@@ -87,7 +87,7 @@ from core import (
     uplink_status,
     write_session_csv,
 )
-from core.graph import GraphViewport
+from core.graph import GraphViewport, comparison_param, radio_label
 from core.scanner import SURVEY_HELP, Survey
 
 try:
@@ -99,7 +99,7 @@ except ImportError:
 
 APP_NAME = "Hua4GMon"
 LTE_PARAMS = ('sinr', 'rsrp', 'rsrq', 'rssi')
-NR_PARAMS = ('nr_sinr', 'nr_rsrp')
+NR_PARAMS = ('nr_sinr', 'nr_rsrp', 'nr_rsrq')
 PARAM_TITLES = {'rsrp': 'RSRP', 'rssi': 'RSSI', 'sinr': 'SINR', 'rsrq': 'RSRQ',
                 'nr_rsrp': 'NR RSRP', 'nr_sinr': 'NR SINR', 'nr_rsrq': 'NR RSRQ'}
 
@@ -249,14 +249,19 @@ class CanvasGraph(tk.Canvas):
         self.param = param
         self.values = []
         self.peak = None
+        self.viewport.update([], [], param, None)
         self._redraw()
 
     def update_series(self, values: list[float], peak: float | None, stale: bool,
-                      times: list[float] | None = None) -> None:
+                      times: list[float] | None = None,
+                      comparison_values: list[float] | None = None,
+                      comparison_times: list[float] | None = None) -> None:
         self.values = values[-self.history:]
         self.peak = peak
         self.stale = stale
-        self.viewport.update(self.values, times or [], self.param, peak)
+        self.viewport.update(self.values, (times or [])[-self.history:], self.param, peak,
+                             (comparison_values or [])[-self.history:],
+                             (comparison_times or [])[-self.history:])
         self._redraw()
 
     def zoom(self, axis: str, factor: float) -> None:
@@ -274,7 +279,7 @@ class CanvasGraph(tk.Canvas):
         self.delete("all")
         w, h = self.winfo_width(), self.winfo_height()
         s = self.s
-        pl, pr, pt, pb = int(48 * s), int(12 * s), int(20 * s), int(22 * s)
+        pl, pr, pt, pb = int(48 * s), int(12 * s), int(42 * s), int(22 * s)
         plot_w, plot_h = w - pl - pr, h - pt - pb
         if plot_w <= 20 or plot_h <= 20:
             return
@@ -302,20 +307,26 @@ class CanvasGraph(tk.Canvas):
             py = y_of(self.peak)
             self.create_line(pl, py, w - pr, py, fill=OK_FG, dash=(4, 3))
             self.create_text(pl + 4, py - 2, anchor='sw', font=("Segoe UI", 8),
-                             fill=OK_FG, text=t("пик {v}").format(v=fmt_num(self.peak)))
-        if not self.values:
-            return
-        color = '#aaaaaa' if self.stale else INFO_FG
-        for x1, y1, x2, y2 in self.viewport.segments():
-            self.create_line(pl + plot_w * x1, h - pb - plot_h * y1,
-                             pl + plot_w * x2, h - pb - plot_h * y2,
-                             fill=color, width=max(2, int(2 * s)))
-        if y_min <= self.values[-1] <= y_max:
-            lx, ly, r = w - pr, y_of(self.values[-1]), 3 * s
-            self.create_oval(lx - r, ly - r, lx + r, ly + r, fill=color, outline='')
-        self.create_text(w - pr - 4, pt, anchor='ne', fill=color,
-                         font=("Segoe UI", 9, "bold"),
-                         text=f"{fmt_num(self.values[-1])} {unit_of(self.param)}")
+                             fill=OK_FG, text=f"{radio_label(self.param)} " + t("пик {v}").format(v=fmt_num(self.peak)))
+        paired = self.viewport.has_comparison
+        for comparison in ((False, True) if paired else (False,)):
+            param = comparison_param(self.param) if comparison else self.param
+            color = '#aaaaaa' if self.stale else (
+                '#b85c00' if param.startswith('nr_') else '#0077b6')
+            label = radio_label(param) if comparison_param(param) else PARAM_TITLES.get(param, param)
+            self.create_text(pl + (plot_w / 2 if comparison else 0), int(23 * s),
+                             anchor='nw', fill=color, font=("Segoe UI", 9, "bold"),
+                             text=f"{label}: {fmt_num(self.viewport.latest_value(comparison))} "
+                                  f"{unit_of(param)}")
+            for x1, y1, x2, y2 in self.viewport.segments(comparison):
+                self.create_line(pl + plot_w * x1, h - pb - plot_h * y1,
+                                 pl + plot_w * x2, h - pb - plot_h * y2,
+                                 fill=color, width=max(2, int(2 * s)),
+                                 dash=(6, 3) if param.startswith('nr_') else ())
+            point = self.viewport.last_point(comparison)
+            if point is not None:
+                lx, ly, r = pl + plot_w * point[0], h - pb - plot_h * point[1], 3 * s
+                self.create_oval(lx - r, ly - r, lx + r, ly + r, fill=color, outline='')
         if self.stale:
             self.create_text((pl + w - pr) / 2, pt + plot_h / 2, fill=ERR_FG,
                              font=("Segoe UI", 12, "bold"), text=t("нет свежих данных"))
@@ -1422,7 +1433,9 @@ class Hua4GMon:
                     graph.set_param(param)
                 graph.update_series(list(self.state.history.get(param, [])),
                                     self.state.peaks.get(param), stale,
-                                    list(self.state.history_times.get(param, [])))
+                                    list(self.state.history_times.get(param, [])),
+                                    list(self.state.history.get(comparison_param(param), [])),
+                                    list(self.state.history_times.get(comparison_param(param), [])))
 
     def open_fullscreen_graph(self) -> None:
         if self.graph_win is not None:

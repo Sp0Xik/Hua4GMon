@@ -557,3 +557,17 @@ def test_to_rgb_rejects_garbage():
     assert to_rgb("#0b9") == (0, 187, 153)
     with pytest.raises(ValueError):
         to_rgb("#12")
+
+
+def test_state_jitter_waits_for_complete_window_after_missing_rsrp():
+    st = core.SignalState()
+    for i in range(5):
+        st.ingest(snap(rsrp=-90), float(i), WALL)
+    assert st.jitter() == 0
+    st.ingest(snap(rsrp=None), 5.0, WALL)
+    assert st.jitter() is None
+    for i in range(4):
+        st.ingest(snap(rsrp=-91), 6.0 + i, WALL)
+        assert st.jitter() is None
+    st.ingest(snap(rsrp=-94), 10.0, WALL)
+    assert st.jitter() == 3
