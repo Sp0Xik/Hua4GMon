@@ -6,6 +6,18 @@ import math
 from core.constants import GRAPH_MIN_SPAN, PARAM_RANGES
 
 
+def comparison_param(param: str) -> str:
+    """Pair only equivalent LTE/NR metrics; RSSI has no NR counterpart."""
+    base = param.removeprefix('nr_')
+    if base not in ('rsrp', 'rsrq', 'sinr'):
+        return ''
+    return base if param.startswith('nr_') else 'nr_' + base
+
+
+def radio_label(param: str) -> str:
+    return 'NR' if param.startswith('nr_') else 'LTE'
+
+
 class GraphViewport:
     """Latest time window; manual level bounds survive incoming samples."""
 
@@ -13,6 +25,8 @@ class GraphViewport:
         self.param = 'sinr'
         self.times: list[float] = []
         self.values: list[float] = []
+        self.comparison_values: list[float] = []
+        self.comparison_times: list[float] = []
         self.peak: float | None = None
         self.seconds: float | None = None
         self.levels: tuple[float, float] | None = None
@@ -22,16 +36,51 @@ class GraphViewport:
         self.levels = None
 
     def update(self, values: list[float], times: list[float], param: str,
-               peak: float | None) -> None:
+               peak: float | None, comparison_values: list[float] | None = None,
+               comparison_times: list[float] | None = None) -> None:
         if param != self.param:
             self.reset()
         self.param, self.peak = param, peak
         self.values = list(values)
         self.times = list(times) if len(times) == len(values) else list(map(float, range(len(values))))
+        self.comparison_values = list(comparison_values or []) if comparison_param(param) else []
+        self.comparison_times = list(comparison_times or [])
+        if len(self.comparison_times) != len(self.comparison_values):
+            self.comparison_values, self.comparison_times = [], []
+
+    @property
+    def has_comparison(self) -> bool:
+        return any(math.isfinite(v) for v in self.comparison_values)
+
+    def series(self, comparison: bool = False) -> tuple[list[float], list[float]]:
+        if comparison:
+            return self.comparison_times, self.comparison_values
+        return self.times, self.values
+
+    def latest_value(self, comparison: bool = False) -> float | None:
+        times, values = self.series(comparison)
+        latest = max(self.times[-1:] + self.comparison_times[-1:], default=0.0)
+        if not values or times[-1] != latest or not math.isfinite(values[-1]):
+            return None
+        return values[-1]
+
+    def last_point(self, comparison: bool = False) -> tuple[float, float] | None:
+        times, _ = self.series(comparison)
+        value = self.latest_value(comparison)
+        xmin, xmax = self.x_range()
+        ymin, ymax = self.y_range()
+        if value is None or not xmin <= times[-1] <= xmax or not ymin <= value <= ymax:
+            return None
+        return (times[-1] - xmin) / (xmax - xmin), (value - ymin) / (ymax - ymin)
+
+    def time_bounds(self) -> tuple[float, float]:
+        end = max(self.times[-1:] + self.comparison_times[-1:], default=0.0)
+        first = min(self.times[:1] + self.comparison_times[:1], default=end)
+        return first, end
 
     def x_range(self) -> tuple[float, float]:
-        end = self.times[-1] if self.times else 0.0
-        available = max(end - self.times[0], 1.0) if self.times else 1.0
+        first, end = self.time_bounds()
+        available = max(end - first, 1.0)
         return end - min(self.seconds or available, available), end
 
     def y_range(self) -> tuple[float, float]:
@@ -39,9 +88,10 @@ class GraphViewport:
             return self.levels
         base = self.param.replace('nr_', '')
         low, high = PARAM_RANGES.get(base, (-140, 40))
-        start, _ = self.x_range()
-        points = [v for x, v in zip(self.times, self.values, strict=True)
-                  if x >= start and math.isfinite(v)]
+        start, end = self.x_range()
+        points = [v for comparison in (False, True)
+                  for x, v in zip(*self.series(comparison), strict=True)
+                  if start <= x <= end and math.isfinite(v)]
         if self.peak is not None:
             points.append(self.peak)
         if not points:
@@ -60,7 +110,8 @@ class GraphViewport:
             raise ValueError('Zoom factor must be positive')
         if axis == 'time':
             lo, hi = self.x_range()
-            available = max(self.times[-1] - self.times[0], 1.0) if self.times else 1.0
+            first, last = self.time_bounds()
+            available = max(last - first, 1.0)
             self.seconds = min(available, max(1.0, (hi - lo) * factor))
         elif axis == 'level':
             lo, hi = self.y_range()
@@ -71,12 +122,12 @@ class GraphViewport:
         else:
             raise ValueError('Unknown axis')
 
-    def segments(self) -> list[tuple[float, float, float, float]]:
+    def segments(self, comparison: bool = False) -> list[tuple[float, float, float, float]]:
         """Clip line segments to bounds; return normalized coordinates."""
         xmin, xmax = self.x_range()
         ymin, ymax = self.y_range()
         points = [((x - xmin) / (xmax - xmin), (y - ymin) / (ymax - ymin))
-                  for x, y in zip(self.times, self.values, strict=True)]
+                  for x, y in zip(*self.series(comparison), strict=True)]
         result = []
         for (x, y), (xx, yy) in zip(points, points[1:], strict=False):
             if not all(math.isfinite(v) for v in (x, y, xx, yy)):
@@ -112,7 +163,9 @@ class GestureViewport(GraphViewport):
 
     def x_range(self) -> tuple[float, float]:
         lo, hi = super().x_range()
-        first = self.times[0] if len(self.times) > 1 else lo
+        first, last = self.time_bounds()
+        if first == last:
+            first = lo
         offset = min(self.offset, max(0.0, lo - first))
         return lo - offset, hi - offset
 
@@ -125,7 +178,7 @@ class GestureViewport(GraphViewport):
             return
         xlo, xhi = self.x_range()
         ylo, yhi = self.y_range()
-        first, last = self.times[0], self.times[-1]
+        first, last = self.time_bounds()
         available = max(last - first, 1.0)
         width = min(available, max(1.0, (xhi - xlo) * factor))
         end = xlo + anchor[0] * (xhi - xlo) + (1 - anchor[0]) * width

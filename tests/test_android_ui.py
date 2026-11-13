@@ -477,3 +477,41 @@ def test_network_summary_only_warns_on_problem(app):
     assert 'B3' in app._tower_summary(snap)
     assert 'нет мобильного' in app._tower_summary(replace(snap, connection=902))
     assert 'Нет регистрации' in app._tower_summary(replace(snap, registration='unregistered'))
+
+
+def test_lte_nr_graphs_main_and_fullscreen(app):
+    from kivy.core.window import Window
+    from kivy.uix.popup import Popup
+    ensure_online(app)
+    app.worker.pause()
+    pump(lambda: False, 0.15)
+    try:
+        app.state.reset()
+        app.state.trend_param = 'sinr'
+        for now in range(3):
+            app.state.ingest(core.Snapshot(registration='registered', sinr=5 + now,
+                                           nr_sinr=20 + now), float(now))
+        app.refresh_graph()
+        app.open_fullscreen_graph()
+        pump(lambda: False, 0.15)
+        for graph in (app.sm.get_screen('monitor').ids.signal_graph, app._fs_graph):
+            assert graph.viewport.has_comparison
+            assert len(graph.viewport.segments(True)) == 2
+            labels = [key[0] for key in graph._tex]
+            assert any(label.startswith('LTE: 7') for label in labels)
+            assert any(label.startswith('NR: 22') for label in labels)
+        app.state.ingest(core.Snapshot(registration='registered', sinr=8), 3.0)
+        app.refresh_graph()
+        assert app._fs_graph.viewport.latest_value(True) is None
+        for theme in ('sun', 'dark'):
+            app.apply_theme(theme)
+            app.refresh_graph(stale=True)
+        app.set_graph_param('nr_rsrq')
+        assert app._fs_graph.viewport.param == 'nr_rsrq'
+    finally:
+        for widget in list(Window.children):
+            if isinstance(widget, Popup):
+                widget.dismiss()
+        pump(lambda: False, 0.1)
+        app.set_graph_param('sinr')
+        app.worker.resume()
