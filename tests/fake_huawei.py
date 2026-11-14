@@ -32,6 +32,7 @@ class FakeRouterState:
     reboots: int = 0
     logins: int = 0
     logouts: int = 0
+    http_errors: dict[tuple[str, str], int] = field(default_factory=dict)
     sessions: set[str] = field(default_factory=set)
     posts: list[tuple[str, dict]] = field(default_factory=list)
     gets: list[str] = field(default_factory=list)
@@ -97,11 +98,22 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _http_error(self, method: str, path: str) -> bool:
+        status = self.st.http_errors.get((method, path))
+        if status is None:
+            return False
+        self.send_response(status)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return True
+
     # ---- GET ----
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split('?')[0]
         self.st.gets.append(path)
+        if self._http_error("GET", path):
+            return
         if path == '/':
             a, b = next(_TOKENS), next(_TOKENS)
             html = (f'<html><head><meta name="csrf_token" content="{a}"/>'
@@ -162,6 +174,8 @@ class _Handler(BaseHTTPRequestHandler):
         req = (xmltodict.parse(raw) or {}).get('request') if raw else {}
         req = req or {}
         self.st.posts.append((path, dict(req)))
+        if self._http_error("POST", path):
+            return
         token_headers = {'__RequestVerificationToken': next(_TOKENS)}
 
         if path == '/api/user/login':
