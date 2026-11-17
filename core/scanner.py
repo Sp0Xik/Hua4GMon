@@ -98,7 +98,7 @@ class Survey:
         if not self.operators:
             self.messages.append(t('Список операторов не получен. Накопление сигнала доступно.'))
 
-    def accept_cells(self, data: Any) -> None:
+    def accept_cells(self, data: Any, source: str = 'net/cell-info') -> None:
         count = 0
         for item in records(data):
             # Only explicit fields matching device/signal semantics are accepted.
@@ -107,7 +107,7 @@ class Survey:
                 continue
             snap = build_snapshot({**item, '_network_uncertain': True})
             if snap.earfcn is not None or snap.nr_arfcn is not None:
-                self.observe(snap, 'net/cell-info')
+                self.observe(snap, source)
                 count += 1
         message = t('Дополнительные соты с распознаваемыми параметрами не получены.')
         if not count and message not in self.messages:

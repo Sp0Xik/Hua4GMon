@@ -81,6 +81,10 @@ def humanize_error(exc: BaseException) -> str:
     if isinstance(exc, NetModeUnavailable):
         return t("Не удалось прочитать настройки модема — запись отменена, модем "
                  "не изменён. Повторите через несколько секунд.")
+    response = getattr(exc, 'response', None)
+    status = getattr(response, 'status_code', None)
+    if isinstance(status, int) and status >= 400:
+        return t('Роутер ответил HTTP {status}. Это ошибка локального API, а не проверка интернета.').format(status=status)
     if isinstance(exc, OSError):
         return t("Роутер не отвечает: проверьте подключение к его Wi-Fi/USB "
                  "и IP-адрес.")

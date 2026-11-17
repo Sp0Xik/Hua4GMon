@@ -14,6 +14,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.carriers import LTECarrier, parse_lte_carriers
 from core.constants import PLMN_MAP
 from core.parsers import (
     active_bands,
@@ -84,6 +85,7 @@ class Snapshot:
     tac: str = ''
     band_raw: str = ''
     bands: tuple[int, ...] = ()
+    lte_carriers: tuple[LTECarrier, ...] = ()
     band_label: str = '-'
     plmn: str = ''
     operator: str = ''
@@ -98,6 +100,7 @@ class Snapshot:
     cqi1: int | None = None
     tm: int | None = None
     transmode: str = ''
+    nr_rank: int | None = None
     txpower: str = ''
     pusch_dbm: float | None = None
     rrc: str = ''
@@ -222,11 +225,15 @@ def build_snapshot(raw: Mapping[str, Any],
     band_raw = _str(data, ('band',))
     net_ex = to_int(data.get('CurrentNetworkTypeEx'))
     bands = active_bands(band_raw, earfcn_raw, known_bands) if has_lte else []
-    ca = detect_ca(net_ex, len(bands))
+    carriers = parse_lte_carriers(band_raw) if has_lte else ()
+    if carriers and earfcn is not None and carriers[0].earfcn != earfcn:
+        carriers = ()   # Inconsistent reads must not claim current aggregation.
+    ca = detect_ca(net_ex, max(len(bands), len(carriers)))
     if ca is False:
         # Авторитетный источник говорит «без CA» — лишние номера из поля
         # band не выдаём за агрегацию.
         bands = bands[:1]
+        carriers = carriers[:1]
 
     plmn = _str(data, ('Numeric', 'plmn'))
     full_name = _str(data, ('FullName', 'ShortName'))
@@ -266,8 +273,9 @@ def build_snapshot(raw: Mapping[str, Any],
         sector=sector,
         tac=_str(data, ('tac', 'TAC')),
         band_raw=band_raw,
-        bands=tuple(bands),
-        band_label=format_band_list(bands) if bands else (band_raw or '-'),
+        bands=tuple(bands), lte_carriers=carriers,
+        band_label=('CA: ' + '+'.join(f'B{c.band}' for c in carriers)) if len(carriers) > 1 else
+                   format_band_list(bands) if bands else (band_raw or '-'),
         plmn=plmn,
         operator=operator_name(plmn, full_name),
         network_type_ex=net_ex,
@@ -281,6 +289,7 @@ def build_snapshot(raw: Mapping[str, Any],
         cqi1=to_int(data.get('cqi1')),
         tm=parse_tm(first_present(data, ('transmode', 'TransMode', 'mimo'))),
         transmode=_str(data, ('transmode', 'TransMode', 'mimo')),
+        nr_rank=int(str(data['nrrank'])) if str(data.get('nrrank', '')).strip() in tuple(map(str, range(1, 9))) else None,
         txpower=_str(data, ('txpower', 'TxPower', 'tx_power')),
         pusch_dbm=parse_pusch_power(first_present(data, ('txpower', 'TxPower', 'tx_power'))),
         rrc=_str(data, ('rrc_status',)),

@@ -41,7 +41,7 @@ presplash.filename = %(source.dir)s/assets/icon-512.png
 # Разрешения: только сеть. Экран во время мониторинга держится флагом
 # окна FLAG_KEEP_SCREEN_ON (android_main.set_keep_screen_on) — ему не
 # нужно разрешение WAKE_LOCK.
-android.permissions = INTERNET
+android.permissions = INTERNET,ACCESS_NETWORK_STATE
 
 # HTTP к роутеру идёт через сокеты Python, на которые политика cleartext
 # Android (Network Security Config) не распространяется, поэтому

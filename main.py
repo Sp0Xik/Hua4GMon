@@ -787,8 +787,9 @@ class Hua4GMon:
             ('data', 'Мобильные данные'), ('dl_rate', 'Скорость (Download)'),
             ('ul_rate', 'Скорость (Upload)'), ('total_dl', 'Скачано за сессию'),
             ('total_ul', 'Отдано за сессию'), ('month_traffic', 'Трафик за месяц (↓/↑)'),
-            ('mod', 'Модуляция DL / UL'), ('mimo', 'Режим MIMO'),
-            ('cqi', 'CQI (потоки)'), ('txpower', 'Мощность передатчика'),
+            ('mod', 'Модуляция DL / UL'), ('mimo', 'Режим передачи (TM)'),
+            ('lte_rank', 'Ранг MIMO LTE'), ('nr_rank', 'Ранг MIMO NR'),
+            ('cqi', 'CQI кодовых слов'), ('txpower', 'Мощность передатчика'),
             ('rrc', 'RRC'), ('rsrp_min', 'RSRP мин / макс'), ('sinr_min', 'SINR мин / макс'),
         ]
         for i, (key, name) in enumerate(fields):
@@ -1229,6 +1230,13 @@ class Hua4GMon:
         self.survey.observe(snap)
         if self.survey.running and '_survey_cells' in snap.raw:
             self.survey.accept_cells(snap.raw['_survey_cells'])
+        if self.survey.running:
+            for source, data in snap.raw.get('_extra_cells', {}).items():
+                self.survey.accept_cells(data, source)
+            for source, error in snap.raw.get('_extra_cell_errors', {}).items():
+                message = source + ': ' + error
+                if message not in self.survey.messages:
+                    self.survey.messages.append(message)
         if self.survey.running and snap.raw.get('_survey_error'):
             message = str(snap.raw['_survey_error'])
             if message not in self.survey.messages:
@@ -1394,6 +1402,8 @@ class Hua4GMon:
                                         ("UL", format_modulation(snap.ul_mcs, uplink=True))) if m]
         lbl['mod'].config(text=" / ".join(mods) if mods else "-")
         lbl['mimo'].config(text=format_mimo(snap.transmode) if snap.transmode else "-")
+        lbl['lte_rank'].config(text=t('Нет подтверждённых данных'))
+        lbl['nr_rank'].config(text=fmt_num(snap.nr_rank))
         cqi = "-"
         if snap.cqi0 is not None:
             cqi = f"{snap.cqi0}" + (f" / {snap.cqi1}" if snap.cqi1 is not None else "")

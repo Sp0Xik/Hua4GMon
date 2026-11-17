@@ -351,3 +351,12 @@ MAC-, IP- и DNS-адреса в диагностике уже замаскир�
   survey may retain that signal separately. On recovery, working metrics resume.
   Verify Android portrait/landscape, sunlight theme, long operator names and copy;
   Windows roof display, CSV export and long lists. Survey is labelled Beta.
+
+
+## Offline Wi-Fi and radio details (post 1.4.3)
+
+- core/local_transport.py: `bind_android_socket`. Android API 24+: only router TCP sockets are bound with android_setsocknetwork to the Wi-Fi/Ethernet network containing its IPv4 address. Check with mobile data on/off, no SIM in router, disabled WAN, reconnect and two simultaneous local interfaces. Expected: login and monitoring work without WAN; unrelated traffic is not rebound. Multiple matching local networks fail explicitly rather than choosing arbitrarily.
+- core/router.py: `_extra_cell_sources`. GET device/nbrcellinfo and device/seccellinfo during scanner collection only, bounded timeout, unsupported endpoints remembered. Diagnostics retain masked raw responses. Verify schemas on B636 HarmonyOS 4.0.0.1. Unknown packed vendor formats are not interpreted as serving cells.
+- NR rank: device/signal.nrrank is documented by https://github.com/yuan-666/cpemanager/blob/main/docs/API_REFERENCE.md . Range 1..8 only; no rank inferred from TM/CQI. LTE rank on B636 remains unconfirmed and is explicitly unavailable until its actual API field is captured.
+- LTE carrier descriptions: distinct bandwidth@EARFCN(Band) components preserve B7+B7. Validate against the web UI under traffic and idle; no neighbour is promoted to an active carrier.
+- Sources for read-only additional endpoints: https://pkg.go.dev/github.com/lvcdy/huawei-lte-api-go/api ; Android socket binding: https://developer.android.com/ndk/reference/group/networking .
