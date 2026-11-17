@@ -353,6 +353,10 @@ def format_mimo(value: Any) -> str:
     tm = parse_tm(value)
     if tm is None:
         return str(value)
+    if tm == 3:
+        return t('TM3 — без обратной связи')
+    if tm == 4:
+        return t('TM4 — с обратной связью')
     label = _TM_LABELS.get(tm)
     return f"{label} [TM{tm}]" if label else f"TM{tm}"
 

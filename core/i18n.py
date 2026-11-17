@@ -58,10 +58,10 @@ EN: dict[str, str] = {
     "Переподключить мобильную связь?\n\nМобильные данные будут выключены и включены. Интернет временно пропадёт (обычно на 5–10 секунд). Смена соты и улучшение сигнала не гарантируются.":
         "Reconnect mobile data?\n\nMobile data will be turned off and back on. Internet access will be interrupted (usually for 5–10 seconds). A different cell or better signal is not guaranteed.",
     # --- Ядро (core): статусы сигнала, ошибки, RF-подсказки, Band Lock, белые списки ---
-    "1 поток":
-        "1 stream",
-    "2 потока":
-        "2 streams",
+    "CQI1 равен нулю":
+        "CQI1 is zero",
+    "CQI сопоставимы":
+        "CQI values are similar",
     "DNS не отвечает":
         "DNS not responding",
     "TCP есть, TLS оборван ({reason})":
@@ -134,14 +134,8 @@ EN: dict[str, str] = {
         "Very weak",
     "Плохой":
         "Poor",
-    "Потоки MIMO неравны: проверьте разъёмы и кабели обоих портов.":
-        "MIMO streams are unequal: check connectors and cables of both ports.",
     "Похоже на фильтрацию по SNI: TCP проходит, TLS — нет.":
         "Looks like SNI filtering: TCP passes, TLS does not.",
-    ("Работает один поток MIMO: проверьте второй кабель и поляризацию "
-     "второго порта."):
-        ("Only one MIMO stream is active: check the second cable and the second "
-         "port's polarization."),
     ("Разрешённые сайты отвечают, а нейтральные — нет (белых: {w}/{wt}, "
      "нейтральных: 0/{nt}). Похоже на режим белых списков оператора. Для "
      "точности проверьте открытие обычного сайта в браузере."):
@@ -210,8 +204,8 @@ EN: dict[str, str] = {
         "error ({code})",
     "повышенная":
         "elevated",
-    "потоки неравны":
-        "streams unequal",
+    "CQI различаются":
+        "CQI values differ",
     "соединение отклонено":
         "connection refused",
     "соединение сброшено":
@@ -224,8 +218,8 @@ EN: dict[str, str] = {
     # --- Общие строки Windows и Android ---
     "Band Lock применён: {bands}.":
         "Band Lock applied: {bands}.",
-    "CQI (потоки)":
-        "CQI (streams)",
+    "CQI кодовых слов":
+        "Codeword CQI",
     "Cell (Локальный сектор)":
         "Cell (local sector)",
     "EARFCN (канал DL)":
@@ -362,8 +356,8 @@ EN: dict[str, str] = {
         "Firmware",
     "Рабочий Band (LTE)":
         "Working band (LTE)",
-    "Режим MIMO":
-        "MIMO mode",
+    "Режим передачи (TM)":
+        "Transmission mode (TM)",
     "Режим сети будет «только 4G».":
         "Network mode will be “4G only”.",
     "Если у модема нет 5G, режим сети будет «только 4G».":
@@ -753,6 +747,16 @@ EN.update({
     "Стоп": "Stop",
     "Старт → медленно вращайте антенну с остановками → Стоп. Сохраняются только наблюдения, которые отдаёт модем, не все БС вокруг. Поиск операторов может временно прервать интернет. Список операторов не содержит уровней сигнала отдельных БС.": "Start → slowly rotate the antenna, pausing between positions → Stop. Only observations reported by the modem are saved, not all nearby base stations. Operator search may interrupt internet access. The operator list has no per-cell signal measurements."
 })
+
+EN.update({
+    'Роутер ответил HTTP {status}. Это ошибка локального API, а не проверка интернета.': 'Router returned HTTP {status}. This is a local API error, not an internet check.',
+    'TM3 — без обратной связи': 'TM3 — open-loop',
+    'TM4 — с обратной связью': 'TM4 — closed-loop',
+    'Ранг MIMO LTE': 'LTE MIMO rank',
+    'Ранг MIMO NR': 'NR MIMO rank',
+    'Нет подтверждённых данных': 'No confirmed data',
+})
+
 
 def set_language(lang: str) -> None:
     """Устанавливает текущий язык ('ru' или 'en'). Неизвестный — игнор."""

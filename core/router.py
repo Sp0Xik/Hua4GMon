@@ -103,7 +103,7 @@ def library_self_test() -> list[str]:
 
 
 def huawei_client_factory(url: str, username: str, password: str,
-                          timeout: float) -> tuple[Any, Any]:
+                          timeout: float, *, socket_binder: Any = None) -> tuple[Any, Any]:
     import requests
     from huawei_lte_api.Client import Client
     from huawei_lte_api.Connection import Connection
@@ -111,6 +111,9 @@ def huawei_client_factory(url: str, username: str, password: str,
     # Local router traffic must not inherit a desktop HTTP proxy or netrc auth.
     transport = requests.Session()
     transport.trust_env = False
+    if socket_binder is not None:
+        from core.local_transport import router_adapter
+        transport.mount('http://', router_adapter(socket_binder))
     transport.hooks['response'].append(_check_http_status)
 
     class RouterConnection(Connection):
@@ -196,6 +199,7 @@ class RouterSession:
         self._client: Any = None
         self.survey_enabled = False
         self._next_survey_read = 0.0
+        self._survey_unsupported: set[str] = set()
         self._tick = 0
         self._cache: dict[str, dict[str, Any]] = {}
         self._unsupported: set[str] = set()
@@ -243,7 +247,12 @@ class RouterSession:
             self._tick = 0
             self._cache.clear()
             self._last_cell = None
-            self._read_capabilities_locked()
+            try:
+                self._read_capabilities_locked()
+            except Exception as exc:
+                if classify_error(exc) in (ErrorKind.SESSION, ErrorKind.LOGIN_FATAL):
+                    raise
+                logger.debug('Capabilities unavailable after login', exc_info=True)
             if self._data_off_pending:
                 # reattach выключил данные, а старая сессия не успела их включить.
                 self._restore_mobile_data_locked()
@@ -334,14 +343,18 @@ class RouterSession:
             survey_data: dict[str, Any] = {}
             if self.survey_enabled and time.monotonic() >= self._next_survey_read:
                 self._next_survey_read = time.monotonic() + 5.0
-                try:
-                    survey_data['_survey_cells'] = client.net.cell_info()
-                except Exception as exc:
-                    if classify_error(exc) is ErrorKind.SESSION:
-                        raise
-                    survey_data['_survey_error'] = humanize_error(exc)
-                    if classify_error(exc) is ErrorKind.NOT_SUPPORTED:
-                        self._next_survey_read = float('inf')
+                if 'net/cell-info' not in self._survey_unsupported:
+                    try:
+                        survey_data['_survey_cells'] = client.net.cell_info()
+                    except Exception as exc:
+                        if classify_error(exc) is ErrorKind.SESSION:
+                            raise
+                        survey_data['_survey_error'] = humanize_error(exc)
+                        if classify_error(exc) is ErrorKind.NOT_SUPPORTED:
+                            self._survey_unsupported.add('net/cell-info')
+                sources, errors = self._extra_cell_sources()
+                survey_data['_extra_cells'] = sources
+                survey_data['_extra_cell_errors'] = errors
             after = self._read_network_status(client)
             self._cache['status'] = after
             fields = ('ServiceStatus', 'ConnectionStatus', 'SimStatus', 'CurrentNetworkTypeEx')
@@ -359,6 +372,35 @@ class RouterSession:
                 merged.update(self._cache.get(name, {}))
             merged.update(survey_data)
             return merged
+
+    def _extra_cell_sources(self) -> tuple[dict[str, Any], dict[str, str]]:
+        """Read-only documented CPE endpoints; unsupported firmware is not retried.
+
+        Hardware validation required: device/nbrcellinfo and device/seccellinfo.
+        """
+        data: dict[str, Any] = {}
+        errors: dict[str, str] = {}
+        get = getattr(self._connection, 'get', None)
+        if not callable(get):
+            return data, errors
+        old_timeout = self._connection.timeout
+        self._connection.timeout = (1.0, 1.0)
+        try:
+            for endpoint in ('device/nbrcellinfo', 'device/seccellinfo'):
+                if endpoint in self._survey_unsupported:
+                    continue
+                try:
+                    data[endpoint] = get(endpoint)
+                except Exception as exc:
+                    if classify_error(exc) is ErrorKind.SESSION:
+                        raise
+                    errors[endpoint] = humanize_error(exc)
+                    status = getattr(getattr(exc, 'response', None), 'status_code', None)
+                    if classify_error(exc) is ErrorKind.NOT_SUPPORTED or status in (404, 405, 501):
+                        self._survey_unsupported.add(endpoint)
+        finally:
+            self._connection.timeout = old_timeout
+        return data, errors
 
     def _read_network_status(self, client: Any) -> dict[str, Any]:
         try:
@@ -537,6 +579,9 @@ class RouterSession:
                 'monitoring_traffic_statistics': client.monitoring.traffic_statistics,
                 'dialup_mobile_dataswitch': client.dial_up.mobile_dataswitch,
             }
+            if callable(getattr(self._connection, 'get', None)):
+                calls['device_nbrcellinfo'] = lambda: self._connection.get('device/nbrcellinfo')
+                calls['device_seccellinfo'] = lambda: self._connection.get('device/seccellinfo')
             for name, fn in calls.items():
                 try:
                     dumps[name] = fn()

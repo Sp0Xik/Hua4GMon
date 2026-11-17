@@ -58,16 +58,8 @@ def detect_ca(network_type_ex: int | None, band_count: int) -> bool | None:
 
 
 def mimo_status(cqi0: int | None, cqi1: int | None) -> str | None:
-    """Состояние потоков MIMO по CQI двух кодовых слов.
-
-    'single'    — второй поток не передаётся (CQI1 = 0 при нормальном CQI0);
-    'imbalance' — потоки сильно различаются;
-    'ok'        — два потока работают.
-    None — роутер не отдаёт оба CQI или CQI1 = 0 при слабом сигнале
-    (CQI0 < 7): там один поток — норма, вывод о кабелях сделать нельзя.
-    Hardware validation required: наличие cqi1 при одном потоке на B636.
-    """
-    if cqi0 is None or cqi1 is None:
+    """CQI observations only: neither rank nor cable fault can be inferred."""
+    if cqi0 is None or cqi1 is None or not (0 <= cqi0 <= 15 and 0 <= cqi1 <= 15):
         return None
     if cqi1 == 0:
         return 'single' if cqi0 >= 7 else None
@@ -77,9 +69,9 @@ def mimo_status(cqi0: int | None, cqi1: int | None) -> str | None:
 
 
 MIMO_LABELS: dict[str, str] = {
-    'single': "1 поток",
-    'imbalance': "потоки неравны",
-    'ok': "2 потока",
+    'single': "CQI1 равен нулю",
+    'imbalance': "CQI различаются",
+    'ok': "CQI сопоставимы",
 }
 
 
@@ -115,11 +107,6 @@ def advice(*, rsrp: float | None, sinr: float | None, rsrq: float | None,
                         "возьмите антенну с большим усилением или укоротите кабель.")
     if rsrq is not None and sinr is not None and rsrq < -15 and sinr >= 13:
         tips.append("Сота загружена: сравните с соседней сотой или другим бэндом.")
-    if mimo == 'single':
-        tips.append("Работает один поток MIMO: проверьте второй кабель "
-                    "и поляризацию второго порта.")
-    elif mimo == 'imbalance':
-        tips.append("Потоки MIMO неравны: проверьте разъёмы и кабели обоих портов.")
     if uplink == 'limit':
         tips.append("Модем передаёт почти на максимуме мощности: отдача "
                     "ограничена — нужна антенна точнее или выше.")

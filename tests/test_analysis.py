@@ -68,9 +68,9 @@ def test_advice_weak_but_clean():
 
 def test_advice_load_mimo_uplink_jitter():
     tips = _advice(rsrq=-17.0, mimo='single', uplink='limit', jitter=9.0)
-    assert len(tips) == 4
+    assert len(tips) == 3
     assert any("загружена" in tip for tip in tips)
-    assert any("MIMO" in tip for tip in tips)
+    assert not any("MIMO" in tip for tip in tips)
 
 
 def test_advice_texts_translated():

@@ -513,8 +513,8 @@ def test_android_main_imports_exist_in_core():
 
 def test_mimo_tm_labels():
     """TM — схема передачи, а не число антенн (TM3/TM4 бывают и 2x2, и 4x4)."""
-    assert core.format_mimo('TM[4]') == "MIMO closed-loop [TM4]"
-    assert core.format_mimo('4') == "MIMO closed-loop [TM4]"
+    assert core.format_mimo('TM[4]') == "TM4 — с обратной связью"
+    assert core.format_mimo('4') == "TM4 — с обратной связью"
     assert core.format_mimo('TM[2]') == "Tx diversity [TM2]"
     assert core.format_mimo('TM[9]') == "MIMO up to 8 layers [TM9]"
 

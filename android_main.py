@@ -1353,14 +1353,26 @@ class Hua4GMonApp(App):
                 ip_input.text = found.ip
             scr.set_status(t("Найден роутер {model} на {ip}").format(
                 model=found.model or "Huawei", ip=found.ip), [0.2, 0.75, 0.45, 1])
-        self._run_bg(lambda: discover_router(candidates), done, lambda e: done(None))
+        binder = None
+        if platform == 'android':
+            from core.local_transport import bind_android_socket
+            binder = bind_android_socket
+        self._run_bg(lambda: discover_router(candidates, socket_binder=binder),
+                     done, lambda e: done(None))
 
     def connect(self, ip: str, password: str) -> None:
         if self.worker is not None:
             return
         self.demo_modem = None
         self._conn_screen().set_status(t("Подключение..."), [0.9, 0.6, 0.2, 1])
-        self._start_session(RouterSession(ip, password))
+        factory = None
+        if platform == 'android':
+            from functools import partial
+
+            from core.local_transport import bind_android_socket
+            from core.router import huawei_client_factory
+            factory = partial(huawei_client_factory, socket_binder=bind_android_socket)
+        self._start_session(RouterSession(ip, password, factory=factory))
 
     def start_demo(self) -> None:
         if self.worker is not None:
@@ -1485,6 +1497,13 @@ class Hua4GMonApp(App):
         self.survey.observe(snap)
         if self.survey.running and '_survey_cells' in snap.raw:
             self.survey.accept_cells(snap.raw['_survey_cells'])
+        if self.survey.running:
+            for source, data in snap.raw.get('_extra_cells', {}).items():
+                self.survey.accept_cells(data, source)
+            for source, error in snap.raw.get('_extra_cell_errors', {}).items():
+                message = source + ': ' + error
+                if message not in self.survey.messages:
+                    self.survey.messages.append(message)
         if self.survey.running and snap.raw.get('_survey_error'):
             message = str(snap.raw['_survey_error'])
             if message not in self.survey.messages:
@@ -1573,7 +1592,9 @@ class Hua4GMonApp(App):
     def _tower_summary(self, snap: Snapshot) -> str:
         snap = snap.display()
         parts = [] if snap.registered and snap.connection == 901 and snap.data_enabled is not False else [t(snap.network_message)]
-        if snap.bands:
+        if len(snap.lte_carriers) > 1:
+            parts.append(snap.band_label)
+        elif snap.bands:
             freq = f" · {snap.freq_mhz:g} {t('МГц')}" if snap.freq_mhz else ""
             parts.append(f"B{snap.bands[0]}{freq}")
             if len(snap.bands) > 1:
@@ -1902,8 +1923,10 @@ class Hua4GMonApp(App):
             row('Отдано за сессию', format_bytes_mb(snap.total_ul)),
             row('Трафик за месяц (↓/↑)', month),
             row('Модуляция DL / UL', " / ".join(mods) if mods else None),
-            row('Режим MIMO', format_mimo(snap.transmode) if snap.transmode else None),
-            row('CQI (потоки)', cqi),
+            row('Режим передачи (TM)' , format_mimo(snap.transmode) if snap.transmode else None),
+            row('Ранг MIMO LTE', t('Нет подтверждённых данных')),
+            row('Ранг MIMO NR', fmt_num(snap.nr_rank)),
+            row('CQI кодовых слов', cqi),
             row('Мощность передатчика', tx),
             row('RRC', snap.rrc),
             row('RSRP мин / макс', minmax('rsrp')),
