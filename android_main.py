@@ -109,6 +109,7 @@ from core import (
     format_bytes_mb,
     format_mimo,
     format_modulation,
+    format_rank,
     format_rate_mbps,
     humanize_error,
     is_valid_ip,
@@ -1235,7 +1236,7 @@ class Hua4GMonApp(App):
         self.title = f"{APP_NAME} v{__version__}"
         # Журнал сессии нужен только для экспорта CSV, которого на Android нет.
         self.survey = Survey()
-        self.state = SignalState(trend_param='sinr', log_max=GRAPH_HISTORY)
+        self.state = SignalState(track_trend=False, trend_param='sinr', log_max=GRAPH_HISTORY)
         self.session: RouterSession | None = None
         self.worker: SessionWorker | None = None
         self.demo_modem: DemoModem | None = None
@@ -1294,6 +1295,8 @@ class Hua4GMonApp(App):
             self.refresh_graph()
 
     def refresh_all_texts(self) -> None:
+        self._bands_shown = []
+        self.build_band_checkboxes()
         self.lbl_back = t("← Назад")
         for name in ('connection', 'monitor', 'info', 'tools'):
             self.sm.get_screen(name).refresh_texts()
@@ -1418,6 +1421,7 @@ class Hua4GMonApp(App):
         worker = SessionWorker(
             session, interval=lambda: self.interval,
             on_connected=mine(self._on_connected), on_snapshot=mine(self._on_snapshot),
+            on_metadata=mine(self._on_metadata),
             on_status=mine(self._on_status), on_fatal=mine(self._on_fatal))
         self.worker = worker
         self.link = 'connecting'
@@ -1432,6 +1436,9 @@ class Hua4GMonApp(App):
         self.session = None
         self.demo_modem = None
         self.link = 'offline'
+        self._wl_token = None
+        self._wl_running = False
+        self._survey_searching = False
         self._busy = False
         self._stop_beeps()
         set_keep_screen_on(False)
@@ -1450,6 +1457,12 @@ class Hua4GMonApp(App):
         self._show_last_event()         # не текст ошибки прошлой сессии
         if self.sound_on:
             self._schedule_beep()
+
+    def _on_metadata(self, info: dict[str, Any]) -> None:
+        if self.session is not None:
+            self._band_list = lockable_bands(self.session.supported_bands, self.state.observed_bands)
+            self.build_band_checkboxes()
+            self.refresh_info_screen()
 
     def _show_last_event(self) -> None:
         ev = self.sm.get_screen('monitor').ids.get('event_lbl')
@@ -1508,7 +1521,8 @@ class Hua4GMonApp(App):
             message = str(snap.raw['_survey_error'])
             if message not in self.survey.messages:
                 self.survey.messages.append(message)
-        self._refresh_survey()
+        if self.survey.running:
+            self._refresh_survey()
         change = self.state.ingest(snap, time.monotonic())
         scr = self.sm.get_screen('monitor')
         if change is not None:
@@ -1564,7 +1578,7 @@ class Hua4GMonApp(App):
         score, summary, color = calculate_overall_health(snap.rsrp, snap.sinr)
         if not snap.registered:
             score, summary, color = 0, snap.network_message, 'gray'
-        health = t(summary).format(pct=score)
+        health = ('LTE · ' if snap.registered else '') + t(summary).format(pct=score)
         if self.demo_modem is not None:
             health = t("ДЕМО · азимут {a}").format(
                 a=demo_angle_hint(self.demo_modem)) + " · " + health
@@ -1741,7 +1755,7 @@ class Hua4GMonApp(App):
                 return
             self._survey_searching = True
             pending = Snapshot()
-            self.state.ingest(pending, time.monotonic())
+            self.state.ingest(pending, time.monotonic(), preserve_cell=True)
             self._render(pending)
             survey.messages = [t('Поиск операторов…')]
             self._refresh_survey()
@@ -1882,7 +1896,7 @@ class Hua4GMonApp(App):
             row('5G NR', nr),
         ]
         cells = [
-            escape_markup(f"{'▶ ' if c.is_current(self.state.last) else ''}{c.operator_label}"
+            escape_markup(f"{'▶ ' if self.state.is_current_cell(c) else ''}{c.operator_label}"
                           f" · {c.band_label.replace('МГц', mhz)}"
                           f" · Cell ID {c.cell_id if c.cell_id is not None else '-'}"
                           f" · PCI {fmt_num(c.key.pci)} · SINR {fmt_num(c.best_sinr)}"
@@ -1924,8 +1938,9 @@ class Hua4GMonApp(App):
             row('Трафик за месяц (↓/↑)', month),
             row('Модуляция DL / UL', " / ".join(mods) if mods else None),
             row('Режим передачи (TM)' , format_mimo(snap.transmode) if snap.transmode else None),
+            row('MIMO', snap.mimo_matrix or None),
             row('Ранг MIMO LTE', t('Нет подтверждённых данных')),
-            row('Ранг MIMO NR', fmt_num(snap.nr_rank)),
+            row('Ранг MIMO NR', format_rank(snap.nr_rank)),
             row('CQI кодовых слов', cqi),
             row('Мощность передатчика', tx),
             row('RRC', snap.rrc),
@@ -2050,17 +2065,18 @@ class Hua4GMonApp(App):
 
     def mark_current_bands(self) -> None:
         snap = self.state.last
-        if snap is None or not snap.bands:
+        if (self.link != 'online' or snap is None or not snap.registered
+                or self.state.is_stale(time.monotonic(), self.interval)):
             self._net_msg(t("Текущий бэнд ещё не определён."), '#d63031')
             return
-        missing = [b for b in snap.bands if b not in self._band_list]
-        if missing:
-            self._band_list += missing
-        self.build_band_checkboxes()
+        bands = [b for b in snap.bands if 1 <= b <= 63 and b in self.band_vars]
+        if not bands:
+            self._net_msg(t("Текущий бэнд ещё не определён."), '#d63031')
+            return
         for b, cb in self.band_vars.items():
-            cb.active = b in snap.bands
+            cb.active = b in bands
         self._net_msg(t("Отмечены текущие бэнды: {bands}").format(
-            bands=", ".join(f"B{b}" for b in snap.bands)), '#3399ff')
+            bands=", ".join(f"B{b}" for b in bands)), '#3399ff')
 
     def apply_bands(self) -> None:
         session = self.session
@@ -2074,17 +2090,18 @@ class Hua4GMonApp(App):
         names = ", ".join(f"B{b}" for b in selected)
         lines = [t("Зафиксировать бэнды: {bands}?").format(bands=names)]
         lines += lock_warnings(selected, self.state.last)
-        if session.locks_lte_only:
-            lines.append(t("Режим сети будет «только 4G»."))
-        elif not session.caps_known:     # режимы уточнятся перед записью
-            lines.append(t("Если у модема нет 5G, режим сети будет «только 4G»."))
+        def confirm_plan(plan):
+            lines.append(t("Режим сети после записи: {mode}").format(mode=plan.networkmode))
 
-        def go() -> None:
-            self._net_action(lambda: session.apply_plan(session.plan_band_lock(selected)),
-                             lambda ok: self._after_write(ok, t(
-                                 "Band Lock применён: {bands}.").format(bands=names)),
-                             t("Применяю Band Lock…"))
-        self.confirm(t("Подтверждение"), "\n\n".join(lines), t("Применить"), go)
+            def apply():
+                if self.session is session:
+                    self._net_action(lambda: session.apply_plan(plan),
+                                     lambda ok: self._after_write(ok, t("Band Lock применён: {bands}.").format(bands=names)),
+                                     t("Применяю Band Lock…"))
+
+            self.confirm(t("Подтверждение"), "\n\n".join(lines), t("Применить"), apply)
+
+        self._net_action(lambda: session.plan_band_lock(selected), confirm_plan, t("Чтение настроек сети…"))
 
     def reset_bands(self) -> None:
         session = self.session
@@ -2131,12 +2148,13 @@ class Hua4GMonApp(App):
             return
 
         def work() -> int | None:
-            session.set_antenna(code)
-            return session.read_antenna()
+            return session.apply_antenna(code)
 
         def done(read_back: int | None) -> None:
-            if read_back in (code, None):
+            if read_back == code:
                 self._net_msg(t("Тип антенны изменён: {mode}").format(mode=label), '#00b894')
+            elif read_back is None:
+                self._net_msg(t("Команда отправлена, но режим антенны не подтверждён."), '#e68033')
             else:
                 self._net_msg(t("Роутер принял команду, но сообщает другой режим антенны."),
                               '#e68033')
@@ -2202,6 +2220,7 @@ class Hua4GMonApp(App):
         if self._wl_running:
             return                      # проверка уже идёт
         self._wl_running = True
+        token = self._wl_token = object()
         session = self.session
         tools = self._tools()
         tools.wl_verdict = t("Проверка…")
@@ -2209,7 +2228,7 @@ class Hua4GMonApp(App):
         tools.wl_detail = t("Проверка занимает несколько секунд.")
 
         def done(report: Any) -> None:
-            if session is not self.session:
+            if session is not self.session or token is not self._wl_token:
                 return
             self._wl_running = False
             tools.wl_verdict = report.title
@@ -2222,12 +2241,19 @@ class Hua4GMonApp(App):
             tools.wl_detail = "\n".join(lines)
 
         def failed(exc: BaseException) -> None:
-            if session is not self.session:
+            if session is not self.session or token is not self._wl_token:
                 return
             self._wl_running = False
             tools.wl_verdict = t("Ошибка")
             tools.wl_detail = humanize_error(exc)
-        self._run_bg(run_whitelist_check, done, failed)
+        def work():
+            if platform != 'android':
+                return run_whitelist_check()
+            if session is None:
+                raise OSError('No router session for network selection')
+            from core.local_transport import android_probe_connection
+            return run_whitelist_check(create_connection=android_probe_connection(session.ip))
+        self._run_bg(work, done, failed)
 
 
 def main() -> None:

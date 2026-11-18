@@ -16,6 +16,16 @@ class NetModeUnavailable(Exception):
     """Настройки сети модема не прочитаны — запись Band Lock отменена."""
 
 
+class MobileDataDisabled(Exception):
+    """Reattach must not enable data deliberately disabled by the user."""
+
+
+def is_unsupported_endpoint(exc: BaseException) -> bool:
+    """For optional reads only; never suppress failed writes or login."""
+    return (classify_error(exc) is ErrorKind.NOT_SUPPORTED or
+            getattr(getattr(exc, 'response', None), 'status_code', None) in (404, 405, 501))
+
+
 class ErrorKind(enum.Enum):
     NETWORK = 'network'            # роутер недоступен / таймаут
     SESSION = 'session'            # сессия истекла — нужен повторный вход
@@ -76,6 +86,8 @@ def classify_error(exc: BaseException) -> ErrorKind:
 def humanize_error(exc: BaseException) -> str:
     """Короткое понятное сообщение на текущем языке."""
     code = error_code(exc)
+    if isinstance(exc, MobileDataDisabled):
+        return t("Мобильные данные выключены. Включите их в веб-интерфейсе роутера перед переподключением.")
     if code in _MESSAGES:
         return t(_MESSAGES[code])
     if isinstance(exc, NetModeUnavailable):

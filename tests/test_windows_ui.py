@@ -539,3 +539,16 @@ def test_lte_nr_graphs_main_and_fullscreen(app):
         assert app.signal_graph.viewport.param == 'nr_rsrq'
     finally:
         app._close_graph()
+
+
+def test_disconnect_marks_open_graph_and_roof_stale(app):
+    online(app)
+    app.toggle_roof_mode()
+    app.open_fullscreen_graph()
+    try:
+        app.disconnect()
+        assert app.signal_graph.stale and app.full_graph.stale
+        assert app.r_status.cget("text")
+    finally:
+        app._close_roof()
+        app._close_graph()

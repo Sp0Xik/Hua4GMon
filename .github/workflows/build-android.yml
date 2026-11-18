@@ -162,8 +162,8 @@ jobs:
             ${{ steps.apk.outputs.name }}
             ${{ steps.apk.outputs.name }}.sha256
 
-  # Проверка обновления инструментов без риска для релиза: тот же p4a
-  # v2024.01.21, но buildozer 1.6.0. Результат не влияет на сборку.
+  # Проверка обновления инструментов без риска для релиза: p4a v2026.05.09,
+  # NDK 28c и Buildozer 1.6.0. Результат не влияет на сборку.
   # Падение видно в списке запусков (отдельный workflow-run по расписанию).
   canary:
     if: github.event_name == 'schedule' || inputs.canary
@@ -177,4 +177,10 @@ jobs:
         with:
           buildozer-version: '1.6.0'
           mode: debug
-          cache-prefix: buildozer-canary-v2
+          next-toolchain: 'true'
+          cache-prefix: buildozer-canary-v3
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-toolchain-canary
+          path: build-android/bin/*.apk
+          if-no-files-found: error

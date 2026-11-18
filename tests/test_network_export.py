@@ -116,7 +116,7 @@ def test_whitelist_check_detects_filtering(tls_server, plain_tcp):
 def test_whitelist_check_open_internet(tls_server):
     rep = core.run_whitelist_check(white=[('127.0.0.1', tls_server)],
                                    neutral=[('127.0.0.1', tls_server)], timeout=2.0)
-    assert rep.title == "Белые списки ВЫКЛЮЧЕНЫ"
+    assert rep.title == "Доступны цели обеих групп"
     assert rep.color == "#00b894"
 
 
@@ -199,7 +199,7 @@ def test_csv_ru_excel(tmp_path):
     lines = data.decode('utf-8-sig').splitlines()
     assert lines[0].startswith("ts;rsrp;rssi;sinr;rsrq")
     assert ";-95;" in lines[1] and ";12,5;" in lines[1]
-    assert lines[1].endswith(";B3+B1;lte_ca;;")
+    assert lines[1].endswith(";B3+B1;lte_ca;;;;;;")
     assert lines[2].startswith("2026-09-24T12:00:01;;")
 
 
@@ -300,3 +300,13 @@ def test_sni_hint_only_when_neutral_sites_fail(monkeypatch):
                                "duckduckgo.com": sni("duckduckgo.com")})
     report = core.run_whitelist_check(white, neutral, timeout=0.1)
     assert "SNI" in report.detail
+
+
+def test_diagnostics_error_omits_router_addresses_and_url_credentials():
+    from core.export import build_diagnostics
+    error = "Timeout: host='router.internal' 192.168.88.7 [2001:db8::7] https://admin:secret@router.internal/status"
+    report = build_diagnostics(app_version="test", library_version="test", platform="test",
+                               dumps={}, errors={"status": error})
+    text = report["errors"]["status"]
+    assert "Timeout" in text
+    assert all(s not in text for s in ("router.internal", "192.168", "db8", "secret"))

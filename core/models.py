@@ -53,10 +53,12 @@ class CellKey:
     """Идентичность обслуживающей соты: DL EARFCN + PCI."""
     earfcn: int | None
     pci: int | None
+    identity: int | None = None
+    nr: bool = False
 
     @property
     def known(self) -> bool:
-        return self.earfcn is not None and self.pci is not None
+        return self.identity is not None or (self.earfcn is not None and self.pci is not None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +102,7 @@ class Snapshot:
     cqi1: int | None = None
     tm: int | None = None
     transmode: str = ''
+    mimo_matrix: str = ''
     nr_rank: int | None = None
     txpower: str = ''
     pusch_dbm: float | None = None
@@ -145,7 +148,9 @@ class Snapshot:
 
     @property
     def cell(self) -> CellKey:
-        return CellKey(self.earfcn, self.pci)
+        if self.cell_id is None and self.earfcn is None and (self.nci is not None or self.nr_arfcn is not None):
+            return CellKey(self.nr_arfcn, self.nr_pci, self.nci, nr=True)
+        return CellKey(self.earfcn, self.pci, self.cell_id)
 
     @property
     def has_nr(self) -> bool:
@@ -254,6 +259,10 @@ def build_snapshot(raw: Mapping[str, Any],
             plmn = str(data['_observed_plmn'])
             full_name = ''
 
+    matrix = str(data.get('mimo') or '').strip().lower().replace('×', 'x').replace(' ', '')
+    dims = matrix.split('x')
+    if len(dims) != 2 or any(d not in ('1', '2', '4', '8') for d in dims):
+        matrix = ''
     return Snapshot(
         registration=registration, connection=connection,
         rsrp=metrics['rsrp'], rssi=metrics['rssi'],
@@ -287,8 +296,9 @@ def build_snapshot(raw: Mapping[str, Any],
         ul_mcs=_str(data, ('ul_mcs', 'ulmcs', 'ulMcs')),
         cqi0=to_int(data.get('cqi0')),
         cqi1=to_int(data.get('cqi1')),
-        tm=parse_tm(first_present(data, ('transmode', 'TransMode', 'mimo'))),
-        transmode=_str(data, ('transmode', 'TransMode', 'mimo')),
+        tm=parse_tm(first_present(data, ('transmode', 'TransMode'))),
+        transmode=_str(data, ('transmode', 'TransMode')),
+        mimo_matrix=matrix,
         nr_rank=int(str(data['nrrank'])) if str(data.get('nrrank', '')).strip() in tuple(map(str, range(1, 9))) else None,
         txpower=_str(data, ('txpower', 'TxPower', 'tx_power')),
         pusch_dbm=parse_pusch_power(first_present(data, ('txpower', 'TxPower', 'tx_power'))),

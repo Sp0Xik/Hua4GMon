@@ -221,18 +221,16 @@ def _busy_net_mode(session):
     net.net_mode = busy_once
 
 
-def test_band_lock_keeps_2g3g_when_read_fails(session, modem):
-    """Не прочитали настройки перед записью — берутся исходные, а не значения
-    по умолчанию: NetworkBand (2G/3G) модема не меняется."""
+def test_band_lock_requires_fresh_settings_even_with_original(session, modem):
+    """Кэш подключения не разрешает запись при ошибке свежего чтения."""
     modem.network_band = '2000000400380'
     session.original_net_mode = session.read_net_mode()
     _busy_net_mode(session)
-    plan = session.plan_band_lock([20])
-    assert plan.networkband == '2000000400380'
-    assert session.apply_plan(plan) is True
-    assert modem.network_band == '2000000400380' and modem.lte_mask == 1 << 19
+    with pytest.raises(core.NetModeUnavailable):
+        session.plan_band_lock([20])
     _busy_net_mode(session)
-    assert session.plan_all_bands().networkband == '2000000400380'
+    with pytest.raises(core.NetModeUnavailable):
+        session.plan_all_bands()
 
 
 def test_band_lock_refused_without_any_settings(session, modem):
@@ -311,7 +309,11 @@ def test_original_captured_before_first_write(session, modem):
 def test_write_without_read_back_is_unconfirmed(session, modem):
     plan = session.plan_band_lock([20])
 
+    initial = session._client.net.net_mode()
+
     def timeout():
+        if modem.lte_mask != 1 << 19:
+            return initial
         raise TimeoutError("read-back")
     session._client.net.net_mode = timeout
     assert session.apply_plan(plan) is False     # «не подтверждено», не исключение
@@ -650,3 +652,44 @@ def test_worker_skips_tick_on_snapshot_bug(fast, modem, monkeypatch):
     assert not rec.fatal and 'reconnecting' not in rec.statuses
     w.stop()
     w.join(5)
+
+
+@pytest.mark.parametrize("status", [404, 405, 501])
+def test_missing_optional_http_endpoint_keeps_radio_online(session, monkeypatch, status):
+    from requests import HTTPError, Response
+    response = Response()
+    response.status_code = status
+    calls = []
+
+    def missing():
+        calls.append(1)
+        raise HTTPError(response=response)
+
+    monkeypatch.setattr(session._client.monitoring, "traffic_statistics", missing)
+    for _ in range(4):
+        assert session.fetch()["rsrp"]
+    assert len(calls) == 1
+
+
+def test_reattach_preserves_disabled_data_through_close(session, modem):
+    from core.errors import MobileDataDisabled
+    modem.data_on = False
+    with pytest.raises(MobileDataDisabled):
+        session.reattach(pause=0)
+    session.close()
+    assert not modem.data_on
+
+def test_changed_mode_after_confirmation_aborts_write(session, modem):
+    plan = session.plan_band_lock([3])
+    modem.network_band = '1234'
+    with pytest.raises(core.NetModeUnavailable):
+        session.apply_plan(plan)
+    assert modem.network_band == '1234'
+
+
+def test_empty_capability_list_preserves_nr(session, modem):
+    modem.network_mode = '08'
+    session._client.net.net_mode_list = lambda: {}
+    session._read_capabilities_locked()
+    assert not session.caps_known
+    assert session.plan_band_lock([3]).networkmode == '08'

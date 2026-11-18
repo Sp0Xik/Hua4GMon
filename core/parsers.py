@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -32,7 +33,11 @@ def is_valid_ip(s: str) -> bool:
     """Базовая валидация IPv4."""
     if not s or not _IP_RE.match(s):
         return False
-    return all(0 <= int(p) <= 255 for p in s.split('.'))
+    try:
+        ipaddress.IPv4Address(s)
+    except ValueError:
+        return False
+    return True
 
 
 def extract_number(val: Any) -> float | None:
@@ -57,7 +62,7 @@ def extract_number(val: Any) -> float | None:
 def to_int(val: Any) -> int | None:
     """Целое из сырого значения API (с единицами или без) или None."""
     n = extract_number(val)
-    return int(n) if n is not None else None
+    return int(n) if n is not None and n.is_integer() else None
 
 
 def parse_cell_id(raw: Any) -> tuple[int | None, int | None]:
@@ -132,7 +137,7 @@ def dl_earfcn(earfcn: Any) -> int | None:
     m = re.search(r'DL[:\s]*(\d+)', s, re.IGNORECASE)
     if m:
         return int(m.group(1))
-    m = re.search(r'\d+', s)
+    m = re.fullmatch(r'\s*\d+\s*', s)
     return int(m.group(0)) if m else None
 
 
@@ -183,7 +188,7 @@ def active_bands(band_raw: Any, earfcn: Any = None,
                 mask = int(s, 16)
             except ValueError:
                 mask = 0
-            from_band = [b for b in range(1, 64) if mask & (1 << (b - 1))]
+            from_band = [b for b in range(1, 64) if b in allowed and mask & (1 << (b - 1))]
         else:
             # Ширину канала («20MHz») убираем, чтобы 20 не стал бэндом B20.
             s = _BANDWIDTH_RE.sub(' ', s)
@@ -342,8 +347,19 @@ def parse_tm(value: Any) -> int | None:
     """'TM[4]' / '4' / 'TM4' → 4."""
     if value in (None, ''):
         return None
-    m = re.search(r'\d+', str(value))
-    return int(m.group(0)) if m else None
+    m = re.fullmatch(r'(?:TM\[(\d+)\]|(?:TM)?(\d+))', str(value).strip(), re.I)
+    return int(m[1] or m[2]) if m else None
+
+
+def format_rank(rank: int | None) -> str:
+    """Explicit radio rank counts layers; it does not describe antenna hardware."""
+    if type(rank) is not int or not 1 <= rank <= 8:
+        return t('Нет подтверждённых данных')
+    if rank == 1:
+        return t('1 поток')
+    if rank in (2, 3, 4):
+        return t('{n} потока').format(n=rank)
+    return t('{n} потоков').format(n=rank)
 
 
 def format_mimo(value: Any) -> str:
@@ -415,19 +431,13 @@ def bands_from_mask(mask: Any, supported_mask: int | None = None) -> list[int] |
     AUTO определяется так:
         * маска покрывает всё, что поддерживает модем (supported_mask из
           net/net-mode-list), — если это известно;
-        * иначе: маска покрывает все бэнды региона и заметно шире их
-          (типовое '7FFFFFFFFFFFFFFF').
+        * иначе: используется полная маска LTE ('7FFFFFFFFFFFFFFF').
     """
     val = parse_hex_mask(mask)
     if val is None or val <= 0:
         return None
-    if supported_mask:
-        if (val & supported_mask) == supported_mask:
-            return []
-    else:
-        region = bands_to_mask(REGION_BANDS)
-        if (val & region) == region and val > region:
-            return []
+    if supported_mask and (val & supported_mask) == supported_mask:
+        return []
     if (val & LTE_ALL_MASK) == LTE_ALL_MASK:
         return []
     return mask_to_bands(val)

@@ -17,12 +17,14 @@ from __future__ import annotations
 import csv
 import datetime
 import json
+import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
 CSV_FIELDS: tuple[str, ...] = (
     'ts', 'rsrp', 'rssi', 'sinr', 'rsrq', 'nr_rsrp', 'nr_sinr', 'plmn',
     'cell_id', 'enodeb', 'sector', 'pci', 'earfcn', 'bands', 'rat', 'registration', 'connection',
+    'nci', 'nr_pci', 'nr_arfcn', 'nr_rsrq',
 )
 
 # Части имён ключей (без учёта регистра), значения которых маскируются.
@@ -31,7 +33,7 @@ ID_KEY_PARTS: tuple[str, ...] = ('imei', 'imsi', 'iccid', 'msisdn', 'serialnumbe
 # Сетевые адреса — полностью: по MAC Wi-Fi (BSSID) общедоступные базы
 # находят место установки, по IP и DNS — провайдера и район.
 ADDRESS_KEY_PARTS: tuple[str, ...] = ('mac', 'dns', 'ipaddr', 'ipv4', 'ipv6address',
-                                      'ip_address', 'wan_ip')
+                                      'ip_address', 'wan_ip', 'bssid', 'gateway')
 
 
 def csv_dialect(lang: str) -> tuple[str, str]:
@@ -93,7 +95,7 @@ def mask_sensitive(data: Any, keep: int | None = None) -> Any:
     по своим ключам.
     """
     if isinstance(data, Mapping):
-        return {str(k): mask_sensitive(v, _kept_chars(str(k))) for k, v in data.items()}
+        return {str(k): mask_sensitive(v, keep if keep is not None else _kept_chars(str(k))) for k, v in data.items()}
     if isinstance(data, list):
         return [mask_sensitive(v, keep) for v in data]
     if keep is not None and data not in (None, ''):
@@ -113,8 +115,20 @@ def build_diagnostics(*, app_version: str, library_version: str,
         'huawei_lte_api': library_version,
         'platform': platform,
         'dumps': mask_sensitive(dict(dumps)),
-        'errors': dict(errors),
+        'errors': {name: redact_error(text) for name, text in errors.items()},
     }
+
+
+def redact_error(text: str) -> str:
+    """Exception messages are unstructured: remove URLs, hosts and addresses."""
+    text = re.sub(r'https?://[^\s\x27\x22<>]+', '[URL]', str(text), flags=re.I)
+    text = re.sub(r'(\b(?:host|hostname|server)\s*[=:]\s*)[\x27\x22]?[^\s,\x27\x22)]+[\x27\x22]?',
+                  r'\1[HOST]', text, flags=re.I)
+    text = re.sub(r'(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])', '[IP]', text)
+    text = re.sub(r'(?<!\w)(?:[0-9a-f]{0,4}:){2,}[0-9a-f:.]*(?:%[\w.-]+)?',
+                  '[IP]', text, flags=re.I)
+    text = re.sub(r'\b(?:[a-z0-9-]+\.)+[a-z]{2,63}\b', '[HOST]', text, flags=re.I)
+    return re.sub(r' at 0x[0-9a-f]+', '', text, flags=re.I)
 
 
 def diagnostics_json(report: Mapping[str, Any]) -> str:

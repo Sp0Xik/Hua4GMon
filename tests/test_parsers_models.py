@@ -188,7 +188,7 @@ BASE_RAW = {
 def test_snapshot_basic_fields():
     snap = core.build_snapshot(BASE_RAW)
     assert (snap.rsrp, snap.sinr, snap.rsrq, snap.rssi) == (-88.0, 14.0, -9.0, -61.0)
-    assert snap.cell == core.CellKey(1300, 287)
+    assert snap.cell == core.CellKey(1300, 287, 180123 * 256 + 12)
     assert (snap.enodeb, snap.sector) == (180123, 12)
     assert snap.freq_mhz == 1815.0
     assert snap.operator == "MegaFon"

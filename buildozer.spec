@@ -70,8 +70,8 @@ android.release_artifact = apk
 # Свежий p4a (master) по умолчанию тянет Python 3.14 + NDK r28c, для
 # которых ещё нет рабочего pyjnius. Релиз v2024.01.21 использует
 # Python 3.11 и собирает pyjnius из рецепта. Совместим с buildozer 1.5.0,
-# Cython 0.29.36 и NDK 25b (заданы в CI). Проверка buildozer 1.6.0 с этим
-# же p4a — отдельная задача CI «canary».
+# Cython 0.29.36 и NDK 25b (заданы в CI). Проверка buildozer 1.6.0 с p4a
+# v2026.05.09 — отдельная задача CI «canary».
 p4a.branch = v2024.01.21
 
 # 2 — подробный лог buildozer (CI и так запускает с -v).

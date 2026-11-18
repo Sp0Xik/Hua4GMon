@@ -282,7 +282,7 @@ def test_filter_off_all_works():
     title, _, color = core.analyze_whitelist_results(
         [('a', True), ('b', True), ('c', True)],
         [('d', True), ('e', True), ('f', True)])
-    assert title == "Белые списки ВЫКЛЮЧЕНЫ"
+    assert title == "Доступны цели обеих групп"
     assert color == "#00b894"
 
 
