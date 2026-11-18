@@ -35,6 +35,12 @@ _current_lang = _DEFAULT_LANG
 # RU → EN. Ключ — исходная русская строка (ровно как в коде).
 # Если строки здесь нет, t() вернёт ключ (т.е. русский вариант).
 EN: dict[str, str] = {
+    'Состояние мобильных данных неизвестно. Переподключение отменено.': 'Mobile data state is unknown. Reconnect cancelled.',
+    '1 поток': '1 layer',
+    '{n} потока': '{n} layers',
+    '{n} потоков': '{n} layers',
+    'Команда отправлена, но режим антенны не подтверждён.': 'Command sent, but antenna mode was not confirmed.',
+    'Мобильные данные выключены. Включите их в веб-интерфейсе роутера перед переподключением.': 'Mobile data is disabled. Enable it in the router web interface before reconnecting.',
     "От {a:.0f} до {b:.0f} с назад":
         "{a:.0f} to {b:.0f} s ago",
     "«Переподключить связь» выключает и включает мобильные данные. Интернет временно пропадёт. После перезагрузки программа переподключится сама.":
@@ -78,10 +84,15 @@ EN: dict[str, str] = {
          "is unchanged. Try again in a few seconds."),
     "Агрегация пропадёт: не выбраны {bands}.":
         "Carrier aggregation will stop: {bands} not selected.",
+    "Медиана по последним 600 значениям, минимум и максимум за весь сбор.":
+        "Median of the latest 600 values; minimum and maximum over the entire survey.",
+    "Доступны цели обеих групп": "Targets in both groups responded",
+    "TLS через выбранный системой или приложением маршрут (белых: {w}/{wt}, нейтральных: {n}/{nt}).":
+        "TLS over the system or app route (whitelisted: {w}/{wt}, neutral: {n}/{nt}).",
+    "Режим сети после записи: {mode}": "Network mode after applying: {mode}",
+    "Чтение настроек сети…": "Reading network settings…",
     "Аномалия":
         "Anomaly",
-    "Белые списки ВЫКЛЮЧЕНЫ":
-        "Whitelist OFF",
     "Внешняя":
         "External",
     "Внутренняя":
@@ -122,10 +133,6 @@ EN: dict[str, str] = {
          "DNS/route problem. Check RSRP and traffic."),
     "Нормальный":
         "Normal",
-    ("Обычный режим — открыт весь интернет (белых: {w}/{wt}, нейтральных: "
-     "{n}/{nt})."):
-        ("Normal mode — full internet is open (whitelisted: {w}/{wt}, neutral: "
-         "{n}/{nt})."),
     "Отличный":
         "Excellent",
     "Отличный сигнал ({pct}%)":
@@ -358,10 +365,6 @@ EN: dict[str, str] = {
         "Working band (LTE)",
     "Режим передачи (TM)":
         "Transmission mode (TM)",
-    "Режим сети будет «только 4G».":
-        "Network mode will be “4G only”.",
-    "Если у модема нет 5G, режим сети будет «только 4G».":
-        "If the modem has no 5G, the network mode will be “4G only”.",
     "Роутер не найден. Проверьте подключение к его Wi-Fi/USB.":
         "Router not found. Check the connection to its Wi-Fi/USB.",
     "Команда не выполнена: {err}":

@@ -34,7 +34,15 @@ from core.constants import (
     RECONNECT_DELAY_MAX,
     RECONNECT_REOPEN_AFTER,
 )
-from core.errors import ErrorKind, NetModeUnavailable, classify_error, humanize_error
+from core.errors import (
+    ErrorKind,
+    MobileDataDisabled,
+    NetModeUnavailable,
+    classify_error,
+    humanize_error,
+    is_unsupported_endpoint,
+)
+from core.i18n import t
 from core.models import Snapshot, build_snapshot
 from core.parsers import (
     parse_access_modes,
@@ -203,7 +211,6 @@ class RouterSession:
         self._tick = 0
         self._cache: dict[str, dict[str, Any]] = {}
         self._unsupported: set[str] = set()
-        self._last_cell: tuple[Any, Any] | None = None
         self._data_off_pending = False
         self.device_info: dict[str, Any] = {}
         self.supported_bands: list[int] = []
@@ -229,7 +236,7 @@ class RouterSession:
         net-mode-list не прочитан, режим сети не меняется — иначе
         5G-модем, занятый при подключении, потерял бы 5G.
         """
-        return self.caps_known and not self.supports_5g
+        return self.caps_known and "03" in self.access_modes and not self.supports_5g
 
     def open(self) -> dict[str, Any]:
         """Вход в роутер (или повторный вход). Старая сессия закрывается."""
@@ -246,7 +253,12 @@ class RouterSession:
             self.device_info = dict(info)
             self._tick = 0
             self._cache.clear()
-            self._last_cell = None
+            self._unsupported.clear()
+            self._survey_unsupported.clear()
+            self._next_survey_read = 0.0
+            self.supported_bands = []
+            self.access_modes = []
+            self.caps_known = False
             try:
                 self._read_capabilities_locked()
             except Exception as exc:
@@ -295,14 +307,15 @@ class RouterSession:
             return
         self.supported_bands = parse_supported_bands(nml)
         self.access_modes = parse_access_modes(nml)
-        self.caps_known = True
+        self.caps_known = bool(self.access_modes) and all(
+            mode in {"00", "01", "02", "03"} or "08" in mode for mode in self.access_modes
+        )
 
     # ---- опрос ----
 
     def _optional_getters(self, client: Any) -> dict[str, Callable[[], Any]]:
         return {
             'plmn': client.net.current_plmn,
-            'status': client.monitoring.status,
             'traffic': client.monitoring.traffic_statistics,
             'month': client.monitoring.month_statistics,
             'dataswitch': client.dial_up.mobile_dataswitch,
@@ -316,28 +329,24 @@ class RouterSession:
             self._tick += 1
             before = self._read_network_status(client)
             signal = dict(client.device.signal() or {})
-            cell = (signal.get('earfcn'), signal.get('pci'))
-            cell_changed = self._last_cell is not None and cell != self._last_cell
-            self._last_cell = cell
 
             for name, getter in self._optional_getters(client).items():
-                if name == 'status' or name in self._unsupported:
+                if name in self._unsupported:
                     continue
                 every = POLL_EVERY.get(name, 1)
-                due = (name in ('plmn', 'dataswitch') or tick % every == 0 or name not in self._cache
-                       or (name == 'plmn' and cell_changed))
+                due = name in ('plmn', 'dataswitch') or tick % every == 0 or name not in self._cache
                 if not due:
                     continue
                 try:
                     self._cache[name] = dict(getter() or {})
                 except Exception as exc:
                     self._cache.pop(name, None)
+                    if is_unsupported_endpoint(exc):
+                        self._unsupported.add(name)
+                        continue
                     kind = classify_error(exc)
                     if kind in (ErrorKind.NETWORK, ErrorKind.SESSION):
                         raise
-                    if kind is ErrorKind.NOT_SUPPORTED:
-                        self._unsupported.add(name)
-                        self._cache.pop(name, None)
                     logger.debug("Optional endpoint %s failed", name, exc_info=True)
 
             survey_data: dict[str, Any] = {}
@@ -350,7 +359,7 @@ class RouterSession:
                         if classify_error(exc) is ErrorKind.SESSION:
                             raise
                         survey_data['_survey_error'] = humanize_error(exc)
-                        if classify_error(exc) is ErrorKind.NOT_SUPPORTED:
+                        if is_unsupported_endpoint(exc):
                             self._survey_unsupported.add('net/cell-info')
                 sources, errors = self._extra_cell_sources()
                 survey_data['_extra_cells'] = sources
@@ -395,19 +404,22 @@ class RouterSession:
                     if classify_error(exc) is ErrorKind.SESSION:
                         raise
                     errors[endpoint] = humanize_error(exc)
-                    status = getattr(getattr(exc, 'response', None), 'status_code', None)
-                    if classify_error(exc) is ErrorKind.NOT_SUPPORTED or status in (404, 405, 501):
+                    if is_unsupported_endpoint(exc):
                         self._survey_unsupported.add(endpoint)
         finally:
             self._connection.timeout = old_timeout
         return data, errors
 
     def _read_network_status(self, client: Any) -> dict[str, Any]:
+        if 'status' in self._unsupported:
+            return {}
         try:
             return dict(client.monitoring.status() or {})
         except Exception as exc:
             if classify_error(exc) is ErrorKind.SESSION:
                 raise
+            if is_unsupported_endpoint(exc):
+                self._unsupported.add('status')
             logger.debug('Network status unavailable', exc_info=True)
             return {}
 
@@ -447,18 +459,13 @@ class RouterSession:
     def _net_mode_for_write(self) -> NetModeSettings:
         """Текущие настройки сети для read-modify-write перед записью.
 
-        Если их не удалось прочитать (роутер занят и т.п.), берутся
-        прочитанные при подключении: программа меняет только LTE-бэнды,
-        а NetworkBand (2G/3G) и режим сети 5G-модема не трогает, поэтому
-        они совпадают с исходными. Если нет и их — NetModeUnavailable:
-        иначе в модем ушли бы значения по умолчанию.
+        При неполном или устаревшем снимке запись отменяется.
         """
         with self._lock:
             current = self._read_net_mode_locked()
             if current is not None and self.original_net_mode is None:
                 # Исходные настройки фиксируются до первой записи программы.
                 self.original_net_mode = current
-        current = current or self.original_net_mode
         if current is None:
             raise NetModeUnavailable()
         return current
@@ -469,7 +476,7 @@ class RouterSession:
         with self._lock:
             if not self.caps_known:
                 self._read_capabilities_locked()    # при подключении не прочитались
-        return plan_lock(current, bands, force_lte_only=self.locks_lte_only)
+        return plan_lock(current, bands, force_lte_only=self.locks_lte_only and "08" not in current.network_mode)
 
     def plan_all_bands(self) -> BandLockPlan:
         return plan_auto(self._net_mode_for_write(), self.original_net_mode)
@@ -483,6 +490,8 @@ class RouterSession:
         """Записывает план и перечитывает настройки. True — подтверждено."""
         with self._lock:
             client = self._require()
+            if plan.expected is not None and self._read_net_mode_locked() != plan.expected:
+                raise NetModeUnavailable()
             client.net.set_net_mode(plan.lteband, plan.networkband,
                                     _network_mode_arg(plan.networkmode))
             try:
@@ -492,7 +501,7 @@ class RouterSession:
                 # а не «роутер отклонил команду».
                 logger.warning("Net mode read-back failed after write", exc_info=True)
                 read_back = None
-        return verify(plan, read_back)
+            return verify(plan, read_back, self.supported_bands)
 
     # ---- антенна, перезагрузка, связь ----
 
@@ -521,6 +530,15 @@ class RouterSession:
         with self._lock:
             self._require().device.set_antenna_settings(AntennaTypeEnum(code))
 
+    def apply_antenna(self, code: int) -> int | None:
+        with self._lock:
+            self.set_antenna(code)
+            try:
+                return self.read_antenna()
+            except Exception:
+                logger.warning("Antenna read-back unavailable after write", exc_info=True)
+                return None
+
     def read_config(self) -> RouterConfig:
         net = self.read_net_mode()
         return RouterConfig(net, locked_bands(net, self.supported_bands),
@@ -544,6 +562,12 @@ class RouterSession:
             client = self._require()
             # Флаг — до запроса: если роутер выключил данные, а ответ
             # потерялся, close()/open() всё равно включат их обратно.
+            data = client.dial_up.mobile_dataswitch() or {}
+            switch = str(data.get('dataswitch', '')).strip()
+            if switch == '0':
+                raise MobileDataDisabled()
+            if switch != '1':
+                raise ValueError(t('Состояние мобильных данных неизвестно. Переподключение отменено.'))
             self._data_off_pending = True
             client.dial_up.set_mobile_dataswitch(0)
         sleep(pause)
@@ -612,12 +636,14 @@ class SessionWorker(threading.Thread):
                  on_status: Callable[[str, float | None, BaseException | None], None],
                  on_fatal: Callable[[BaseException], None],
                  on_stopped: Callable[[], None] | None = None,
-                 auto_reconnect: bool = True) -> None:
+                 auto_reconnect: bool = True,
+                 on_metadata: Callable[[dict[str, Any]], None] | None = None) -> None:
         super().__init__(daemon=True, name="hua4gmon-session")
         self.session = session
         self.auto_reconnect = auto_reconnect
         self._interval = interval
         self._on_connected = on_connected
+        self._on_metadata = on_metadata
         self._on_snapshot = on_snapshot
         self._on_status = on_status
         self._on_fatal = on_fatal
@@ -638,12 +664,22 @@ class SessionWorker(threading.Thread):
 
     def run(self) -> None:
         try:
-            try:
-                info = self.session.open()
-            except Exception as exc:
-                if not self._stop_evt.is_set():
-                    self._on_fatal(exc)
-                return
+            for attempt in range(3):
+                try:
+                    info = self.session.open()
+                    break
+                except Exception as exc:
+                    if self._stop_evt.is_set():
+                        return
+                    if (attempt == 2 or not self.auto_reconnect or
+                            classify_error(exc) is not ErrorKind.NETWORK or
+                            getattr(exc, 'response', None) is not None):
+                        self._on_fatal(exc)
+                        return
+                    delay = min(RECONNECT_DELAY_INITIAL * 2**attempt, RECONNECT_DELAY_MAX)
+                    self._on_status('reconnecting', delay, exc)
+                    if self._stop_evt.wait(delay):
+                        return
             if self._stop_evt.is_set():
                 return
             self._on_connected(info)
@@ -677,7 +713,7 @@ class SessionWorker(threading.Thread):
                 delay = min(delay * 2, RECONNECT_DELAY_MAX)
                 if kind is ErrorKind.SESSION or failures >= RECONNECT_REOPEN_AFTER:
                     try:
-                        self.session.open()
+                        info = self.session.open()
                     except Exception as exc2:
                         if classify_error(exc2) is ErrorKind.LOGIN_FATAL:
                             self._on_fatal(exc2)
@@ -686,6 +722,8 @@ class SessionWorker(threading.Thread):
                         continue
                     if self._stop_evt.is_set():
                         return
+                    if self._on_metadata is not None:
+                        self._on_metadata(info)
                     # «Подключено» — только после успешного опроса (ниже):
                     # вход удался, но данные могут по-прежнему не идти.
                 continue

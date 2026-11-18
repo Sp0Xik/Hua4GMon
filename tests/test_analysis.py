@@ -368,9 +368,9 @@ def test_plan_lock_5g_keeps_mode():
     assert plan.networkmode == '0803'
 
 
-def test_plan_lock_without_current_uses_safe_defaults():
-    plan = core.plan_lock(None, [1], force_lte_only=False)
-    assert plan == core.BandLockPlan('1', '3FFFFFFF', '00')
+def test_plan_lock_without_current_refuses_write():
+    with pytest.raises(core.NetModeUnavailable):
+        core.plan_lock(None, [1], force_lte_only=False)
 
 
 def test_plan_lock_empty_rejected():
@@ -384,7 +384,8 @@ def test_plan_auto_restores_original_mode():
     assert core.plan_auto(cur, ORIGINAL) == core.BandLockPlan(
         '7FFFFFFFFFFFFFFF', '3FFFFFFF', '03')
     assert core.plan_auto(cur, None).networkmode == '03'
-    assert core.plan_auto(None, None).networkmode == '00'
+    with pytest.raises(core.NetModeUnavailable):
+        core.plan_auto(None, None)
 
 
 def test_plan_restore_exact():
@@ -398,7 +399,11 @@ def test_verify():
     assert not core.verify(plan, NetModeSettings('4', '3FFFFFFF', '00'))
     assert not core.verify(plan, None)
     auto = core.BandLockPlan('7FFFFFFFFFFFFFFF', '3FFFFFFF', '00')
-    assert core.verify(auto, NetModeSettings('20000800C5', '3FFFFFFF', '00'))
+    supported = [1, 3, 7, 8, 20, 38]
+    assert core.verify(auto, NetModeSettings('20000800C5', '3FFFFFFF', '00'), supported)
+    assert not core.verify(auto, NetModeSettings('40', '3FFFFFFF', '00'), supported)
+    assert not core.verify(auto, NetModeSettings('40', '3FFFFFFF', '00'))
+    assert not core.verify(plan, NetModeSettings('4', '0', '03'))
 
 
 def test_locked_bands():

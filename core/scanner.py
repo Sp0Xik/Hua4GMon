@@ -11,6 +11,7 @@ import statistics
 from dataclasses import dataclass, field, fields
 from typing import Any
 
+from core.export import _cell, csv_dialect
 from core.i18n import t
 from core.models import Snapshot, build_snapshot
 
@@ -30,6 +31,9 @@ class Observation:
     registered_samples: int = 0
     levels: dict[str, list[float]] = field(default_factory=dict)
 
+    minima: dict[str, float] = field(default_factory=dict)
+    maxima: dict[str, float] = field(default_factory=dict)
+
     def add(self, snap: Snapshot, at: str) -> None:
         self.snap, self.last = snap, at
         self.samples += 1
@@ -38,6 +42,8 @@ class Observation:
             value = snap.metric(key)
             if value is not None:
                 values = self.levels.setdefault(key, [])
+                self.minima[key] = min(self.minima.get(key, value), value)
+                self.maxima[key] = max(self.maxima.get(key, value), value)
                 values.append(value)
                 del values[:-600]
 
@@ -126,7 +132,7 @@ class Survey:
     def report(self) -> str:
         def value(v: Any) -> str:
             return t('Нет данных') if v is None or v == '' else str(v)
-        lines = [t('Сбор идёт') if self.running else t('Сбор остановлен'), t(SURVEY_HELP),
+        lines = [t('Сбор идёт') if self.running else t('Сбор остановлен'), t(SURVEY_HELP), t('Медиана по последним 600 значениям, минимум и максимум за весь сбор.'),
                  t('Сначала зарегистрированные сети; далее по медиане SINR, RSRQ, RSRP. Скорость не измеряется.')]
         if self.limit_reached:
             lines.append(t('Достигнут предел 1000 наблюдений. Остановите сбор и сохраните результат.'))
@@ -143,7 +149,7 @@ class Survey:
                 lines.append(t('Cell ID неизвестен: наблюдение не идентифицирует отдельную БС.'))
             for metric, values in row.levels.items():
                 lines.append(f'{metric.upper()}: {statistics.median(values):g} '
-                             f'[{min(values):g} … {max(values):g}]')
+                             f'[{row.minima[metric]:g} … {row.maxima[metric]:g}]')
         if self.operators:
             lines.extend(['', t('Обнаруженные операторы (без радиометрик):')])
             for op in self.operators:
@@ -151,13 +157,14 @@ class Survey:
         lines.extend(self.messages)
         return '\n'.join(lines)
 
-    def csv_text(self) -> str:
+    def csv_text(self, lang: str = 'en') -> str:
+        delimiter, decimal = csv_dialect(lang)
         output = io.StringIO(newline='')
         names = [f.name for f in fields(Snapshot) if f.name != 'raw']
         metrics = ('sinr', 'rsrp', 'rsrq', 'rssi', 'nr_sinr', 'nr_rsrp', 'nr_rsrq')
         stats = [f'{key}_{stat}' for key in metrics for stat in ('median', 'min', 'max')]
         writer = csv.DictWriter(output, fieldnames=[
-            'source', 'first', 'last', 'samples', 'rat_code', 'operator_state', *names, *stats])
+            'source', 'first', 'last', 'samples', 'rat_code', 'operator_state', *names, *stats], delimiter=delimiter)
         writer.writeheader()
         for row in self.ranked():
             values = {name: getattr(row.snap, name) for name in names}
@@ -166,8 +173,8 @@ class Survey:
                 data = row.levels.get(metric, [])
                 if data:
                     values.update({f'{metric}_median': statistics.median(data),
-                                   f'{metric}_min': min(data), f'{metric}_max': max(data)})
-            writer.writerow(values)
+                                   f'{metric}_min': row.minima[metric], f'{metric}_max': row.maxima[metric]})
+            writer.writerow({k: _cell(v, decimal) for k, v in values.items()})
         for op in self.operators:
             writer.writerow({'source': 'net/plmn-list', 'plmn': op['Numeric'],
                              'operator': op['FullName'] or op['ShortName'],

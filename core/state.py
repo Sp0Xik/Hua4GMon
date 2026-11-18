@@ -130,17 +130,21 @@ class CellStats:
 
     def update(self, snap: Snapshot) -> None:
         self.samples += 1
-        if snap.cell_id is not None:
-            self.cell_id = snap.cell_id
-        if snap.sinr is not None and (self.best_sinr is None or snap.sinr > self.best_sinr):
-            self.best_sinr = snap.sinr
-        if snap.rsrp is not None and (self.best_rsrp is None or snap.rsrp > self.best_rsrp):
-            self.best_rsrp = snap.rsrp
+        if self.key.identity is not None:
+            self.cell_id = self.key.identity
+        sinr = snap.nr_sinr if self.key.nr else snap.sinr
+        if sinr is not None and (self.best_sinr is None or sinr > self.best_sinr):
+            self.best_sinr = sinr
+        rsrp = snap.nr_rsrp if self.key.nr else snap.rsrp
+        if rsrp is not None and (self.best_rsrp is None or rsrp > self.best_rsrp):
+            self.best_rsrp = rsrp
         if snap.enodeb is not None:
             self.enodeb, self.sector = snap.enodeb, snap.sector
         if snap.operator:
             self.operator = snap.operator
-        if snap.band_label and snap.band_label != '-':
+        if self.key.nr and snap.nr_band:
+            self.band_label = snap.nr_band
+        elif snap.band_label and snap.band_label != '-':
             self.band_label = snap.band_label
 
     @property
@@ -159,7 +163,9 @@ def cell_label(snap: Snapshot) -> str:
     """'B3 · PCI 287' — короткая подпись соты."""
     band = f"B{snap.bands[0]}" if snap.bands else "?"
     pci = snap.pci if snap.pci is not None else "?"
-    return f"{band} · PCI {pci}"
+    key = snap.cell
+    identity = f" · {'NCI' if key.nr else 'ECI'} {key.identity}" if key.identity is not None else ""
+    return f"{snap.nr_band if key.nr else band} · PCI {key.pci if key.nr else pci}{identity} {snap.plmn}".strip()
 
 
 class SignalState:
@@ -167,7 +173,8 @@ class SignalState:
 
     def __init__(self, history: int = GRAPH_HISTORY,
                  log_max: int = SESSION_LOG_MAX,
-                 trend_param: str = 'sinr') -> None:
+                 trend_param: str = 'sinr', *, track_trend: bool = True) -> None:
+        self._track_trend = track_trend
         self._history_len = history
         self._log_max = log_max
         self.trend_param = trend_param
@@ -190,6 +197,7 @@ class SignalState:
         self.last: Snapshot | None = None
         self.last_ok: float | None = None
         self._cell: CellKey | None = None
+        self._cell_plmn = ''
         self._cell_label = ''
         self._rsrp_in_cell = 0          # отсчётов RSRP с последней смены соты
 
@@ -210,7 +218,8 @@ class SignalState:
     # ---- приём данных ----
 
     def ingest(self, snap: Snapshot, now: float,
-               wall: datetime.datetime | None = None) -> CellChange | None:
+               wall: datetime.datetime | None = None, *,
+               preserve_cell: bool = False) -> CellChange | None:
         """Принимает снимок. Возвращает событие смены соты, если оно было."""
         wall = wall or datetime.datetime.now()
         self.last = snap
@@ -222,7 +231,8 @@ class SignalState:
                 self.history[p].append(float('nan'))
                 self.history_times[p].append(now)
             self.tracker.reset()
-            self._cell = None
+            if not preserve_cell:
+                self._cell = None
             self._rsrp_in_cell = 0
             self._append_log(snap.display(), wall)
             return None
@@ -250,13 +260,14 @@ class SignalState:
         if snap.metric('rsrp') is not None:
             self._rsrp_in_cell += 1
 
-        value = snap.metric(self.trend_param)
-        if value is not None:
-            self.tracker.push(value)
-        else:
-            # Метрика пропала (например, NR при уходе с 5G): без данных
-            # стрелка не должна давать прежнее указание.
-            self.tracker.reset()
+        if self._track_trend:
+            value = snap.metric(self.trend_param)
+            if value is not None:
+                self.tracker.push(value)
+            else:
+                # Метрика пропала (например, NR при уходе с 5G): без данных
+                # стрелка не должна давать прежнее указание.
+                self.tracker.reset()
 
         self.observed_bands.update(snap.bands)
         self._append_log(snap, wall)
@@ -266,6 +277,26 @@ class SignalState:
         key = snap.cell
         if not key.known:
             return None
+        previous = self._cell
+        same_radio = (previous is not None and self._cell_plmn == snap.plmn
+                      and (key.earfcn, key.pci, key.nr) == (previous.earfcn, previous.pci, previous.nr))
+        if previous is not None and same_radio:
+            if key.identity is None:
+                key = previous
+            elif previous.identity is None:
+                old = self.cells.pop((snap.plmn, previous))
+                target = self.cells.get((snap.plmn, key))
+                if target is None:
+                    old.key = key
+                    self.cells[(snap.plmn, key)] = old
+                else:
+                    target.samples += old.samples
+                    for metric in ('best_rsrp', 'best_sinr'):
+                        value = getattr(old, metric)
+                        current = getattr(target, metric)
+                        if value is not None and (current is None or value > current):
+                            setattr(target, metric, value)
+                self._cell = key
         stats = self.cells.get((snap.plmn, key))
         if stats is None:
             stats = CellStats(key, snap.band_label, snap.enodeb, snap.sector,
@@ -275,15 +306,20 @@ class SignalState:
 
         label = cell_label(snap)
         change = None
-        if self._cell is not None and key != self._cell:
+        if self._cell is not None and (key != self._cell or snap.plmn != self._cell_plmn):
             change = CellChange(wall.strftime('%H:%M:%S'), self._cell, key,
                                 self._cell_label, label)
             self.events.append(change)
             # Сравнивать уровень двух разных сот бессмысленно — тренд заново.
             self.tracker.reset()
         self._cell = key
+        self._cell_plmn = snap.plmn
         self._cell_label = label
         return change
+
+    def is_current_cell(self, stats: CellStats) -> bool:
+        return bool(self.last and self.last.registered and self.last.cell.known
+                    and stats.key == self._cell and stats.plmn == self._cell_plmn)
 
     def _append_log(self, snap: Snapshot, wall: datetime.datetime) -> None:
         self.log.append({
@@ -291,7 +327,8 @@ class SignalState:
             'registration': snap.registration, 'connection': snap.connection,
             'rsrp': snap.rsrp, 'rssi': snap.rssi,
             'sinr': snap.sinr, 'rsrq': snap.rsrq,
-            'nr_rsrp': snap.nr_rsrp, 'nr_sinr': snap.nr_sinr,
+            'nr_rsrp': snap.nr_rsrp, 'nr_sinr': snap.nr_sinr, 'nr_rsrq': snap.nr_rsrq,
+            'nci': snap.nci, 'nr_pci': snap.nr_pci, 'nr_arfcn': snap.nr_arfcn,
             'plmn': snap.plmn,
             'cell_id': snap.cell_id,
             'enodeb': snap.enodeb, 'sector': snap.sector,

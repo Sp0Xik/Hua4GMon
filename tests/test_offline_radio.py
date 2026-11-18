@@ -168,7 +168,7 @@ def test_android_binding_uses_selected_network_handle(monkeypatch, result):
     network = NS(getNetworkHandle=lambda: 12345678901)
     manager = NS(getAllNetworks=lambda: [network],
                  getNetworkCapabilities=lambda n: NS(hasTransport=lambda t: t == 1),
-                 getLinkProperties=lambda n: NS(getLinkAddresses=lambda: NS(toArray=lambda: [link])))
+                 getLinkProperties=lambda n: NS(getRoutes=lambda: NS(toArray=lambda: []), getLinkAddresses=lambda: NS(toArray=lambda: [link])))
     activity = NS(getSystemService=lambda name: manager)
     monkeypatch.setitem(sys.modules, 'jnius', NS(autoclass=lambda name: NS(mActivity=activity)))
     monkeypatch.setattr(ctypes, 'CDLL', lambda *a, **kw: NS(android_setsocknetwork=bind))
@@ -180,3 +180,30 @@ def test_android_binding_uses_selected_network_handle(monkeypatch, result):
         bind_android_socket(sock, '192.168.8.1')
     assert calls == [(12345678901, 7)]
     assert bind.argtypes == [ctypes.c_uint64, ctypes.c_int]
+
+
+def test_rank_labels_are_separate_from_tm_and_antenna_count():
+    from core import format_rank
+    for raw, expected in [("1", "1 поток"), ("2", "2 потока"), ("4", "4 потока"),
+                          ("8", "8 потоков"), ("4x4", "Нет подтверждённых данных")]:
+        snap = build_snapshot({"ServiceStatus": "2", "nrrank": raw, "transmode": "TM4"})
+        assert format_rank(snap.display().nr_rank) == expected
+
+
+def test_probe_resolves_and_connects_on_router_network(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from core import local_transport
+    network, sock = Mock(), Mock()
+    network.getAllByName.return_value = [SimpleNamespace(getHostAddress=lambda: "203.0.113.7")]
+    select, bind = Mock(return_value=network), Mock()
+    monkeypatch.setattr(local_transport, "android_router_network", select)
+    monkeypatch.setattr(local_transport, "_bind_network_socket", bind)
+    monkeypatch.setattr(local_transport.socket, "socket", Mock(return_value=sock))
+    connect = local_transport.android_probe_connection("192.168.8.1")
+    assert connect(("example.org", 443), 2) is sock
+    select.assert_called_once_with("192.168.8.1")
+    network.getAllByName.assert_called_once_with("example.org")
+    bind.assert_called_once_with(sock, network)
+    sock.connect.assert_called_once_with(("203.0.113.7", 443))

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import socket
 import ssl
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -69,13 +69,14 @@ def _tls_context() -> ssl.SSLContext:
 
 
 def probe_host(host: str, port: int = 443,
-               timeout: float = WL_CHECK_TIMEOUT) -> ProbeResult:
+               timeout: float = WL_CHECK_TIMEOUT, *,
+               create_connection: Callable | None = None) -> ProbeResult:
     """TCP + TLS с SNI. Различает блокировку по IP и по SNI.
 
     Hardware validation required: поведение на SIM с включёнными белыми списками.
     """
     try:
-        raw = socket.create_connection((host, port), timeout=timeout)
+        raw = (create_connection or socket.create_connection)((host, port), timeout=timeout)
     except OSError as e:
         return ProbeResult(host, port, False, False, _describe_os_error(e))
     try:
@@ -100,11 +101,16 @@ class WhitelistReport:
 
 def run_whitelist_check(white: Sequence[tuple[str, int]] = WHITELIST_HOSTS_RU,
                         neutral: Sequence[tuple[str, int]] = CONTROL_HOSTS_NEUTRAL,
-                        timeout: float = WL_CHECK_TIMEOUT) -> WhitelistReport:
+                        timeout: float = WL_CHECK_TIMEOUT, *,
+                        create_connection: Callable | None = None) -> WhitelistReport:
     """Параллельно проверяет все цели и выносит вердикт."""
     targets = list(white) + list(neutral)
     with ThreadPoolExecutor(max_workers=max(1, min(8, len(targets)))) as pool:
-        results = list(pool.map(lambda hp: probe_host(hp[0], hp[1], timeout), targets))
+        def probe(hp):
+            if create_connection is None:
+                return probe_host(hp[0], hp[1], timeout)
+            return probe_host(hp[0], hp[1], timeout, create_connection=create_connection)
+        results = list(pool.map(probe, targets))
     white_res, neutral_res = results[:len(white)], results[len(white):]
     title, detail, color = analyze_whitelist_results(
         [(r.host, r.ok) for r in white_res],
@@ -131,8 +137,8 @@ def analyze_whitelist_results(
     neutral_any = neutral_ok > 0
 
     if white_any and neutral_any:
-        return (t("Белые списки ВЫКЛЮЧЕНЫ"),
-                t("Обычный режим — открыт весь интернет "
+        return (t("Доступны цели обеих групп"),
+                t("TLS через выбранный системой или приложением маршрут "
                   "(белых: {w}/{wt}, нейтральных: {n}/{nt}).").format(
                       w=white_ok, wt=wt, n=neutral_ok, nt=nt),
                 "#00b894")

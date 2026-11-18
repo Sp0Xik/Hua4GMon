@@ -14,17 +14,16 @@ Band Lock: безопасное планирование записи в net/net
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from core.constants import (
     LTE_ALL_MASK,
     LTEBAND_AUTO_ALL,
-    NETBAND_AUTO_MASK,
-    NETMODE_AUTO,
     NETMODE_LTE_ONLY,
     REGION_BANDS,
 )
+from core.errors import NetModeUnavailable
 from core.i18n import t
 from core.models import Snapshot
 from core.parsers import bands_from_mask, bands_to_mask, parse_hex_mask
@@ -42,13 +41,15 @@ class NetModeSettings:
         if not isinstance(data, Mapping):
             return None
         lte = str(data.get('LTEBand') or '').strip()
-        if parse_hex_mask(lte) is None:
-            return None
-        return cls(
-            lte_band=lte,
-            network_band=str(data.get('NetworkBand') or '').strip(),
-            network_mode=str(data.get('NetworkMode') or '').strip(),
-        )
+        settings = cls(lte, str(data.get('NetworkBand') or '').strip(),
+                       str(data.get('NetworkMode') or '').strip())
+        return settings if settings.complete else None
+
+    @property
+    def complete(self) -> bool:
+        return (parse_hex_mask(self.lte_band) is not None
+                and parse_hex_mask(self.network_band) is not None
+                and self.network_mode.isascii() and self.network_mode.isdigit())
 
     @property
     def lte_mask(self) -> int:
@@ -61,6 +62,7 @@ class BandLockPlan:
     lteband: str
     networkband: str
     networkmode: str
+    expected: NetModeSettings | None = field(default=None, compare=False, repr=False)
 
 
 def modem_supports_5g(access_modes: Iterable[str]) -> bool:
@@ -80,10 +82,6 @@ def locked_bands(settings: NetModeSettings | None,
     return bands_from_mask(settings.lte_band, bands_to_mask(sup) if sup else None)
 
 
-def _network_band(current: NetModeSettings | None) -> str:
-    return current.network_band if current and current.network_band else NETBAND_AUTO_MASK
-
-
 def plan_lock(current: NetModeSettings | None, bands: Iterable[int], *,
               force_lte_only: bool) -> BandLockPlan:
     """План фиксации LTE-бэндов.
@@ -95,45 +93,48 @@ def plan_lock(current: NetModeSettings | None, bands: Iterable[int], *,
     mask = bands_to_mask(bands)
     if mask == 0:
         raise ValueError("Не выбрано ни одного бэнда")
-    if force_lte_only:
-        mode = NETMODE_LTE_ONLY
-    else:
-        mode = current.network_mode if current and current.network_mode else NETMODE_AUTO
-    return BandLockPlan(format(mask, 'X'), _network_band(current), mode)
+    if current is None or not current.complete:
+        raise NetModeUnavailable()
+    mode = NETMODE_LTE_ONLY if force_lte_only else current.network_mode
+    return BandLockPlan(format(mask, 'X'), current.network_band, mode, current)
 
 
 def plan_auto(current: NetModeSettings | None,
               original: NetModeSettings | None) -> BandLockPlan:
     """Все LTE-бэнды. Режим сети — как был до программы (или текущий)."""
-    if original and original.network_mode:
-        mode = original.network_mode
-    elif current and current.network_mode:
-        mode = current.network_mode
-    else:
-        mode = NETMODE_AUTO
-    return BandLockPlan(LTEBAND_AUTO_ALL, _network_band(current), mode)
+    if current is None or not current.complete:
+        raise NetModeUnavailable()
+    mode = original.network_mode if original and original.complete else current.network_mode
+    return BandLockPlan(LTEBAND_AUTO_ALL, current.network_band, mode, current)
 
 
 def plan_restore(original: NetModeSettings) -> BandLockPlan:
     """Точное восстановление настроек, прочитанных при подключении."""
-    return BandLockPlan(original.lte_band,
-                        original.network_band or NETBAND_AUTO_MASK,
-                        original.network_mode or NETMODE_AUTO)
+    if not original.complete:
+        raise NetModeUnavailable()
+    return BandLockPlan(original.lte_band, original.network_band, original.network_mode)
 
 
-def verify(plan: BandLockPlan, read_back: NetModeSettings | None) -> bool:
+def verify(plan: BandLockPlan, read_back: NetModeSettings | None,
+           supported: Iterable[int] = ()) -> bool:
     """Совпадает ли записанное с тем, что роутер вернул при чтении.
 
     Hardware validation required: как прошивка сохраняет маску «все бэнды».
     """
     if read_back is None:
         return False
+    if (read_back.network_mode != plan.networkmode or
+            parse_hex_mask(read_back.network_band) != parse_hex_mask(plan.networkband) or
+            parse_hex_mask(plan.networkband) is None):
+        return False
     want = parse_hex_mask(plan.lteband) or 0
     got = read_back.lte_mask
     if (want & LTE_ALL_MASK) == LTE_ALL_MASK:
         # «Все бэнды»: часть прошивок сохраняет маску поддерживаемых.
-        return got != 0 and read_back.network_mode == plan.networkmode
-    return got == want and read_back.network_mode == plan.networkmode
+        supported_mask = bands_to_mask(b for b in supported if 1 <= b <= 63)
+        return ((got & LTE_ALL_MASK) == LTE_ALL_MASK or
+                (supported_mask != 0 and (got & supported_mask) == supported_mask))
+    return got == want
 
 
 def lockable_bands(supported: Iterable[int], observed: Iterable[int],

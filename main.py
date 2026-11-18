@@ -70,6 +70,7 @@ from core import (
     format_bytes_mb,
     format_mimo,
     format_modulation,
+    format_rank,
     format_rate_mbps,
     humanize_error,
     is_valid_ip,
@@ -347,7 +348,7 @@ class Hua4GMon:
         self.beeper = Beeper() if HAS_WINSOUND else None
 
         self.survey = Survey()
-        self.state = SignalState(trend_param='sinr')
+        self.state = SignalState(track_trend=False, trend_param='sinr')
         self.session: RouterSession | None = None
         self.worker: SessionWorker | None = None
         self.demo_modem: DemoModem | None = None
@@ -480,6 +481,7 @@ class Hua4GMon:
             'tab': self.notebook.index(self.notebook.select()),
         }
         self._close_graph()
+        self._close_roof()
         self._saved.update(ontop=self.ontop_var.get(), sound=self.sound_var.get(),
                            graph=self.graph_param.get())
         self.notebook.destroy()
@@ -506,6 +508,8 @@ class Hua4GMon:
             self._fill_device(self.session.device_info)
         if self.state.last is not None:
             self._render(self.state.last)
+            if self.link == 'offline':
+                self._render_staleness(True)
 
     # ---------- вкладка «Подключение» ----------
 
@@ -675,7 +679,7 @@ class Hua4GMon:
                           (t("↩ Вернуть как было"), self.restore_bands)):
             b = ttk.Button(btns, text=text, command=cmd)
             b.pack(side=tk.LEFT, padx=4)
-            if cmd is not self.mark_current_bands:
+            if cmd != self.mark_current_bands:
                 self._net_buttons.append(b)
 
         ant_frame = ttk.LabelFrame(self.tab_network, text=t("Переключение антенн"), padding=10)
@@ -788,7 +792,7 @@ class Hua4GMon:
             ('ul_rate', 'Скорость (Upload)'), ('total_dl', 'Скачано за сессию'),
             ('total_ul', 'Отдано за сессию'), ('month_traffic', 'Трафик за месяц (↓/↑)'),
             ('mod', 'Модуляция DL / UL'), ('mimo', 'Режим передачи (TM)'),
-            ('lte_rank', 'Ранг MIMO LTE'), ('nr_rank', 'Ранг MIMO NR'),
+            ('matrix', 'MIMO'), ('lte_rank', 'Ранг MIMO LTE'), ('nr_rank', 'Ранг MIMO NR'),
             ('cqi', 'CQI кодовых слов'), ('txpower', 'Мощность передатчика'),
             ('rrc', 'RRC'), ('rsrp_min', 'RSRP мин / макс'), ('sinr_min', 'SINR мин / макс'),
         ]
@@ -816,6 +820,8 @@ class Hua4GMon:
         self.wl_button = ttk.Button(ctrl, text=t("🔍 Проверить сейчас"),
                                     command=self._start_whitelist_check)
         self.wl_button.pack(side=tk.LEFT, padx=5)
+        if getattr(self, '_wl_token', None) is not None:
+            self.wl_button.config(state='disabled')
         self.wl_progress = ttk.Progressbar(ctrl, orient="horizontal", mode="indeterminate",
                                            length=self.px(200))
         self.wl_progress.pack(side=tk.LEFT, padx=10)
@@ -997,6 +1003,7 @@ class Hua4GMon:
         self.antenna_var.set(t("Не прочитано"))
         self.net_msg.config(text="")
         self.jitter_label.config(text=t("Джиттер: -"))
+        self._wl_token = None
         self.wl_progress.stop()
         self.wl_button.config(state='normal')
         self.wl_title.config(text=t("Не проверялось"), fg=MUTED_FG)
@@ -1026,6 +1033,7 @@ class Hua4GMon:
             session, interval=lambda: self._interval_seconds,
             auto_reconnect=self.reconnect_var.get(),
             on_connected=mine(self._on_connected), on_snapshot=mine(self._on_snapshot),
+            on_metadata=mine(self._on_metadata),
             on_status=mine(self._on_status), on_fatal=mine(self._on_fatal))
         self.worker = worker
         self.link = 'connecting'
@@ -1041,6 +1049,12 @@ class Hua4GMon:
         self.session = None
         self.demo_modem = None
         self.link = 'offline'
+        self._wl_token = None
+        self.wl_progress.stop()
+        self.wl_button.config(state='normal')
+        self._survey_searching = False
+        self._render(Snapshot())
+        self._render_staleness(True)
         self._busy = False
         self._set_net_buttons('normal')
         self._render_link_state()
@@ -1067,6 +1081,13 @@ class Hua4GMon:
             self._band_list = lockable_bands(session.supported_bands, self.state.observed_bands)
             self._rebuild_band_grid(self._band_list)
         self.load_router_config()
+
+    def _on_metadata(self, info: dict[str, Any]) -> None:
+        self._fill_device(info)
+        if self.session is not None:
+            self._band_list = lockable_bands(self.session.supported_bands, self.state.observed_bands)
+            self._rebuild_band_grid(self._band_list)
+            self.load_router_config()
 
     def _fill_device(self, info: dict[str, Any]) -> None:
         for key, lbl in self.sim_labels.items():
@@ -1208,7 +1229,7 @@ class Hua4GMon:
                 self._refresh_survey()
         self._survey_searching = True
         pending = Snapshot()
-        self.state.ingest(pending, time.monotonic())
+        self.state.ingest(pending, time.monotonic(), preserve_cell=True)
         self._render(pending)
         self.survey.messages = [t('Поиск операторов…')]
         self._refresh_survey()
@@ -1220,7 +1241,7 @@ class Hua4GMon:
         if path:
             try:
                 with open(path, 'w', encoding='utf-8-sig', newline='') as output:
-                    output.write(self.survey.csv_text())
+                    output.write(self.survey.csv_text(current_language()))
             except OSError as exc:
                 messagebox.showerror(t('Ошибка'), str(exc))
 
@@ -1241,7 +1262,8 @@ class Hua4GMon:
             message = str(snap.raw['_survey_error'])
             if message not in self.survey.messages:
                 self.survey.messages.append(message)
-        self._refresh_survey()
+        if self.survey.running:
+            self._refresh_survey()
         change = self.state.ingest(snap, time.monotonic())
         if change is not None:
             self.event_line.config(text=t("{at} смена соты: {old} → {new}").format(
@@ -1286,7 +1308,7 @@ class Hua4GMon:
         if not snap.registered:
             score, summary, color = 0, snap.network_message, 'gray'
         self.health_progress.config(value=score)
-        self.health_text_lbl.config(text=t(summary).format(pct=score), fg=ink(color))
+        self.health_text_lbl.config(text=('LTE · ' if snap.registered else '') + t(summary).format(pct=score), fg=ink(color))
         self.tower_line.config(text=self._tower_summary(snap))
 
         for param, widgets in self.lbl_vars.items():
@@ -1318,10 +1340,10 @@ class Hua4GMon:
             tips.insert(0, snap.network_message)
         self.advice_lbl.config(text="\n".join("💡 " + t(tip) for tip in tips[:2]))
 
-        self._refresh_graph(False)
+        self._refresh_graph(self.link == 'offline')
         self._render_tower(snap)
         self._render_status(snap, mimo, up)
-        self._render_roof(False)
+        self._render_roof(self.link == 'offline' or self.state.is_stale(time.monotonic(), self._interval_seconds))
 
     def _tower_summary(self, snap: Snapshot) -> str:
         snap = snap.display()
@@ -1336,7 +1358,7 @@ class Hua4GMon:
         if snap.pci is not None:
             parts.append(f"PCI {snap.pci}")
         if snap.enodeb is not None:
-            parts.append(f"eNB {snap.enodeb}/{snap.sector}")
+            parts.append(f"eNB {snap.enodeb}" + (f"/{snap.sector}" if snap.sector is not None else ""))
         if snap.rat:
             parts.append(t(RAT_LABELS.get(snap.rat, snap.rat)))
         return " · ".join(parts) if parts else "—"
@@ -1374,7 +1396,7 @@ class Hua4GMon:
         for item in tree.get_children():
             tree.delete(item)
         for c in self.state.top_cells():
-            mark = "▶ " if c.is_current(self.state.last) else ""
+            mark = "▶ " if self.state.is_current_cell(c) else ""
             tree.insert('', tk.END, values=(
                 mark + c.operator_label, c.band_label.replace('МГц', t('МГц')),
                 fmt_num(c.key.pci), str(c.cell_id) if c.cell_id is not None else "-",
@@ -1402,8 +1424,9 @@ class Hua4GMon:
                                         ("UL", format_modulation(snap.ul_mcs, uplink=True))) if m]
         lbl['mod'].config(text=" / ".join(mods) if mods else "-")
         lbl['mimo'].config(text=format_mimo(snap.transmode) if snap.transmode else "-")
+        lbl['matrix'].config(text=snap.mimo_matrix or '—')
         lbl['lte_rank'].config(text=t('Нет подтверждённых данных'))
-        lbl['nr_rank'].config(text=fmt_num(snap.nr_rank))
+        lbl['nr_rank'].config(text=format_rank(snap.nr_rank))
         cqi = "-"
         if snap.cqi0 is not None:
             cqi = f"{snap.cqi0}" + (f" / {snap.cqi1}" if snap.cqi1 is not None else "")
@@ -1420,6 +1443,8 @@ class Hua4GMon:
             lo, hi = st.session_min.get(p), st.session_max.get(p)
             if lo is not None:
                 lbl[key].config(text=f"{fmt_num(lo)} / {fmt_num(hi)} {unit_of(p)}")
+            else:
+                lbl[key].config(text="-")
 
     def _beep(self) -> None:
         if self.beeper is None or not self.sound_var.get():
@@ -1433,7 +1458,7 @@ class Hua4GMon:
         param = self.graph_param.get()
         self.state.set_trend_param(param)
         self.signal_graph.set_param(param)
-        self._refresh_graph(self.state.is_stale(time.monotonic(), self._interval_seconds))
+        self._refresh_graph(self.link == 'offline' or self.state.is_stale(time.monotonic(), self._interval_seconds))
 
     def _refresh_graph(self, stale: bool) -> None:
         param = self.graph_param.get()
@@ -1471,7 +1496,7 @@ class Hua4GMon:
                        graph.zoom(a, f)).pack(side=tk.LEFT, padx=4)
         ttk.Button(controls, text=t("Авто"), command=graph.auto).pack(side=tk.LEFT, padx=4)
         ttk.Button(controls, text=t("← Назад"), command=self._close_graph).pack(side=tk.RIGHT)
-        self._refresh_graph(self.state.is_stale(time.monotonic(), self._interval_seconds))
+        self._refresh_graph(self.link == 'offline' or self.state.is_stale(time.monotonic(), self._interval_seconds))
 
     def _close_graph(self) -> None:
         if self.graph_win is not None:
@@ -1492,17 +1517,18 @@ class Hua4GMon:
 
     def mark_current_bands(self) -> None:
         snap = self.state.last
-        if snap is None or not snap.bands:
+        if (self.link != 'online' or snap is None or not snap.registered
+                or self.state.is_stale(time.monotonic(), self._interval_seconds)):
             self.net_msg.config(text=t("Текущий бэнд ещё не определён."), fg=ERR_FG)
             return
-        missing = [b for b in snap.bands if b not in self.band_vars]
-        if missing:
-            self._band_list += missing
-            self._rebuild_band_grid(self._band_list)
+        bands = [b for b in snap.bands if 1 <= b <= 63 and b in self.band_vars]
+        if not bands:
+            self.net_msg.config(text=t("Текущий бэнд ещё не определён."), fg=ERR_FG)
+            return
         for b, var in self.band_vars.items():
-            var.set(b in snap.bands)
+            var.set(b in bands)
         self.net_msg.config(text=t("Отмечены текущие бэнды: {bands}").format(
-            bands=", ".join(f"B{b}" for b in snap.bands)), fg=INFO_FG)
+            bands=", ".join(f"B{b}" for b in bands)), fg=INFO_FG)
 
     def apply_bands(self) -> None:
         session = self.session
@@ -1516,15 +1542,19 @@ class Hua4GMon:
         names = ", ".join(f"B{b}" for b in selected)
         lines = [t("Зафиксировать бэнды: {bands}?").format(bands=names)]
         lines += lock_warnings(selected, self.state.last)
-        if session.locks_lte_only:
-            lines.append(t("Режим сети будет «только 4G»."))
-        elif not session.caps_known:     # режимы уточнятся перед записью
-            lines.append(t("Если у модема нет 5G, режим сети будет «только 4G»."))
-        if not messagebox.askyesno(t("Подтверждение"), "\n\n".join(lines)):
-            return
-        self._net_action(lambda: session.apply_plan(session.plan_band_lock(selected)),
-                         lambda ok: self._after_write(ok, t("Band Lock применён: {bands}.").format(
-                             bands=names)), t("Применяю Band Lock…"))
+        def confirm_plan(plan):
+            lines.append(t("Режим сети после записи: {mode}").format(mode=plan.networkmode))
+
+            def apply():
+                if self.session is session:
+                    self._net_action(lambda: session.apply_plan(plan),
+                                     lambda ok: self._after_write(ok, t("Band Lock применён: {bands}.").format(bands=names)),
+                                     t("Применяю Band Lock…"))
+
+            if messagebox.askyesno(t("Подтверждение"), "\n\n".join(lines)):
+                apply()
+
+        self._net_action(lambda: session.plan_band_lock(selected), confirm_plan, t("Чтение настроек сети…"))
 
     def reset_bands(self) -> None:
         session = self.session
@@ -1573,13 +1603,14 @@ class Hua4GMon:
             return
 
         def work() -> int | None:
-            session.set_antenna(code)
-            return session.read_antenna()
+            return session.apply_antenna(code)
 
         def done(read_back: int | None) -> None:
-            if read_back == code or read_back is None:
+            if read_back == code:
                 self.net_msg.config(text=t("Тип антенны изменён: {mode}").format(
                     mode=self.antenna_var.get()), fg=OK_FG)
+            elif read_back is None:
+                self.net_msg.config(text=t("Команда отправлена, но режим антенны не подтверждён."), fg=WARN_FG)
             else:
                 self.net_msg.config(text=t(
                     "Роутер принял команду, но сообщает другой режим антенны."), fg=WARN_FG)
@@ -1655,6 +1686,10 @@ class Hua4GMon:
 
     def open_cellmapper(self) -> None:
         snap = self.state.last
+        if (self.link != 'online' or self.state.is_stale(time.monotonic(), self._interval_seconds)):
+            snap = None
+        if snap is not None:
+            snap = snap.display()
         if snap is None or len(snap.plmn) < 5 or snap.enodeb is None:
             messagebox.showwarning(t("Внимание"),
                                    t("Недостаточно данных о вышке (нужны PLMN и eNodeB)."))
@@ -1688,20 +1723,25 @@ class Hua4GMon:
     # =====================================================
 
     def _start_whitelist_check(self) -> None:
+        if getattr(self, '_wl_token', None) is not None:
+            return
+        token = self._wl_token = object()
         self.wl_button.config(state='disabled')
         self.wl_progress.start(10)
         self.wl_title.config(text=t("Проверка…"), fg=ink('orange'))
         self.wl_detail.config(text=t("Проверка занимает несколько секунд."), fg=MUTED_FG)
-        for lbl in self.wl_labels.values():
-            lbl.config(text=lbl.cget('text').split(' — ')[0] + " — ⏳", fg=MUTED_FG)
+        for host, port in WHITELIST_HOSTS_RU + CONTROL_HOSTS_NEUTRAL:
+            self.wl_labels[host].config(text=f'{host}:{port} — ⏳', fg=MUTED_FG)
         session = self.session
 
         def done(report: Any) -> None:
-            if session is self.session:
+            if token is self._wl_token and session is self.session:
+                self._wl_token = None
                 self._render_whitelist(report)
 
         def failed(exc: BaseException) -> None:
-            if session is self.session:
+            if token is self._wl_token and session is self.session:
+                self._wl_token = None
                 self._whitelist_failed(exc)
         self._run_bg(run_whitelist_check, done, failed)
 
@@ -1713,7 +1753,7 @@ class Hua4GMon:
             if lbl is None:
                 continue
             sym, col = ("✅", '#00b894') if r.ok else ("❌", '#d63031')
-            lbl.config(text=f"{r.host} — {sym} {r.detail}", fg=ink(col))
+            lbl.config(text=f"{r.host}:{r.port} — {sym} {r.detail}", fg=ink(col))
         self.wl_title.config(text=report.title, fg=ink(report.color))
         self.wl_detail.config(text=report.detail, fg='#444444')
 
@@ -1757,7 +1797,7 @@ class Hua4GMon:
         self.r_secondary = tk.Label(win, text="-", font=("Consolas", big, "bold"),
                                     bg='black', fg='white')
         self.r_secondary.pack(expand=True)
-        self._render_roof(False)
+        self._render_roof(self.link == 'offline' or self.state.is_stale(time.monotonic(), self._interval_seconds))
 
     def _roof_line(self, param: str) -> tuple[str, str]:
         val = self.state.current(param)
