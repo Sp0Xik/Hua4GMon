@@ -39,6 +39,7 @@ from core.errors import (
     MobileDataDisabled,
     NetModeUnavailable,
     classify_error,
+    error_code,
     humanize_error,
     is_unsupported_endpoint,
 )
@@ -356,11 +357,7 @@ class RouterSession:
                     try:
                         survey_data['_survey_cells'] = client.net.cell_info()
                     except Exception as exc:
-                        if classify_error(exc) is ErrorKind.SESSION:
-                            raise
-                        survey_data['_survey_error'] = humanize_error(exc)
-                        if is_unsupported_endpoint(exc):
-                            self._survey_unsupported.add('net/cell-info')
+                        survey_data['_survey_error'] = self._survey_read_error('net/cell-info', exc)
                 sources, errors = self._extra_cell_sources()
                 survey_data['_extra_cells'] = sources
                 survey_data['_extra_cell_errors'] = errors
@@ -382,6 +379,16 @@ class RouterSession:
             merged.update(survey_data)
             return merged
 
+    def _survey_read_error(self, endpoint: str, exc: Exception) -> str:
+        if error_code(exc) == 100003:
+            self._survey_unsupported.add(endpoint)
+            return t('Роутер запретил чтение {endpoint} (100003).').format(endpoint=endpoint)
+        if classify_error(exc) is ErrorKind.SESSION:
+            raise exc
+        if is_unsupported_endpoint(exc):
+            self._survey_unsupported.add(endpoint)
+        return humanize_error(exc)
+
     def _extra_cell_sources(self) -> tuple[dict[str, Any], dict[str, str]]:
         """Read-only documented CPE endpoints; unsupported firmware is not retried.
 
@@ -401,11 +408,7 @@ class RouterSession:
                 try:
                     data[endpoint] = get(endpoint)
                 except Exception as exc:
-                    if classify_error(exc) is ErrorKind.SESSION:
-                        raise
-                    errors[endpoint] = humanize_error(exc)
-                    if is_unsupported_endpoint(exc):
-                        self._survey_unsupported.add(endpoint)
+                    errors[endpoint] = self._survey_read_error(endpoint, exc)
         finally:
             self._connection.timeout = old_timeout
         return data, errors

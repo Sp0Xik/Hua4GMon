@@ -435,9 +435,12 @@ def test_foreign_network_hidden_and_survey_copy(app, monkeypatch):
     assert 'Мотив' in app._survey_text.text
     copied = []
     monkeypatch.setattr(Clipboard, 'copy', copied.append)
+    notifications = []
+    monkeypatch.setattr(app, 'toast', notifications.append)
     app._stop_survey()
     app._copy_survey()
     assert '25035' in copied[0]
+    assert str(len(app.survey.rows)) in notifications[-1]
     for widget in list(Window.children):
         if isinstance(widget, Popup):
             widget.dismiss()
