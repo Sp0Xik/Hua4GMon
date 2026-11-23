@@ -334,6 +334,8 @@ class SignalState:
             'enodeb': snap.enodeb, 'sector': snap.sector,
             'pci': snap.pci, 'earfcn': snap.earfcn,
             'bands': snap.bands_compact, 'rat': snap.rat,
+            'lte_carriers': ' + '.join(f'{c.bandwidth:g}MHz@{c.earfcn}(B{c.band})'
+                                       for c in snap.lte_carriers),
         })
 
     # ---- вычисляемые величины ----

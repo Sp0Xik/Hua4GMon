@@ -1,4 +1,5 @@
 """Тесты RouterSession/SessionWorker на симуляторе модема (без сети)."""
+import csv
 import threading
 import time
 
@@ -54,6 +55,51 @@ def test_open_reads_capabilities(session):
     assert session.is_open
     assert session.device_info['DeviceName'].startswith('B636')
     assert session.supported_bands == list(DEMO_SUPPORTED_BANDS)
+
+
+@pytest.mark.parametrize("lang,delimiter", [('en', ','), ('ru', ';')])
+def test_b636_denied_neighbours_preserve_serving_sample_and_csv(session, monkeypatch, tmp_path, lang, delimiter):
+    from core.scanner import Survey
+
+    calls = []
+
+    def denied(endpoint):
+        calls.append(endpoint)
+        raise DemoApiError('No rights', 100003)
+
+    client = session._client
+    monkeypatch.setattr(session._connection, 'get', denied, raising=False)
+    monkeypatch.setattr(session._connection, 'timeout', session.timeout, raising=False)
+    monkeypatch.setattr(client.device, 'signal', lambda: {
+        'rsrp': '-96dBm', 'pci': '381', 'cell_id': '123456789', 'earfcn': 'DL:3048 UL:21048',
+        'band': '20MHz@3048(B7) + 20MHz@2850(B7)'})
+    monkeypatch.setattr(client.net, 'cell_info', lambda: {'cellinfo': '075BCD15', 'lac': '04D2'})
+    monkeypatch.setattr(client.monitoring, 'status', lambda: {
+        'CurrentNetworkTypeEx': '1011', 'ServiceStatus': '2', 'ConnectionStatus': '901'})
+    session.survey_enabled = True
+    survey = Survey()
+    survey.start()
+    state = core.SignalState()
+    for tick in range(2):
+        session._next_survey_read = 0
+        raw = session.fetch()
+        assert len(raw['_extra_cell_errors']) == (2 if tick == 0 else 0)
+        snap = core.build_snapshot(raw)
+        survey.observe(snap)
+        survey.accept_cells(raw['_survey_cells'])
+        state.ingest(snap, tick)
+    assert calls == ['device/nbrcellinfo', 'device/seccellinfo']
+    row, = survey.ranked()
+    assert row.samples == 2 and row.snap.registered and row.snap.cell_id == 123456789
+    path = tmp_path / 'session.csv'
+    core.write_session_csv(str(path), state.log, lang)
+    with path.open(encoding='utf-8-sig', newline='') as stream:
+        for record in csv.DictReader(stream, delimiter=delimiter):
+            assert record['bands'] == 'B7'
+            assert record['lte_carriers'] == '20MHz@3048(B7) + 20MHz@2850(B7)'
+    monkeypatch.setattr(client.device, 'signal', lambda: denied('device/signal'))
+    with pytest.raises(DemoApiError):
+        session.fetch()
     assert session.access_modes == ['00', '01', '02', '03']
     assert not session.supports_5g
     assert session.original_net_mode.network_mode == '00'

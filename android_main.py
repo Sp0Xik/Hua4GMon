@@ -1765,7 +1765,8 @@ class Hua4GMonApp(App):
     def _copy_survey(self) -> None:
         from kivy.core.clipboard import Clipboard
         Clipboard.copy(self.survey.report())
-        self.toast(t('Результат скопирован'))
+        self.toast(t('Скопировано наблюдений: {n}. Операторов: {ops}.').format(
+            n=len(self.survey.rows), ops=len(self.survey.operators)))
 
     def open_menu(self) -> None:
         from kivy.uix.boxlayout import BoxLayout

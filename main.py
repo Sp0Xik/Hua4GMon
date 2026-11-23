@@ -1242,6 +1242,8 @@ class Hua4GMon:
             try:
                 with open(path, 'w', encoding='utf-8-sig', newline='') as output:
                     output.write(self.survey.csv_text(current_language()))
+                messagebox.showinfo(t('Сохранить CSV'), t('Сохранено наблюдений: {n}. Операторов: {ops}.').format(
+                    n=len(self.survey.rows), ops=len(self.survey.operators)), parent=self._survey_win)
             except OSError as exc:
                 messagebox.showerror(t('Ошибка'), str(exc))
 

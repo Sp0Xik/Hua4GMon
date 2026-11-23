@@ -477,6 +477,18 @@ def test_new_session_clears_demo_settings(app, monkeypatch):
     assert app.antenna_var.get() == core.t('Не прочитано')
 
 
+def test_empty_survey_save_reports_zero(monkeypatch, tmp_path):
+    from core.scanner import Survey
+
+    path = tmp_path / "survey.csv"
+    messages = []
+    monkeypatch.setattr(main.filedialog, "asksaveasfilename", lambda **kwargs: str(path))
+    monkeypatch.setattr(main.messagebox, "showinfo", lambda title, msg, **kwargs: messages.append(msg))
+    main.Hua4GMon._save_survey(types.SimpleNamespace(survey=Survey(), _survey_win=None))
+    assert len(path.read_text(encoding="utf-8-sig").splitlines()) == 1
+    assert len(messages) == 1 and messages[0].count("0") == 2
+
+
 def test_foreign_network_is_hidden_and_survey_keeps_observation(app):
     online(app)
     app.worker.pause()
